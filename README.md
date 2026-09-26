@@ -99,6 +99,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let message = context.get::<String>().expect("declared dependency");
         Ok(Arc::new(message.len()))
     })?;
+    builder.root::<usize>();
     let context = builder.build()?;
     assert_eq!(*context.get::<usize>()?, 5);
     Ok(())
