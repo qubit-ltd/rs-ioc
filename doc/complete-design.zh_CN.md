@@ -15,8 +15,8 @@
 接口绑定、可选/集合依赖、配置值、profile、确定性诊断和显式覆盖。暂不提供
 原型/请求作用域、运行时增删绑定、生命周期钩子、循环代理、动态库发现、
 条件表达式或配置热更新。`qubit-spi` 继续负责同一服务族的 provider 选择及回退；
-IoC 只管理已选组件的共享生命周期。`qubit-reflect` 是可选诊断元数据来源，
-不承担构造或组件发现。
+IoC 只管理已选组件的共享生命周期。应用可独立使用 `qubit-reflect` 的诊断元数据；
+IoC 当前没有反射集成功能，反射也不承担组件构造或发现。
 
 术语：**定义**是一次注册声明；**绑定**是 `(Rust TypeId, 可选 BindingId)` 对应的
 一个可查询句柄；**接口别名**是从 `dyn Trait` 绑定指向具体组件的边；**定义来源**
@@ -35,10 +35,9 @@ edition 为 2024。运行时依赖不能反向引用宏 crate；宏只生成对�
 | `macros` | 开 | 重导出 `Component`、`Service`、`Repository`、`Configuration`、`ConfigurationProperties`、`bean`。 |
 | `inventory` | 开 | 收集已链接 crate 的声明；关闭后 `discover()` 不可用，宏的手动注册入口仍可用。 |
 | `config` | 开 | 启用 `with_config`、`ConfigurationProperties` 和 `#[value]` 所需的 `qubit-config`。 |
-| `reflect` | 关 | 后续可选的显式元数据关联；不改变构造语义。 |
 
 `default = ["macros", "inventory", "config"]`；`default-features = false` 的运行时
-可以独立完成显式实例/工厂注册和构建，不依赖宏、inventory、配置或反射。
+可以独立完成显式实例/工厂注册和构建，不依赖宏、inventory 或配置。
 `macros` 不隐含 `inventory` 或 `config`；宏在缺少必要 feature 时对相应语法给出
 明确编译诊断。`inventory` 的提交宏由运行时按自身 feature 控制，生成代码不能
 检查消费方的 `cfg(feature = "inventory")`。
@@ -211,8 +210,11 @@ impl ApplicationContext {
 `register_*_with`、`install` 和 `discover` 都在**单个定义的所有键**上原子暂存：
 先检查该定义自身的具体键和全部接口键，全部合法后才写入 builder。重试一个失败
 定义不会留下部分别名。不同定义的键冲突须在 profile 过滤后统一检查，
-因此 active 重复绑定是构建错误。显式 `replace_binding(key, definition)` 只替换指定精确键，并记录覆盖
-来源；若要替换一个定义的所有别名，应先 `exclude_definition::<D>()` 再注册
+因此 active 重复绑定是构建错误。`replace_binding<F>(key, definition)` 的签名约束为
+`F: FnOnce(&mut ContainerBuilder) -> Result<(), RegistrationError>`。该一次性闭包
+可捕获应用状态并向临时 builder 注册定义；闭包失败、目标键缺失/重复或目标定义不唯一时，
+原 builder 保持不变。成功后只替换指定精确键，并记录覆盖来源；若要替换一个定义的所有别名，
+应先 `exclude_definition::<D>()` 再注册
 替代定义。排除在 `discover()` 前声明，按定义身份跳过该定义全部键；不级联移除
 依赖它的其他定义，缺失依赖在图验证时报告。
 
@@ -307,7 +309,7 @@ flowchart LR
 只在外层附加依赖路径。不增加对 `qubit-spi` 的直接依赖。
 
 `qubit-reflect` 已有的类型描述符与链接片段是元数据系统，不是组件实例注册表。
-核心和宏都不要求 `Reflect`；若启用未来的 `reflect` feature，应用可显式关联
+核心和宏都不要求 `Reflect`，也没有 `reflect` Cargo feature。应用可自行关联
 `TypeDescriptor` 供诊断或工具查询。IoC 不自动初始化反射注册表，不从反射字段
 推断依赖，不复用其私有 `codegen_v3` 协议，也不要求修改 `rs-reflect`。
 
@@ -342,7 +344,7 @@ expand 不做跨 crate 候选推断。`bind = dyn Trait` 可重复；具体类�
 | 宏与手写混用、profile、排除/覆盖 | 同一键语义一致；重复键不被静默覆盖。 |
 | 跨 crate 静态发现 | 已链接声明可发现；关闭 inventory 后可手动安装。 |
 | 配置与 SPI | 配置错误保留 `ConfigError`；SPI 错误保留原 source 链。 |
-| 无默认 feature | 纯底层组装不链接宏、inventory、config 或 reflect。 |
+| 无默认 feature | 纯底层组装不链接宏、inventory 或 config。 |
 | 错误语法 | CamelCase/蛇形命名、非法 ID、不支持签名在编译期给出定位错误。 |
 
 这些场景由 `tests/`、`macros/tests/` 和 `tests/fixtures/ioc_cross_crate/` 覆盖。

@@ -98,6 +98,31 @@ ASCII 字母，后续只能使用 ASCII 字母、数字或下划线。构建后�
 `qubit-config` 的配置快照。其余选项可用 `cargo doc --no-deps --open` 查看
 公开 API，或阅读[完整设计](complete-design.zh_CN.md)。
 
+### 替换一个精确绑定
+
+覆盖测试或替换运行时实现时，回调可以捕获应用状态：
+
+```rust
+use std::error::Error;
+use std::sync::Arc;
+use qubit_ioc::{BindingKey, ContainerBuilder};
+
+fn replace_for_test() -> Result<(), Box<dyn Error>> {
+    let mut builder = ContainerBuilder::new();
+    builder.register_instance(Arc::new(1_u64))?;
+    let fake = Arc::new(7_u64);
+    let key = BindingKey::of::<u64>(None);
+    builder.replace_binding(key, move |draft| draft.register_instance(fake))?;
+    builder.root::<u64>();
+    let context = builder.build()?;
+    assert_eq!(*context.get::<u64>()?, 7);
+    Ok(())
+}
+```
+
+回调会先在临时 builder 上执行。若回调返回错误，或没有为目标键恰好注册一个定义，
+原 builder 不会改变。替换成功后只影响这个精确键；原定义声明的其他键仍保留。
+
 ## 错误与排障
 
 | 症状 | 检查位置 | 处理方式 |
@@ -121,8 +146,8 @@ ASCII 字母，后续只能使用 ASCII 字母、数字或下划线。构建后�
 工厂 panic 会按 Rust 机制传播。
 
 当前不提供原型或请求作用域、热更新、生命周期钩子、循环代理和动态库发现。
-结构体宏支持具名字段和单元结构体；其他形状可使用手动工厂。`reflect` 暂不
-改变组件构造行为。provider 的选择和回退由 `qubit-spi` 另行负责。
+结构体宏支持具名字段和单元结构体；其他形状可使用手动工厂。组件构造不使用运行时
+反射。provider 的选择和回退由 `qubit-spi` 另行负责。
 
 继续阅读[项目 README](../README.zh_CN.md)、[English user guide](user_guide.md)
 或运行 `cargo doc --no-deps --open` 查看 API 文档。

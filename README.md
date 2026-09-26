@@ -34,7 +34,6 @@ qubit-ioc = { version = "0.1", path = "../rs-ioc", default-features = false }
 | `macros` | Yes | `#[Component]`, `#[Service]`, `#[Repository]`, `#[Configuration]`, `#[ConfigurationProperties]`, and `#[bean]`. |
 | `inventory` | Yes | Discover definitions linked from other crates with `discover()`. |
 | `config` | Yes | Register a `qubit-config` snapshot and use `#[value]` or `#[ConfigurationProperties]`. |
-| `reflect` | No | Reserved for optional metadata integration; currently adds no construction behavior. |
 
 ## Quick start: assemble a greeting service
 
@@ -117,6 +116,11 @@ unnamed request selects a sole candidate or a unique `primary` binding.
 Use explicit registration when macros or linked discovery do not fit the
 application. See the [user guide](doc/user_guide.md) for roots, profiles,
 selection rules, error handling, and shutdown responsibilities.
+An independent downstream assembly example is maintained in the
+[`rs-execution-services` consumer fixture](../rs-execution-services/tests/fixtures/ioc_application_consumer/README.md).
+From the `rs-execution-services` checkout, run it with
+`cargo run --manifest-path tests/fixtures/ioc_application_consumer/Cargo.toml`.
+This fixture verifies the cross-crate contract and does not claim production adoption.
 
 ## Limitations
 

@@ -1,6 +1,6 @@
 # qubit-ioc 注解与自动装配设计
 
-> 此文为早期草案；完整且优先的实现契约见[完整设计](complete-design.zh_CN.md)。
+> 此文为早期草案；完整且优先的实现契约见[完整设计](complete-design.zh_CN.md)。本文提及的反射可选集成与 `reflect` feature 尚未实现；当前 Cargo feature 不包含 `reflect`。
 
 > 状态：拟实现的应用层设计，当前仓库尚未提供这些宏和 API。
 > [容器内核设计](design.zh_CN.md)定义显式注册、依赖图和共享实例语义；本文定义
@@ -315,8 +315,8 @@ profile 是启动时的静态过滤条件：`#[Component(profile = "prod")]`、
 `qubit-reflect` 提供类型、字段和方法元数据，以及受检动态构造；它的
 `ReflectRegistry` 保存元数据，不保存组件实例。IoC 宏直接分析自己的 Rust
 声明并生成强类型构造代码；它不使用反射字段列表推断依赖，也不要求业务组件
-派生 `Reflect`。当类型显式实现 `Reflect` 时，可选集成层可以附加
-`TypeDescriptor` 供诊断或依赖图工具展示，且不隐式初始化全局反射注册表。
+派生 `Reflect`。未来若有明确需求，可单独设计 `TypeDescriptor` 与绑定的关联；
+当前没有可选集成层或对应 Cargo feature，也不会隐式初始化全局反射注册表。
 这保持 `qubit-reflect` 的线程安全边界和内部生成协议独立。
 
 `qubit-spi` 的注册表可作为组件注入，`#[bean]` 工厂可以调用 SPI 的
@@ -339,7 +339,7 @@ rs-ioc/
 
 默认 feature 为 `macros + inventory + config`，让普通应用可直接使用注解、
 静态发现和 `qubit-config` 集成。`default-features = false` 保留纯显式组装内核；
-`reflect` 后续作为默认关闭的可选集成。`qubit-ioc-macros` 通过运行时的
+反射元数据集成没有纳入当前 feature 集合。`qubit-ioc-macros` 通过运行时的
 版本化生成协议输出代码，不调用 `qubit-reflect` 的私有 `codegen_v3`。
 
 当前 `rs-ioc` 仍是单 crate 骨架；增加 workspace、宏 crate、feature 和依赖属于

@@ -31,7 +31,6 @@ qubit-ioc = { version = "0.1", path = "../rs-ioc", default-features = false }
 | `macros` | 开 | 提供 `#[Component]`、`#[Service]`、`#[Repository]`、`#[Configuration]`、`#[ConfigurationProperties]` 和 `#[bean]`。 |
 | `inventory` | 开 | 通过 `discover()` 发现已链接 crate 的定义。 |
 | `config` | 开 | 注册 `qubit-config` 快照，并使用 `#[value]`、`#[ConfigurationProperties]`。 |
-| `reflect` | 关 | 预留可选元数据集成；当前不会改变组件构造行为。 |
 
 ## 快速开始：组装问候服务
 
@@ -111,7 +110,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 请求会选择唯一候选，或多个候选中唯一标记为 `primary` 的绑定。
 
 不适合用宏或静态发现时，可手动注册。构建根节点、profile、候选选择、错误处理和
-关闭责任详见[用户手册](doc/user_guide.zh_CN.md)。
+关闭责任详见[用户手册](doc/user_guide.zh_CN.md)。下游应用装配示例见
+[`rs-execution-services` 消费者夹具](../rs-execution-services/tests/fixtures/ioc_application_consumer/README.md)。
+在 `rs-execution-services` 仓库根目录运行
+`cargo run --manifest-path tests/fixtures/ioc_application_consumer/Cargo.toml`。
+该夹具用于验证跨 crate 契约，不代表已有生产应用采用。
 
 ## 限制
 

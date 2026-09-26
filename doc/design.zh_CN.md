@@ -1,6 +1,6 @@
 # qubit-ioc 容器内核设计
 
-> 此文为早期草案；完整且优先的实现契约见[完整设计](complete-design.zh_CN.md)。
+> 此文为早期草案；完整且优先的实现契约见[完整设计](complete-design.zh_CN.md)。其中反射集成和 `reflect` 模块均为未实现的设想；当前 Cargo feature 不包含 `reflect`。
 
 > 状态：设计，尚未实现。本文定义显式注册与容器构建的底层契约；
 > [注解与自动装配设计](annotation-design.zh_CN.md)是面向应用开发者的主要使用方案。
@@ -293,7 +293,7 @@ builder 含异步工厂，`build()` 在图验证完成后、调用任何工厂�
 | `context` | 限定工厂可读取的已声明依赖。 |
 | `application_context` | 不可变的 `ApplicationContext` 及查询 API。 |
 | `error` | 注册、图验证、构造和查询错误。 |
-| `reflect`（后续可选） | 把显式提供的反射描述符关联到绑定，提供诊断与工具查询。 |
+| `reflect`（未实现设想） | 曾考虑把显式反射描述符关联到绑定；当前没有对应 Cargo feature 或运行时行为。 |
 
 `graph` 不运行用户工厂；`binding` 不决定依赖顺序；`application_context` 不再持有工厂。
 这种边界便于单独验证图算法和类型擦除，并使后续宏与静态发现只需调用 builder。

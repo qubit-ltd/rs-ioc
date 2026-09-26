@@ -104,6 +104,34 @@ start with a letter and contain only letters, digits, or underscores.
 optional, and collection queries after construction. `get_all()` orders
 results by `order`, ID, and source location.
 
+### Replace one exact binding
+
+Applications can replace one binding while capturing runtime state in the
+registration callback:
+
+```rust
+use std::error::Error;
+use std::sync::Arc;
+use qubit_ioc::{BindingKey, ContainerBuilder};
+
+fn replace_for_test() -> Result<(), Box<dyn Error>> {
+    let mut builder = ContainerBuilder::new();
+    builder.register_instance(Arc::new(1_u64))?;
+    let fake = Arc::new(7_u64);
+    let key = BindingKey::of::<u64>(None);
+    builder.replace_binding(key, move |draft| draft.register_instance(fake))?;
+    builder.root::<u64>();
+    let context = builder.build()?;
+    assert_eq!(*context.get::<u64>()?, 7);
+    Ok(())
+}
+```
+
+The callback runs against a temporary builder. If it returns an error, or does
+not register exactly one definition for the requested key, the original builder
+is unchanged. A successful replacement affects only that exact key; other keys
+declared by the original definition remain registered.
+
 Definitions can use an activation `profile`. The default profile is active
 when none is chosen; `active_profiles(&["name"])?` selects another set before
 building. Configuration reads through `#[value]` or
@@ -138,8 +166,8 @@ Factory panics propagate as Rust panics.
 
 There are no prototype or request scopes, hot reload, lifecycle hooks,
 circular proxies, or dynamic-library discovery. Struct macros support named
-fields and unit structs; use a manual factory for other shapes. `reflect`
-currently adds no construction behavior. `qubit-spi` handles provider
+fields and unit structs; use a manual factory for other shapes. Runtime
+reflection does not construct components. `qubit-spi` handles provider
 selection and fallback separately.
 
 Continue with the [README](../README.md), [中文用户手册](user_guide.zh_CN.md),
