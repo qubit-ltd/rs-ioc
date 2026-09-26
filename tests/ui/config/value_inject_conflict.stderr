@@ -1,0 +1,5 @@
+error: `value` cannot be combined with `inject` or another `value`
+  --> tests/ui/config/value_inject_conflict.rs:13:5
+   |
+13 |     #[value("service.port")]
+   |     ^

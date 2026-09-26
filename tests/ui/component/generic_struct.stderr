@@ -1,0 +1,5 @@
+error: #[Component] does not support generic structs
+  --> tests/ui/component/generic_struct.rs:11:15
+   |
+11 | struct Generic<T> {
+   |               ^

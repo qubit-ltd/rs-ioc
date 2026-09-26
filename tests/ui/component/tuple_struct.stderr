@@ -1,0 +1,5 @@
+error: #[Component] requires named fields or a unit struct
+  --> tests/ui/component/tuple_struct.rs:11:19
+   |
+11 | struct TupleStruct(u32);
+   |                   ^^^^^
