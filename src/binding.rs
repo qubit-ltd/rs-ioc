@@ -36,6 +36,8 @@ use crate::dependency::Dependency;
 use crate::error::FactoryError;
 use crate::error::RegistrationError;
 use crate::key::BindingKey;
+use crate::managed::CleanupAction;
+use crate::managed::Managed;
 use crate::options::DefinitionSource;
 use crate::store::ErasedInstance;
 
@@ -48,6 +50,20 @@ pub(crate) type SyncFactory = Box<dyn FnOnce(BuildContext) -> Result<ErasedInsta
 
 /// The one-shot asynchronous factory signature used during construction.
 pub(crate) type AsyncFactory = Box<dyn FnOnce(BuildContext) -> ErasedFactoryFuture + Send + 'static>;
+
+/// A type-erased managed value and its lifecycle actions.
+pub(crate) type ManagedProduct = (ErasedInstance, CleanupAction);
+
+/// A one-shot synchronous factory returning a managed component.
+pub(crate) type ManagedSyncFactory =
+    Box<dyn FnOnce(BuildContext) -> Result<ManagedProduct, FactoryError> + Send + 'static>;
+
+/// A sendable future returning a managed component.
+pub(crate) type ErasedManagedFactoryFuture =
+    Pin<Box<dyn Future<Output = Result<ManagedProduct, FactoryError>> + Send + 'static>>;
+
+/// A one-shot asynchronous factory returning a managed component.
+pub(crate) type ManagedAsyncFactory = Box<dyn FnOnce(BuildContext) -> ErasedManagedFactoryFuture + Send + 'static>;
 
 /// Projects an already built concrete `Arc` to an interface `Arc`.
 pub(crate) type AliasProjector = Box<dyn Fn(&ErasedInstance) -> Option<ErasedInstance> + Send + Sync + 'static>;
@@ -74,6 +90,12 @@ pub(crate) enum PendingBindingKind {
     SyncFactory(SyncFactory),
     /// A one-shot asynchronous factory.
     AsyncFactory(AsyncFactory),
+    /// A complete shared instance with a cleanup action.
+    ManagedInstance(ErasedInstance, CleanupAction),
+    /// A one-shot synchronous factory returning a managed component.
+    ManagedSyncFactory(ManagedSyncFactory),
+    /// A one-shot asynchronous factory returning a managed component.
+    ManagedAsyncFactory(ManagedAsyncFactory),
     /// A projection from a previously constructed concrete binding.
     Alias {
         /// Key of the concrete binding to project.
@@ -140,6 +162,62 @@ impl PendingBinding {
             order,
             replaced_sources: Vec::new(),
             kind: PendingBindingKind::AsyncFactory(Box::new(erased)),
+        }
+    }
+
+    /// Erases a managed complete instance of `T`.
+    pub(crate) fn managed_instance<T: ?Sized + Send + Sync + 'static>(
+        key: BindingKey,
+        value: Managed<T>,
+        primary: bool,
+        order: i32,
+    ) -> Self {
+        let (value, cleanup) = value.into_parts();
+        Self {
+            key,
+            primary,
+            order,
+            replaced_sources: Vec::new(),
+            kind: PendingBindingKind::ManagedInstance(value, cleanup),
+        }
+    }
+
+    /// Erases the value and lifecycle actions returned by a synchronous
+    /// factory.
+    pub(crate) fn managed_sync_factory<T, F>(key: BindingKey, primary: bool, order: i32, factory: F) -> Self
+    where
+        T: ?Sized + Send + Sync + 'static,
+        F: FnOnce(BuildContext) -> Result<Managed<T>, FactoryError> + Send + 'static,
+    {
+        let erased = move |context: BuildContext| -> Result<ManagedProduct, FactoryError> {
+            factory(context).map(Managed::into_parts)
+        };
+        Self {
+            key,
+            primary,
+            order,
+            replaced_sources: Vec::new(),
+            kind: PendingBindingKind::ManagedSyncFactory(Box::new(erased)),
+        }
+    }
+
+    /// Erases the value and lifecycle actions returned by an asynchronous
+    /// factory.
+    pub(crate) fn managed_async_factory<T, F>(key: BindingKey, primary: bool, order: i32, factory: F) -> Self
+    where
+        T: ?Sized + Send + Sync + 'static,
+        F: FnOnce(BuildContext) -> crate::managed::ManagedFactoryFuture<T> + Send + 'static,
+    {
+        let erased = move |context: BuildContext| -> ErasedManagedFactoryFuture {
+            let future = factory(context);
+            Box::pin(async move { future.await.map(Managed::into_parts) })
+        };
+        Self {
+            key,
+            primary,
+            order,
+            replaced_sources: Vec::new(),
+            kind: PendingBindingKind::ManagedAsyncFactory(Box::new(erased)),
         }
     }
 

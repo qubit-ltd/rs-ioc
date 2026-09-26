@@ -75,6 +75,8 @@ pub mod codegen_v1 {
     use crate::dependency::Dependency;
     use crate::error::FactoryError;
     use crate::error::RegistrationError;
+    use crate::managed::Managed;
+    use crate::managed::ManagedFactoryFuture;
     use crate::options::BindingOptions;
     use crate::options::DefinitionSource;
 
@@ -97,6 +99,58 @@ pub mod codegen_v1 {
     // Generated registrations return the public structured RegistrationError.
     #[allow(clippy::result_large_err)]
     impl<T: ?Sized + Send + Sync + 'static> DefinitionDraft<T> {
+        /// Stages a managed synchronous concrete factory and its requests.
+        pub fn new_managed_sync<F>(
+            source: DefinitionSource,
+            dependencies: &[Dependency],
+            options: BindingOptions,
+            factory: F,
+        ) -> Result<Self, RegistrationError>
+        where
+            F: FnOnce(BuildContext) -> Result<Managed<T>, FactoryError> + Send + 'static,
+        {
+            let (key, profile) = validate_options::<T>(&options, source)?;
+            validate_dependencies(dependencies, source)?;
+            let concrete = PendingBinding::managed_sync_factory(key, options.primary, options.order, factory);
+            Ok(Self {
+                definition: PendingDefinition::new(source, profile, dependencies.to_vec(), concrete),
+                marker: PhantomData,
+            })
+        }
+
+        /// Stages a managed asynchronous concrete factory without polling it.
+        pub fn new_managed_async<F>(
+            source: DefinitionSource,
+            dependencies: &[Dependency],
+            options: BindingOptions,
+            factory: F,
+        ) -> Result<Self, RegistrationError>
+        where
+            F: FnOnce(BuildContext) -> ManagedFactoryFuture<T> + Send + 'static,
+        {
+            let (key, profile) = validate_options::<T>(&options, source)?;
+            validate_dependencies(dependencies, source)?;
+            let concrete = PendingBinding::managed_async_factory(key, options.primary, options.order, factory);
+            Ok(Self {
+                definition: PendingDefinition::new(source, profile, dependencies.to_vec(), concrete),
+                marker: PhantomData,
+            })
+        }
+
+        /// Stages an already constructed managed concrete instance.
+        pub fn from_managed_instance(
+            source: DefinitionSource,
+            options: BindingOptions,
+            value: Managed<T>,
+        ) -> Result<Self, RegistrationError> {
+            let (key, profile) = validate_options::<T>(&options, source)?;
+            let concrete = PendingBinding::managed_instance(key, value, options.primary, options.order);
+            Ok(Self {
+                definition: PendingDefinition::new(source, profile, Vec::new(), concrete),
+                marker: PhantomData,
+            })
+        }
+
         /// Stages a synchronous concrete factory and its declared requests.
         ///
         /// IDs, profile and dependencies are checked before the factory is

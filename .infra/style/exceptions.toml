@@ -26,6 +26,11 @@ path = "src/options.rs"
 reason = "BindingOptions and DefinitionSource jointly describe registration metadata and its diagnostic provenance."
 
 [[exceptions]]
+rule = "multiple-public-types"
+path = "src/managed.rs"
+reason = "Managed, cleanup errors, and shutdown failures form one public opt-in component lifecycle contract."
+
+[[exceptions]]
 rule = "type-file-name"
 path = "src/builder.rs"
 reason = "The public builder module groups registration with validation and construction lifecycle while preserving its planned module path."

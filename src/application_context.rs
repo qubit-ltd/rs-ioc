@@ -15,6 +15,8 @@ use crate::builder::ContainerBuilder;
 use crate::error::ResolveError;
 use crate::key::BindingId;
 use crate::key::BindingKey;
+use crate::managed::CleanupJournal;
+use crate::managed::ShutdownError;
 use crate::options::DefinitionSource;
 use crate::store::InstanceStore;
 
@@ -53,6 +55,8 @@ pub struct ApplicationContext {
     store: InstanceStore,
     /// Active binding metadata used to resolve and order queries.
     bindings: Vec<BuiltBinding>,
+    /// Explicit lifecycle actions for managed concrete bindings.
+    cleanup: CleanupJournal,
 }
 
 impl ApplicationContext {
@@ -80,8 +84,32 @@ impl ApplicationContext {
     ///
     /// The caller must publish only bindings whose keys and erased values
     /// agree.
-    pub(crate) fn new(store: InstanceStore, bindings: Vec<BuiltBinding>) -> Self {
-        Self { store, bindings }
+    pub(crate) fn new(store: InstanceStore, bindings: Vec<BuiltBinding>, cleanup: CleanupJournal) -> Self {
+        let mut cleanup = cleanup;
+        cleanup.disarm_abort();
+        Self {
+            store,
+            bindings,
+            cleanup,
+        }
+    }
+
+    /// Stops managed components and waits for them in reverse construction
+    /// order.
+    ///
+    /// Stop actions are all attempted before any wait action. Every failure is
+    /// retained in the returned [`ShutdownError`]. Dropping the context without
+    /// calling this method does not stop components. Cloned component `Arc`s
+    /// may remain alive after shutdown completes.
+    pub async fn shutdown_async(mut self) -> Result<(), ShutdownError> {
+        let mut cleanup = std::mem::take(&mut self.cleanup);
+        let mut failures = cleanup.stop_reverse();
+        failures.extend(cleanup.wait_reverse().await);
+        if failures.is_empty() {
+            Ok(())
+        } else {
+            Err(ShutdownError { failures })
+        }
     }
 
     /// Returns the only `T`, or the unique primary when several exist.

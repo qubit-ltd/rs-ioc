@@ -29,6 +29,9 @@ use crate::graph::ResolvedDependency;
 use crate::graph::ValidatedGraph;
 use crate::key::BindingId;
 use crate::key::BindingKey;
+use crate::managed::CleanupJournal;
+use crate::managed::Managed;
+use crate::managed::ManagedFactoryFuture;
 use crate::options::BindingOptions;
 use crate::options::DefinitionSource;
 use crate::store::InstanceStore;
@@ -205,6 +208,28 @@ impl ContainerBuilder {
         self.stage_definition(PendingDefinition::new(source, profile, Vec::new(), binding))
     }
 
+    /// Stages a complete managed instance with default binding options.
+    #[track_caller]
+    pub fn register_managed_instance<T: ?Sized + Send + Sync + 'static>(
+        &mut self,
+        value: Managed<T>,
+    ) -> Result<(), RegistrationError> {
+        self.register_managed_instance_with(value, BindingOptions::default())
+    }
+
+    /// Stages a complete managed instance with binding options.
+    #[track_caller]
+    pub fn register_managed_instance_with<T: ?Sized + Send + Sync + 'static>(
+        &mut self,
+        value: Managed<T>,
+        options: BindingOptions,
+    ) -> Result<(), RegistrationError> {
+        let source = source::<T>();
+        let (key, profile) = validate_options::<T>(&options, source)?;
+        let binding = PendingBinding::managed_instance(key, value, options.primary, options.order);
+        self.stage_definition(PendingDefinition::new(source, profile, Vec::new(), binding))
+    }
+
     /// Stages a one-shot synchronous factory with default binding options.
     ///
     /// The factory receives only its declared requests during construction.
@@ -246,6 +271,39 @@ impl ContainerBuilder {
         let (key, profile) = validate_options::<T>(&options, source)?;
         validate_dependencies(dependencies, source)?;
         let binding = PendingBinding::sync_factory(key, options.primary, options.order, factory);
+        self.stage_definition(PendingDefinition::new(source, profile, dependencies.to_vec(), binding))
+    }
+
+    /// Stages a one-shot managed synchronous factory with default options.
+    #[track_caller]
+    pub fn register_managed_factory<T, F>(
+        &mut self,
+        dependencies: &[Dependency],
+        factory: F,
+    ) -> Result<(), RegistrationError>
+    where
+        T: ?Sized + Send + Sync + 'static,
+        F: FnOnce(BuildContext) -> Result<Managed<T>, FactoryError> + Send + 'static,
+    {
+        self.register_managed_factory_with(dependencies, BindingOptions::default(), factory)
+    }
+
+    /// Stages a one-shot managed synchronous factory with binding options.
+    #[track_caller]
+    pub fn register_managed_factory_with<T, F>(
+        &mut self,
+        dependencies: &[Dependency],
+        options: BindingOptions,
+        factory: F,
+    ) -> Result<(), RegistrationError>
+    where
+        T: ?Sized + Send + Sync + 'static,
+        F: FnOnce(BuildContext) -> Result<Managed<T>, FactoryError> + Send + 'static,
+    {
+        let source = source::<T>();
+        let (key, profile) = validate_options::<T>(&options, source)?;
+        validate_dependencies(dependencies, source)?;
+        let binding = PendingBinding::managed_sync_factory(key, options.primary, options.order, factory);
         self.stage_definition(PendingDefinition::new(source, profile, dependencies.to_vec(), binding))
     }
 
@@ -294,6 +352,39 @@ impl ContainerBuilder {
         let (key, profile) = validate_options::<T>(&options, source)?;
         validate_dependencies(dependencies, source)?;
         let binding = PendingBinding::async_factory(key, options.primary, options.order, factory);
+        self.stage_definition(PendingDefinition::new(source, profile, dependencies.to_vec(), binding))
+    }
+
+    /// Stages a managed asynchronous factory with default options.
+    #[track_caller]
+    pub fn register_managed_async_factory<T, F>(
+        &mut self,
+        dependencies: &[Dependency],
+        factory: F,
+    ) -> Result<(), RegistrationError>
+    where
+        T: ?Sized + Send + Sync + 'static,
+        F: FnOnce(BuildContext) -> ManagedFactoryFuture<T> + Send + 'static,
+    {
+        self.register_managed_async_factory_with(dependencies, BindingOptions::default(), factory)
+    }
+
+    /// Stages a managed asynchronous factory with binding options.
+    #[track_caller]
+    pub fn register_managed_async_factory_with<T, F>(
+        &mut self,
+        dependencies: &[Dependency],
+        options: BindingOptions,
+        factory: F,
+    ) -> Result<(), RegistrationError>
+    where
+        T: ?Sized + Send + Sync + 'static,
+        F: FnOnce(BuildContext) -> ManagedFactoryFuture<T> + Send + 'static,
+    {
+        let source = source::<T>();
+        let (key, profile) = validate_options::<T>(&options, source)?;
+        validate_dependencies(dependencies, source)?;
+        let binding = PendingBinding::managed_async_factory(key, options.primary, options.order, factory);
         self.stage_definition(PendingDefinition::new(source, profile, dependencies.to_vec(), binding))
     }
 
@@ -394,7 +485,10 @@ impl ContainerBuilder {
         for location in &graph.order {
             let definition = &graph.definitions[location.definition];
             let binding = &definition.bindings[location.binding];
-            if matches!(binding.kind, PendingBindingKind::AsyncFactory(_)) {
+            if matches!(
+                binding.kind,
+                PendingBindingKind::AsyncFactory(_) | PendingBindingKind::ManagedAsyncFactory(_)
+            ) {
                 return Err(BuildError::AsyncRequired {
                     definition: definition.source,
                     key: binding.key.clone(),
@@ -415,7 +509,10 @@ impl ContainerBuilder {
         for location in &graph.order {
             let definition = &graph.definitions[location.definition];
             let binding = &definition.bindings[location.binding];
-            if matches!(binding.kind, PendingBindingKind::AsyncFactory(_)) {
+            if matches!(
+                binding.kind,
+                PendingBindingKind::AsyncFactory(_) | PendingBindingKind::ManagedAsyncFactory(_)
+            ) {
                 return Err(BuildError::AsyncRequired {
                     definition: definition.source,
                     key: binding.key.clone(),
@@ -619,6 +716,8 @@ struct Construction {
     paths: HashMap<BindingKey, Vec<BindingKey>>,
     /// Lookup metadata published with the completed context.
     bindings: Vec<BuiltBinding>,
+    /// Cleanup actions for managed components constructed so far.
+    cleanup: CleanupJournal,
     /// Partially populated store, kept private until construction succeeds.
     store: InstanceStore,
 }
@@ -669,6 +768,7 @@ impl Construction {
             resolved: graph.resolved,
             paths,
             bindings,
+            cleanup: CleanupJournal::default(),
             store: InstanceStore::default(),
         }
     }
@@ -678,21 +778,41 @@ impl Construction {
     fn run_sync(mut self) -> Result<ApplicationContext, BuildError> {
         for location in std::mem::take(&mut self.order) {
             let (key, source, kind) = self.take_binding(location);
-            let value = match kind {
-                PendingBindingKind::Instance(value) => value,
+            let product = match kind {
+                PendingBindingKind::Instance(value) => Ok((value, None)),
+                PendingBindingKind::ManagedInstance(value, cleanup) => Ok((value, Some(cleanup))),
                 PendingBindingKind::SyncFactory(factory) => factory(self.build_context(location.definition))
-                    .map_err(|error| self.factory_error(&key, source, error))?,
-                PendingBindingKind::AsyncFactory(_) => {
-                    return Err(BuildError::AsyncRequired {
-                        definition: source,
-                        key,
-                    });
+                    .map(|value| (value, None))
+                    .map_err(|error| self.factory_error(&key, source, error)),
+                PendingBindingKind::ManagedSyncFactory(factory) => factory(self.build_context(location.definition))
+                    .map(|(value, cleanup)| (value, Some(cleanup)))
+                    .map_err(|error| self.factory_error(&key, source, error)),
+                PendingBindingKind::AsyncFactory(_) => Err(BuildError::AsyncRequired {
+                    definition: source,
+                    key: key.clone(),
+                }),
+                PendingBindingKind::ManagedAsyncFactory(_) => Err(BuildError::AsyncRequired {
+                    definition: source,
+                    key: key.clone(),
+                }),
+                PendingBindingKind::Alias { target, project } => {
+                    self.project(&key, source, &target, project).map(|value| (value, None))
                 }
-                PendingBindingKind::Alias { target, project } => self.project(&key, source, &target, project)?,
             };
+            let (value, cleanup) = match product {
+                Ok(product) => product,
+                Err(error) => return Err(self.stop_and_wrap(error)),
+            };
+            if let Some(cleanup) = cleanup {
+                self.cleanup.push(key.clone(), source, cleanup);
+            }
             self.insert(key, value);
         }
-        Ok(ApplicationContext::new(self.store, self.bindings))
+        Ok(ApplicationContext::new(
+            self.store,
+            self.bindings,
+            std::mem::take(&mut self.cleanup),
+        ))
     }
 
     /// Drives each async factory to completion before starting the next
@@ -700,18 +820,69 @@ impl Construction {
     async fn run_async(mut self) -> Result<ApplicationContext, BuildError> {
         for location in std::mem::take(&mut self.order) {
             let (key, source, kind) = self.take_binding(location);
-            let value = match kind {
-                PendingBindingKind::Instance(value) => value,
+            let product = match kind {
+                PendingBindingKind::Instance(value) => Ok((value, None)),
+                PendingBindingKind::ManagedInstance(value, cleanup) => Ok((value, Some(cleanup))),
                 PendingBindingKind::SyncFactory(factory) => factory(self.build_context(location.definition))
-                    .map_err(|error| self.factory_error(&key, source, error))?,
+                    .map(|value| (value, None))
+                    .map_err(|error| self.factory_error(&key, source, error)),
                 PendingBindingKind::AsyncFactory(factory) => factory(self.build_context(location.definition))
                     .await
-                    .map_err(|error| self.factory_error(&key, source, error))?,
-                PendingBindingKind::Alias { target, project } => self.project(&key, source, &target, project)?,
+                    .map(|value| (value, None))
+                    .map_err(|error| self.factory_error(&key, source, error)),
+                PendingBindingKind::ManagedSyncFactory(factory) => factory(self.build_context(location.definition))
+                    .map(|(value, cleanup)| (value, Some(cleanup)))
+                    .map_err(|error| self.factory_error(&key, source, error)),
+                PendingBindingKind::ManagedAsyncFactory(factory) => factory(self.build_context(location.definition))
+                    .await
+                    .map(|(value, cleanup)| (value, Some(cleanup)))
+                    .map_err(|error| self.factory_error(&key, source, error)),
+                PendingBindingKind::Alias { target, project } => {
+                    self.project(&key, source, &target, project).map(|value| (value, None))
+                }
             };
+            let (value, cleanup) = match product {
+                Ok(product) => product,
+                Err(error) => return Err(self.cleanup_and_wrap(error).await),
+            };
+            if let Some(cleanup) = cleanup {
+                self.cleanup.push(key.clone(), source, cleanup);
+            }
             self.insert(key, value);
         }
-        Ok(ApplicationContext::new(self.store, self.bindings))
+        Ok(ApplicationContext::new(
+            self.store,
+            self.bindings,
+            std::mem::take(&mut self.cleanup),
+        ))
+    }
+
+    /// Stops built managed components after a synchronous construction failure.
+    fn stop_and_wrap(&mut self, cause: BuildError) -> BuildError {
+        let failures = self.cleanup.stop_reverse();
+        if failures.is_empty() {
+            cause
+        } else {
+            BuildError::CleanupFailed {
+                cause: Box::new(cause),
+                failures,
+            }
+        }
+    }
+
+    /// Stops and waits for built managed components after an asynchronous
+    /// failure.
+    async fn cleanup_and_wrap(&mut self, cause: BuildError) -> BuildError {
+        let mut failures = self.cleanup.stop_reverse();
+        failures.extend(self.cleanup.wait_reverse().await);
+        if failures.is_empty() {
+            cause
+        } else {
+            BuildError::CleanupFailed {
+                cause: Box::new(cause),
+                failures,
+            }
+        }
     }
 
     /// Takes the one-shot action for a graph location without changing its
@@ -829,14 +1000,7 @@ fn paths_to_all(
                 continue;
             }
             if !targets.contains(&binding.key) {
-                trace_paths(
-                    &binding.key,
-                    definitions,
-                    resolved,
-                    &locations,
-                    &mut Vec::new(),
-                    &mut paths,
-                );
+                trace_paths(&binding.key, definitions, resolved, &locations, &mut paths);
             }
         }
     }
@@ -849,14 +1013,7 @@ fn paths_to_all(
                 continue;
             }
             if !paths.contains_key(&binding.key) {
-                trace_paths(
-                    &binding.key,
-                    definitions,
-                    resolved,
-                    &locations,
-                    &mut Vec::new(),
-                    &mut paths,
-                );
+                trace_paths(&binding.key, definitions, resolved, &locations, &mut paths);
             }
         }
     }
@@ -869,28 +1026,48 @@ fn trace_paths(
     definitions: &[PendingDefinition],
     resolved: &[Vec<ResolvedDependency>],
     locations: &HashMap<BindingKey, BindingLocation>,
-    path: &mut Vec<BindingKey>,
     paths: &mut HashMap<BindingKey, Vec<BindingKey>>,
 ) {
     if paths.contains_key(key) {
         return;
     }
-    path.push(key.clone());
-    paths.insert(key.clone(), path.clone());
-    let location = locations.get(key).expect("selected path key must have a binding");
-    let definition_index = location.definition;
-    let binding = &definitions[definition_index].bindings[location.binding];
-    match &binding.kind {
-        PendingBindingKind::Alias { target, .. } => {
-            trace_paths(target, definitions, resolved, locations, path, paths);
+    let mut stack = vec![(key.clone(), None::<Vec<BindingKey>>, 0usize)];
+    while !stack.is_empty() {
+        let frame_index = stack.len() - 1;
+        let current = stack[frame_index].0.clone();
+        if paths.contains_key(&current) {
+            stack.pop();
+            continue;
         }
-        _ => {
-            for dependency in &resolved[definition_index] {
-                for target in &dependency.keys {
-                    trace_paths(target, definitions, resolved, locations, path, paths);
-                }
+        if stack[frame_index].1.is_none() {
+            let mut current_path = stack
+                .get(frame_index.checked_sub(1).unwrap_or(usize::MAX))
+                .and_then(|(parent, _, _)| paths.get(parent))
+                .cloned()
+                .unwrap_or_default();
+            current_path.push(current.clone());
+            paths.insert(current.clone(), current_path);
+            let location = locations.get(&current).expect("selected path key must have a binding");
+            let definition_index = location.definition;
+            let binding = &definitions[definition_index].bindings[location.binding];
+            let targets = match &binding.kind {
+                PendingBindingKind::Alias { target, .. } => vec![target.clone()],
+                _ => resolved[definition_index]
+                    .iter()
+                    .flat_map(|dependency| dependency.keys.iter().cloned())
+                    .collect(),
+            };
+            stack[frame_index].1 = Some(targets);
+        }
+        let targets = stack[frame_index].1.as_ref().expect("targets initialized");
+        if stack[frame_index].2 < targets.len() {
+            let target = targets[stack[frame_index].2].clone();
+            stack[frame_index].2 += 1;
+            if !paths.contains_key(&target) {
+                stack.push((target, None, 0));
             }
+        } else {
+            stack.pop();
         }
     }
-    path.pop();
 }

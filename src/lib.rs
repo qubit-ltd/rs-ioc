@@ -19,6 +19,7 @@ pub mod discovery;
 pub mod error;
 mod graph;
 pub mod key;
+pub mod managed;
 pub mod options;
 mod store;
 
@@ -43,6 +44,12 @@ pub use error::RegistrationError;
 pub use error::ResolveError;
 pub use key::BindingId;
 pub use key::BindingKey;
+pub use managed::CleanupError;
+pub use managed::Managed;
+pub use managed::ManagedFactoryFuture;
+pub use managed::ShutdownError;
+pub use managed::ShutdownFailure;
+pub use managed::ShutdownPhase;
 pub use options::BindingOptions;
 pub use options::DefinitionSource;
 #[cfg(feature = "macros")]

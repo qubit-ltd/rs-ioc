@@ -158,14 +158,45 @@ at registration, or it receives `BuildAccessError::UndeclaredDependency`.
 ## Lifetime and limits
 
 The context stores shared `Arc` instances and does not rerun factories on
-lookup. Components own synchronization of their mutable state. Releasing the
-context does not force resources to close while other `Arc` handles remain;
-call application shutdown methods explicitly. Cancelling an asynchronous
-build stops unstarted factories but does not undo completed external effects.
-Factory panics propagate as Rust panics.
+lookup. Components own synchronization of their mutable state. Resource
+components can opt in to managed shutdown with `Managed<T>`:
 
-There are no prototype or request scopes, hot reload, lifecycle hooks,
-circular proxies, or dynamic-library discovery. Struct macros support named
+```rust
+use std::sync::Arc;
+use qubit_ioc::{CleanupError, ContainerBuilder, Managed};
+
+struct Worker;
+impl Worker { fn request_stop(&self) -> Result<(), std::io::Error> { Ok(()) } }
+
+let mut builder = ContainerBuilder::new();
+builder.register_managed_factory::<Worker, _>(&[], |_| {
+    let worker = Arc::new(Worker);
+    Ok(Managed::new(Arc::clone(&worker), |worker| {
+        worker.request_stop().map_err(CleanupError::new)
+    }))
+})?;
+builder.root::<Worker>();
+let context = builder.build()?;
+context.shutdown_async().await?;
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+`Managed::new` provides a synchronous stop request; `.with_wait` can add an
+asynchronous termination wait. `shutdown_async(self)` calls all stop actions
+in reverse construction order, then awaits all waits in that same order, and
+returns every failure. A failed build also stops completed managed resources;
+an asynchronous factory error awaits their waits and preserves cleanup errors
+alongside the original build error. Cancelling an asynchronous build calls
+stop without waiting, because the caller no longer has a future to receive
+errors from. Effects created inside a factory before it returns `Managed<T>`
+remain the factory's responsibility.
+
+Dropping the context does not stop resources. External `Arc` clones can keep a
+value alive after `shutdown_async`; shutdown requests termination but cannot
+revoke those clones. Factory panics propagate as Rust panics.
+
+There are no prototype or request scopes, hot reload, automatic lifecycle
+management for unmanaged components, circular proxies, or dynamic-library discovery. Struct macros support named
 fields and unit structs; use a manual factory for other shapes. Runtime
 reflection does not construct components. `qubit-spi` handles provider
 selection and fallback separately.

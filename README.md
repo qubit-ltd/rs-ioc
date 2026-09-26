@@ -125,8 +125,10 @@ This fixture verifies the cross-crate contract and does not claim production ado
 ## Limitations
 
 The container provides application-wide shared instances. It does not provide
-prototype or request scopes, hot reload, lifecycle hooks, circular proxies, or
-dynamic-library discovery. Struct macros support named-field and unit structs;
+prototype or request scopes, hot reload, automatic lifecycle management for
+unmanaged components, circular proxies, or dynamic-library discovery. Managed
+factories can opt into explicit stop and wait actions through `Managed<T>` and
+`ApplicationContext::shutdown_async`. Struct macros support named-field and unit structs;
 other shapes can use manual factories. Runtime reflection is not used to
 construct components. `qubit-spi` remains responsible for provider selection
 and fallback; its registry or a selected service can be registered as a normal

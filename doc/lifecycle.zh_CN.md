@@ -1,6 +1,6 @@
 # 应用组件生命周期
 
-`rs-ioc` 负责创建共享组件和解析依赖，不会在容器释放时自动调用领域组件的关闭方法。应用应保存需要关闭的组件句柄，并根据各服务的关闭契约显式编排关闭。
+`rs-ioc` 负责创建共享组件和解析依赖。生命周期管理是显式 opt-in：托管定义在构建成功后由上下文持有关闭动作，普通定义仍由应用自行关闭。
 
 ```rust
 let mut builder = ApplicationContext::builder().discover()?;
@@ -13,8 +13,8 @@ service.start().await?;
 service.shutdown().await?;
 ```
 
-下游消费者夹具展示了真实的 `qubit-event-bus` 与 `qubit-execution-services` 调用：先执行 `EventBus::shutdown(ShutdownMode::Immediate)?`，再调用 `ExecutionServices::shutdown()` 并等待 `await_termination().await`。Tokio runtime 必须保持运行直到执行服务终止。`TaskExecutionService::shutdown().await` 是异步关闭并返回 `Result`。应用需要自行持有服务句柄并按依赖关系安排顺序；克隆出的 `Arc` 可能延长对象存活时间，因此释放 `Arc` 不是关闭协议。该夹具位于 `rs-execution-services/tests/fixtures/ioc_application_consumer`，是下游契约示例，不表示已有生产应用采用。
+托管组件先同步请求 stop，再按逆构建顺序异步 wait；所有 stop 先完成后才开始 wait。错误会按执行顺序聚合，异步构建失败保留原始构建错误与清理错误。Tokio runtime 必须保持运行直到执行服务终止。`shutdown_async(self)` 消费上下文；外部 `Arc` 克隆仍可能延长值的存活时间。下游消费者夹具位于 `rs-execution-services/tests/fixtures/ioc_application_consumer`，展示 EventBus 与 ExecutionServices 的托管关闭调用，不表示已有生产应用采用。
 
-`build_async` 被取消或工厂返回错误时，容器不会撤销已经产生的外部副作用。会在工厂中启动任务或线程的组件，应由应用建立独立关闭路径，或在工厂中使用 RAII/取消守卫。容器只保证失败时不会发布部分 `ApplicationContext`。
+异步构建被取消时，已成功构造的托管组件会收到 stop 请求，但不会等待；stop 错误无法交还给已取消的调用方。工厂在返回 `Managed<T>` 前产生的副作用仍由工厂负责清理。普通上下文 drop 不自动停止托管资源，应用需显式调用 `shutdown_async`。
 
 可运行的最小示例见 `cargo run --example app_lifecycle`；跨库装配和关闭流程见上述消费者夹具。

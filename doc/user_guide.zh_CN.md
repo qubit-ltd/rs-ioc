@@ -140,12 +140,40 @@ fn replace_for_test() -> Result<(), Box<dyn Error>> {
 
 ## 生命周期与限制
 
-上下文保存共享 `Arc`，查询不会再次执行工厂。组件内部可变状态的同步由组件自己
-负责。只要外部还持有 `Arc`，丢弃上下文就不能保证资源关闭；应用应显式调用组件
-的关闭方法。取消异步构建会停止尚未启动的工厂，但不会撤销已经发生的外部副作用。
-工厂 panic 会按 Rust 机制传播。
+上下文保存共享 `Arc`，查询不会再次执行工厂。需要关闭的资源组件可显式选择
+`Managed<T>`：
 
-当前不提供原型或请求作用域、热更新、生命周期钩子、循环代理和动态库发现。
+```rust
+use std::sync::Arc;
+use qubit_ioc::{CleanupError, ContainerBuilder, Managed};
+
+struct Worker;
+impl Worker { fn request_stop(&self) -> Result<(), std::io::Error> { Ok(()) } }
+
+let mut builder = ContainerBuilder::new();
+builder.register_managed_factory::<Worker, _>(&[], |_| {
+    let worker = Arc::new(Worker);
+    Ok(Managed::new(Arc::clone(&worker), |worker| {
+        worker.request_stop().map_err(CleanupError::new)
+    }))
+})?;
+builder.root::<Worker>();
+let context = builder.build()?;
+context.shutdown_async().await?;
+# Ok::<(), Box<dyn std::error::Error>>(())
+```
+
+`Managed::new` 接收同步 stop 请求，`.with_wait` 可添加异步终止等待。
+`shutdown_async(self)` 按实际构建顺序的逆序调用所有 stop，再按同一顺序等待，
+并返回所有清理错误。构建失败会停止已经完成的托管资源；异步构建错误还会等待，
+并把清理错误与原始构建错误一起保留。异步构建 future 被取消时只调用 stop，
+不等待；此时调用方已无法接收清理错误。工厂在返回 `Managed<T>` 前产生的副作用
+由工厂自身负责收尾。
+
+普通释放上下文不会自动停止资源。外部持有的 `Arc` 可使对象在
+`shutdown_async` 后继续存活；关闭动作不能撤销这些克隆。工厂 panic 按 Rust 机制传播。
+
+当前不提供原型或请求作用域、热更新、未托管组件的自动生命周期管理、循环代理和动态库发现。
 结构体宏支持具名字段和单元结构体；其他形状可使用手动工厂。组件构造不使用运行时
 反射。provider 的选择和回退由 `qubit-spi` 另行负责。
 

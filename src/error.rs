@@ -15,6 +15,7 @@ use thiserror::Error;
 
 use crate::dependency::Dependency;
 use crate::key::BindingKey;
+use crate::managed::ShutdownFailure;
 use crate::options::DefinitionSource;
 
 /// An ID that does not match the binding identifier grammar.
@@ -243,6 +244,16 @@ pub enum RegistrationError {
 /// ```
 #[derive(Debug, Error)]
 pub enum BuildError {
+    /// A factory failed and one or more managed components also failed to clean
+    /// up.
+    #[error("build failed: {cause}; cleanup failures: {failures:?}")]
+    CleanupFailed {
+        /// Original graph or factory construction failure.
+        #[source]
+        cause: Box<BuildError>,
+        /// Stop or wait failures collected while unwinding the build.
+        failures: Vec<ShutdownFailure>,
+    },
     /// A root-scoped build was requested without selecting a root component.
     #[error("no build roots were selected; register at least one root or call build_all")]
     NoRootsSelected,
