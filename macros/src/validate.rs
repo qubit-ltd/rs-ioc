@@ -290,16 +290,32 @@ fn classify_dependency(ty: &Type) -> syn::Result<(DependencyKind, Type)> {
     ))
 }
 
-/// Returns the single type argument of an unqualified generic path, when exact.
+/// Returns the single type argument of a supported standard generic path.
 fn single_generic<'a>(ty: &'a Type, name: &str) -> Option<&'a Type> {
     let Type::Path(path) = ty else { return None };
-    if path.qself.is_some() || path.path.leading_colon.is_some() || path.path.segments.len() != 1 {
+    if path.qself.is_some() {
         return None;
     }
-    let segment = path.path.segments.first()?;
-    if segment.ident != name {
+
+    let segments = path
+        .path
+        .segments
+        .iter()
+        .map(|segment| segment.ident.to_string())
+        .collect::<Vec<_>>();
+    let supported_paths: &[&[&str]] = match name {
+        "Arc" => &[&["Arc"], &["std", "sync", "Arc"], &["alloc", "sync", "Arc"]],
+        "Option" => &[&["Option"], &["std", "option", "Option"], &["core", "option", "Option"]],
+        "Vec" => &[&["Vec"], &["std", "vec", "Vec"], &["alloc", "vec", "Vec"]],
+        _ => &[],
+    };
+    if !supported_paths
+        .iter()
+        .any(|candidate| segments.iter().map(String::as_str).eq(candidate.iter().copied()))
+    {
         return None;
     }
+    let segment = path.path.segments.last()?;
     let PathArguments::AngleBracketed(args) = &segment.arguments else {
         return None;
     };

@@ -1,0 +1,5 @@
+error: unsupported injection type; expected `Arc<T>`, `Option<Arc<T>>`, or `Vec<Arc<T>>`
+  --> tests/ui/component/invalid_box.rs:16:17
+   |
+16 |     dependency: company::Arc<String>,
+   |                 ^^^^^^^

@@ -80,6 +80,16 @@ struct OptionalConsumer {
 }
 
 #[Component]
+struct QualifiedDependency;
+
+#[Service]
+struct QualifiedConsumer {
+    required: std::sync::Arc<QualifiedDependency>,
+    optional: ::std::option::Option<::std::sync::Arc<QualifiedDependency>>,
+    all: ::std::vec::Vec<std::sync::Arc<QualifiedDependency>>,
+}
+
+#[Component]
 struct PrivateFields {
     dependency: Arc<Alpha>,
 }
@@ -151,6 +161,19 @@ fn test_component_macro_handles_optional_and_empty_collection() {
     let consumer = context.get::<OptionalConsumer>().expect("get optional consumer");
     assert!(consumer.absent.is_none());
     assert!(consumer.all_absent.is_empty());
+}
+
+#[test]
+fn test_component_macro_accepts_standard_qualified_wrapper_paths() {
+    let mut builder = ContainerBuilder::new();
+    builder.install::<QualifiedDependency>().expect("install dependency");
+    builder.install::<QualifiedConsumer>().expect("install consumer");
+    builder.root::<QualifiedConsumer>();
+    let context = builder.build().expect("build qualified consumer");
+    let consumer = context.get::<QualifiedConsumer>().expect("get consumer");
+    assert!(Arc::ptr_eq(&consumer.required, consumer.optional.as_ref().unwrap()));
+    assert_eq!(consumer.all.len(), 1);
+    assert!(Arc::ptr_eq(&consumer.required, &consumer.all[0]));
 }
 
 #[test]

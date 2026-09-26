@@ -48,6 +48,65 @@ fn test_component_accepts_id_and_repeated_bind() {
 }
 
 #[test]
+fn test_component_recognizes_standard_qualified_injection_wrappers() {
+    let parsed = declaration(
+        MacroKind::Service,
+        quote!(),
+        quote!(
+            struct Consumer {
+                required: std::sync::Arc<Repository>,
+                optional: ::std::option::Option<::std::sync::Arc<Repository>>,
+                all: ::std::vec::Vec<std::sync::Arc<Repository>>,
+            }
+        ),
+    )
+    .expect("standard qualified wrapper paths should parse");
+    let Declaration::Component(component) = parsed else {
+        panic!("service should normalize into a component declaration");
+    };
+    assert!(matches!(&component.fields[0].dependency.kind, DependencyKind::Required));
+    assert!(matches!(&component.fields[1].dependency.kind, DependencyKind::Optional));
+    assert!(matches!(&component.fields[2].dependency.kind, DependencyKind::All));
+}
+
+#[test]
+fn test_component_recognizes_alloc_and_core_injection_paths() {
+    let parsed = declaration(
+        MacroKind::Service,
+        quote!(),
+        quote!(
+            struct Consumer {
+                required: alloc::sync::Arc<Repository>,
+                optional: core::option::Option<alloc::sync::Arc<Repository>>,
+                all: alloc::vec::Vec<alloc::sync::Arc<Repository>>,
+            }
+        ),
+    )
+    .expect("alloc and core wrapper paths should parse");
+    let Declaration::Component(component) = parsed else {
+        panic!("service should normalize into a component declaration");
+    };
+    assert!(matches!(&component.fields[0].dependency.kind, DependencyKind::Required));
+    assert!(matches!(&component.fields[1].dependency.kind, DependencyKind::Optional));
+    assert!(matches!(&component.fields[2].dependency.kind, DependencyKind::All));
+}
+
+#[test]
+fn test_component_rejects_unrecognized_qualified_wrapper_path() {
+    let error = declaration(
+        MacroKind::Service,
+        quote!(),
+        quote!(
+            struct Consumer {
+                required: company::Arc<Repository>,
+            }
+        ),
+    )
+    .expect_err("custom Arc paths are not assumed to be std Arc");
+    assert!(error.to_string().contains("unsupported injection type"));
+}
+
+#[test]
 fn test_bean_accepts_marker_and_result_arc_output() {
     let parsed = declaration(
         MacroKind::Bean,
