@@ -111,7 +111,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 不适合用宏或静态发现时，可手动注册。构建根节点、profile、候选选择、错误处理和
 关闭责任详见[用户手册](doc/user_guide.zh_CN.md)。下游应用装配示例见
-[`rs-execution-services` 消费者夹具](../rs-execution-services/tests/fixtures/ioc_application_consumer/README.md)。
+[`rs-execution-services` 消费者夹具](https://github.com/qubit-ltd/rs-execution-services/blob/main/tests/fixtures/ioc_application_consumer/README.md)。
 在 `rs-execution-services` 仓库根目录运行
 `cargo run --manifest-path tests/fixtures/ioc_application_consumer/Cargo.toml`。
 该夹具用于验证跨 crate 契约，不代表已有生产应用采用。

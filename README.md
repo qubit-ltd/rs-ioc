@@ -117,7 +117,7 @@ Use explicit registration when macros or linked discovery do not fit the
 application. See the [user guide](doc/user_guide.md) for roots, profiles,
 selection rules, error handling, and shutdown responsibilities.
 An independent downstream assembly example is maintained in the
-[`rs-execution-services` consumer fixture](../rs-execution-services/tests/fixtures/ioc_application_consumer/README.md).
+[`rs-execution-services` consumer fixture](https://github.com/qubit-ltd/rs-execution-services/blob/main/tests/fixtures/ioc_application_consumer/README.md).
 From the `rs-execution-services` checkout, run it with
 `cargo run --manifest-path tests/fixtures/ioc_application_consumer/Cargo.toml`.
 This fixture verifies the cross-crate contract and does not claim production adoption.
