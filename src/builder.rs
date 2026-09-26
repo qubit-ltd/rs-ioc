@@ -327,11 +327,10 @@ impl ContainerBuilder {
     /// builder unchanged. It must declare `key` exactly once. At build time,
     /// the matching active binding from earlier definitions is removed after
     /// profile filtering; their other keys remain. Later duplicates still fail.
-    pub fn replace_binding(
-        &mut self,
-        key: BindingKey,
-        definition: fn(&mut Self) -> Result<(), RegistrationError>,
-    ) -> Result<(), RegistrationError> {
+    pub fn replace_binding<F>(&mut self, key: BindingKey, definition: F) -> Result<(), RegistrationError>
+    where
+        F: FnOnce(&mut Self) -> Result<(), RegistrationError>,
+    {
         let mut draft = Self::new();
         definition(&mut draft)?;
         let matches: Vec<_> = draft

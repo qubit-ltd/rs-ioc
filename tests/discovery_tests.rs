@@ -304,6 +304,43 @@ fn test_replace_binding_changes_only_the_selected_interface_key() {
 
 #[test]
 #[allow(clippy::result_large_err)]
+fn captured_replacement_uses_runtime_value() {
+    let original = Arc::new(7_u64);
+    let replacement = Arc::new(17_u64);
+    let mut builder = ContainerBuilder::new();
+    builder.register_instance(Arc::clone(&original)).unwrap();
+    let captured = Arc::clone(&replacement);
+    builder
+        .replace_binding(BindingKey::of::<u64>(None), move |draft| {
+            draft.register_instance(captured)
+        })
+        .unwrap();
+    let context = builder.build_all().unwrap();
+    assert!(Arc::ptr_eq(&context.get::<u64>().unwrap(), &replacement));
+}
+
+#[test]
+#[allow(clippy::result_large_err)]
+fn captured_replacement_error_leaves_builder_unchanged() {
+    let original = Arc::new(7_u64);
+    let mut builder = ContainerBuilder::new();
+    builder.register_instance(Arc::clone(&original)).unwrap();
+    let key = BindingKey::of::<u64>(None);
+    let error_key = key.clone();
+    let captured = Arc::new(19_u64);
+    let error = builder
+        .replace_binding(key, move |draft| {
+            draft.register_instance(captured)?;
+            Err(RegistrationError::ReplacementTargetMissing { key: error_key })
+        })
+        .unwrap_err();
+    assert!(matches!(error, RegistrationError::ReplacementTargetMissing { .. }));
+    let context = builder.build_all().unwrap();
+    assert!(Arc::ptr_eq(&context.get::<u64>().unwrap(), &original));
+}
+
+#[test]
+#[allow(clippy::result_large_err)]
 fn test_replacing_concrete_binding_rejects_its_stale_alias_before_factory() {
     let _guard = TEST_LOCK.lock().expect("test mutex");
     let mut builder = ContainerBuilder::new().discover().expect("discover source component");
