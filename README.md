@@ -7,27 +7,20 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![中文文档](https://img.shields.io/badge/文档-中文版-blue.svg)](README.zh_CN.md)
 
-`qubit-ioc` assembles shared Rust components at application startup. It checks
-the full dependency graph before invoking factories, then publishes a read-only
-`ApplicationContext`. Attribute macros offer a declarative entry point; the
-same container also supports explicit registration.
-
-## Intended users
-
-Rust application authors who want constructor-style injection, explicit trait
-bindings, and predictable startup errors across crates.
+`qubit-ioc` helps Rust application authors assemble shared components across
+crates at startup. It validates dependencies before running factories, so a
+missing or ambiguous service fails during startup instead of a later request.
+Successful construction publishes a read-only `ApplicationContext`; applications
+can use attribute macros or explicit registration.
 
 ## Installation
 
-This repository currently builds as version `0.1.0`; it has not been published
-to crates.io. For a source checkout, use a path dependency:
+This source checkout builds version `0.1.0`. Add it as a path dependency:
 
 ```toml
 [dependencies]
 qubit-ioc = { version = "0.1", path = "../rs-ioc" }
 ```
-
-After publication, replace the path with `qubit-ioc = "0.1"`.
 
 The default features are `macros`, `inventory`, and `config`. To use only the
 manual runtime, set `default-features = false`:
@@ -43,11 +36,12 @@ qubit-ioc = { version = "0.1", path = "../rs-ioc", default-features = false }
 | `config` | Yes | Register a `qubit-config` snapshot and use `#[value]` or `#[ConfigurationProperties]`. |
 | `reflect` | No | Reserved for optional metadata integration; currently adds no construction behavior. |
 
-## Declarative assembly
+## Quick start: assemble a greeting service
 
-Declare a concrete component and explicitly bind it to a trait. A service can
-then request `Arc<dyn Trait>` by type. The macro cannot infer the trait binding
-from a separate `impl` block, so `bind = dyn Greeting` is required.
+Suppose a service needs a greeting implementation from another crate. Declare
+the concrete component and bind it to the trait, then select the service as a
+build root. The macro cannot infer the trait binding from a separate `impl`
+block, so `bind = dyn Greeting` is required.
 
 ```rust
 use std::sync::Arc;
@@ -72,19 +66,23 @@ struct Greeter {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut builder = ApplicationContext::builder().discover()?;
     builder.root::<Greeter>();
-    builder.root::<usize>();
     let context = builder.build()?;
     assert_eq!(context.get::<Greeter>()?.greeting.text(), "hello");
     Ok(())
 }
 ```
 
+The assertion observes the selected implementation. The builder checks the
+selected service's dependency graph before constructing either component.
+
+## What it provides
+
 For exact selection, use `#[inject(id = "...")]` on an `Arc<T>` field or bean
 parameter. `Option<Arc<T>>` and `Vec<Arc<T>>` express optional and all-candidate
 requests. `#[bean]` supports synchronous and asynchronous free functions;
 asynchronous definitions require `build_async()`.
 
-## Manual assembly
+### Manual assembly
 
 Explicit instances and factories work with `default-features = false`:
 
@@ -111,6 +109,10 @@ dot-separated ASCII segments such as `example.greeting.english`; each segment
 starts with a letter and continues with letters, digits, or underscores. An
 unnamed request selects a sole candidate or a unique `primary` binding.
 
+Use explicit registration when macros or linked discovery do not fit the
+application. See the [user guide](doc/user_guide.md) for roots, profiles,
+selection rules, error handling, and shutdown responsibilities.
+
 ## Limitations
 
 The container provides application-wide shared instances. It does not provide
@@ -121,6 +123,12 @@ construct components. `qubit-spi` remains responsible for provider selection
 and fallback; its registry or a selected service can be registered as a normal
 IoC component. See [the complete design](doc/complete-design.zh_CN.md) for the
 full API and diagnostic rules.
+
+## Learn more
+
+Follow the [English user guide](doc/user_guide.md) or
+[中文用户手册](doc/user_guide.zh_CN.md) for setup, selection, errors, and shutdown.
+Run `cargo doc --no-deps --open` in this checkout to browse the public API.
 
 ## Testing
 

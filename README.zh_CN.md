@@ -7,24 +7,20 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![English Document](https://img.shields.io/badge/Document-English-blue.svg)](README.md)
 
-`qubit-ioc` 在应用启动时组装并共享 Rust 组件。容器先验证完整依赖图，再执行工厂，
-成功后提供只读的 `ApplicationContext`。既可以用过程宏声明组件，也可以显式注册。
-
-## 适用对象
-
-需要跨 crate 组装组件、显式绑定 trait，并在启动阶段得到明确依赖错误的 Rust 开发者。
+`qubit-ioc` 帮助 Rust 应用开发者在启动时组装跨 crate 的共享组件。它先验证依赖，
+再执行工厂，让缺失或歧义的服务在启动阶段暴露，而不是留到请求处理时。构建成功后
+可通过只读的 `ApplicationContext` 获取组件；既能用过程宏声明，也能手动注册。
 
 ## 安装
 
-当前源码版本是 `0.1.0`，尚未发布到 crates.io。在本地源码工作区中可使用路径依赖：
+当前源码版本是 `0.1.0`。在本地源码工作区中可使用路径依赖：
 
 ```toml
 [dependencies]
 qubit-ioc = { version = "0.1", path = "../rs-ioc" }
 ```
 
-发布后可将路径改为 `qubit-ioc = "0.1"`。默认启用 `macros`、`inventory` 和 `config`；
-只使用手动注册时可关闭默认 feature：
+默认启用 `macros`、`inventory` 和 `config`；只使用手动注册时可关闭默认 feature：
 
 ```toml
 qubit-ioc = { version = "0.1", path = "../rs-ioc", default-features = false }
@@ -37,9 +33,10 @@ qubit-ioc = { version = "0.1", path = "../rs-ioc", default-features = false }
 | `config` | 开 | 注册 `qubit-config` 快照，并使用 `#[value]`、`#[ConfigurationProperties]`。 |
 | `reflect` | 关 | 预留可选元数据集成；当前不会改变组件构造行为。 |
 
-## 声明式组装
+## 快速开始：组装问候服务
 
-先声明具体组件及其 trait 绑定，再让服务通过 `Arc<dyn Trait>` 请求依赖。
+假设应用需要跨 crate 注入问候服务。先声明具体组件及其 trait 绑定，再让服务通过
+`Arc<dyn Trait>` 请求依赖，并把服务选为构建根节点。
 由于 trait 的 `impl` 位于独立语法项，组件宏不会自动枚举它，因此需要写明
 `bind = dyn Greeting`。
 
@@ -66,18 +63,21 @@ struct Greeter {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut builder = ApplicationContext::builder().discover()?;
     builder.root::<Greeter>();
-    builder.root::<usize>();
     let context = builder.build()?;
     assert_eq!(context.get::<Greeter>()?.greeting.text(), "hello");
     Ok(())
 }
 ```
 
+断言能观察到选中的实现。构建器会在创建组件前验证该服务的依赖链。
+
+## 核心能力
+
 字段和 bean 参数可使用 `#[inject(id = "...")]` 精确选择绑定；
 `Option<Arc<T>>` 表示可缺省，`Vec<Arc<T>>` 注入全部候选。`#[bean]` 可标注同步或
 异步自由函数；图中含异步工厂时须调用 `build_async()`。
 
-## 手动组装
+### 手动组装
 
 关闭默认 feature 后，仍可直接注册实例和工厂：
 
@@ -92,6 +92,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let message = context.get::<String>().expect("declared dependency");
         Ok(Arc::new(message.len()))
     })?;
+    builder.root::<usize>();
     let context = builder.build()?;
     assert_eq!(*context.get::<usize>()?, 5);
     Ok(())
@@ -102,6 +103,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 以点分隔的 ASCII 段；每段以字母开头，后续可包含字母、数字或下划线。未指定 ID 的
 请求会选择唯一候选，或多个候选中唯一标记为 `primary` 的绑定。
 
+不适合用宏或静态发现时，可手动注册。构建根节点、profile、候选选择、错误处理和
+关闭责任详见[用户手册](doc/user_guide.zh_CN.md)。
+
 ## 限制
 
 当前只提供应用级共享实例，不提供原型或请求作用域、热更新、生命周期钩子、
@@ -109,6 +113,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 组件构造不依赖运行时反射。`qubit-spi` 继续负责 provider 的选择和回退；其注册表或
 选中的服务可作为普通 IoC 组件注册。完整 API 与诊断规则见
 [完整设计文档](doc/complete-design.zh_CN.md)。
+
+## 延伸阅读
+
+按[中文用户手册](doc/user_guide.zh_CN.md)或[English user guide](doc/user_guide.md)
+完成安装、构建、诊断和关闭流程。在源码目录运行 `cargo doc --no-deps --open`
+可查看公开 API 文档。
 
 ## 测试
 
