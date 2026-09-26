@@ -31,7 +31,7 @@ fn fixture_config() -> Config {
 fn test_linked_crates_discover_aliases_and_share_component_identity() {
     let context = discover(fixture_config(), &[])
         .expect("discover linked provider crate")
-        .build()
+        .build_all()
         .expect("build cross-crate graph");
     let service = context.get::<AppService>().expect("service from linked provider");
     let memory = context
@@ -62,7 +62,7 @@ fn test_linked_crates_discover_aliases_and_share_component_identity() {
 fn test_linked_crates_respect_explicit_profiles() {
     let context = discover(fixture_config(), &["default", "preview"])
         .expect("discover with both profiles")
-        .build()
+        .build_all()
         .expect("build both profiles");
     assert!(context.get::<PreviewMarker>().is_ok());
     assert!(context.get::<AppService>().is_ok());
@@ -72,7 +72,7 @@ fn test_linked_crates_respect_explicit_profiles() {
 fn test_linked_properties_keep_original_config_error() {
     let error = discover(Config::new(), &[])
         .expect("discover linked definitions")
-        .build()
+        .build_all()
         .err()
         .expect("missing settings must fail");
     assert!(matches!(&error, BuildError::ConfigReadFailed { path_key, target, .. }

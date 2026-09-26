@@ -26,7 +26,7 @@ pub fn build_manual() -> Result<ApplicationContext, ManualError> {
         let value = context.get::<u32>().expect("declared dependency");
         Ok(Arc::new(u64::from(*value) + 1))
     })?;
-    builder.build().map_err(ManualError::Build)
+    builder.build_all().map_err(ManualError::Build)
 }
 
 /// Failure during explicit registration or construction.

@@ -139,7 +139,7 @@ fn test_bean_keeps_plain_functions_callable_and_supports_all_output_shapes() {
     builder
         .install::<AsyncFallibleSharedValueBean>()
         .expect("install async fallible shared factory");
-    assert!(matches!(builder.build(), Err(BuildError::AsyncRequired { .. })));
+    assert!(matches!(builder.build_all(), Err(BuildError::AsyncRequired { .. })));
 
     let mut builder = ContainerBuilder::new();
     builder.install::<BareValueBean>().expect("install bare factory");
@@ -162,7 +162,7 @@ fn test_bean_keeps_plain_functions_callable_and_supports_all_output_shapes() {
     builder
         .install::<AsyncFallibleSharedValueBean>()
         .expect("install async fallible shared factory");
-    let context = ready(builder.build_async()).expect("all factory shapes build");
+    let context = ready(builder.build_all_async()).expect("all factory shapes build");
     assert_eq!(*context.get::<BareValue>().expect("bare value"), BareValue(11));
     assert_eq!(*context.get::<SharedValue>().expect("shared value"), SharedValue(12));
     assert_eq!(
@@ -235,7 +235,7 @@ fn test_bean_inject_id_and_custom_marker() {
     builder
         .install::<RepeatedRequestBean>()
         .expect("install repeated-request bean");
-    let context = builder.build().expect("exact ID resolves consumer");
+    let context = builder.build_all().expect("exact ID resolves consumer");
     assert_eq!(context.get::<NamedConsumer>().expect("consumer").0.0, 22);
     assert_eq!(context.get::<PairValue>().expect("repeated request").0, 44);
 }
@@ -254,7 +254,7 @@ fn test_bean_preserves_factory_error_source() {
         .active_profiles(&["failure"])
         .expect("active failure profile");
     builder.install::<FailingValueBean>().expect("install failing factory");
-    let error = match builder.build() {
+    let error = match builder.build_all() {
         Ok(_) => panic!("failing bean must fail construction"),
         Err(error) => error,
     };
@@ -284,7 +284,7 @@ fn greeting() -> GreetingImpl {
 fn test_bean_bind_projects_shared_instance_to_trait() {
     let mut builder = ContainerBuilder::new();
     builder.install::<GreetingBean>().expect("install trait binding");
-    let context = builder.build().expect("trait binding builds");
+    let context = builder.build_all().expect("trait binding builds");
     let concrete = context.get::<GreetingImpl>().expect("concrete binding");
     let alias = context.get::<dyn Greeting>().expect("trait binding");
     assert_eq!(alias.message(), "hello");
@@ -304,7 +304,7 @@ fn test_bean_explicit_type_resolves_return_alias() {
     builder
         .install::<AliasValueBean>()
         .expect("install alias return factory");
-    let context = builder.build().expect("alias return builds");
+    let context = builder.build_all().expect("alias return builds");
     assert_eq!(context.get::<String>().expect("resolved String").as_str(), "aliased");
 }
 
@@ -329,7 +329,7 @@ fn test_bean_value_reads_declared_config_snapshot() {
         .with_config(config)
         .expect("stage configuration");
     builder.install::<ConfiguredPortBean>().expect("install value bean");
-    let context = builder.build().expect("value bean builds");
+    let context = builder.build_all().expect("value bean builds");
     assert_eq!(context.get::<ConfiguredPort>().expect("configured port").0, 8140);
 }
 
@@ -377,7 +377,7 @@ mod grouped {
 fn test_configuration_applies_default_profile_and_installs_in_source_order() {
     let mut builder = ContainerBuilder::new().active_profiles(&["prod"]).expect("active prod");
     grouped::register_ioc(&mut builder).expect("register group in order");
-    let context = builder.build().expect("group builds");
+    let context = builder.build_all().expect("group builds");
     let first = context.get::<grouped::First>().expect("first").0;
     let second = context.get::<grouped::Second>().expect("second").0;
     assert!(first < second, "manual group registration must preserve source order");
@@ -390,7 +390,7 @@ fn test_configuration_applies_default_profile_and_installs_in_source_order() {
 
     let mut builder = ContainerBuilder::new();
     grouped::register_ioc(&mut builder).expect("register default group");
-    let context = builder.build().expect("default group builds");
+    let context = builder.build_all().expect("default group builds");
     assert!(context.try_get::<grouped::First>().expect("prod-only lookup").is_none());
     assert!(
         context
@@ -406,7 +406,7 @@ fn test_configuration_applies_default_profile_and_installs_in_source_order() {
 fn test_configuration_beans_discover_without_module_duplicate_and_source_matches_marker() {
     let mut builder = ContainerBuilder::new().active_profiles(&["prod"]).expect("active prod");
     builder.exclude_definition::<grouped::FirstBean>();
-    let context = ready(builder.discover().expect("discover linked beans").build_async())
+    let context = ready(builder.discover().expect("discover linked beans").build_all_async())
         .expect("discovery builds unique bean definitions");
     assert!(context.try_get::<grouped::First>().expect("excluded first").is_none());
     assert!(context.get::<grouped::Second>().is_ok());
@@ -425,7 +425,12 @@ fn test_configuration_beans_discover_without_module_duplicate_and_source_matches
 fn test_configuration_group_and_discovery_report_duplicate_manual_install() {
     let mut builder = ContainerBuilder::new().active_profiles(&["prod"]).expect("active prod");
     grouped::register_ioc(&mut builder).expect("manual group install");
-    let error = match ready(builder.discover().expect("linked definitions register").build_async()) {
+    let error = match ready(
+        builder
+            .discover()
+            .expect("linked definitions register")
+            .build_all_async(),
+    ) {
         Ok(_) => panic!("manual plus linked bean must be duplicate"),
         Err(error) => error,
     };

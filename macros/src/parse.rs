@@ -80,7 +80,9 @@ impl Parse for RawOption {
                     "unknown IoC option `name`; use `id` for injection selection",
                 ));
             }
-            _ => return Err(syn::Error::new(key.span(), format!("unknown IoC option `{key}`"))),
+            _ => {
+                return Err(syn::Error::new(key.span(), format!("unknown IoC option `{key}`")));
+            }
         };
         Ok(Self { key, value })
     }

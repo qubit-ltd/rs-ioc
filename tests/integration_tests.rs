@@ -47,7 +47,7 @@ fn test_graph_errors_precede_any_user_factory() {
             Ok(Arc::new(1))
         })
         .expect("stage missing consumer");
-    let error = missing.build().err().expect("missing dependency");
+    let error = missing.build_all().err().expect("missing dependency");
     assert!(matches!(error, BuildError::MissingDependency { path, .. } if !path.is_empty()));
     assert_eq!(RUNS.load(Ordering::SeqCst), 0);
 
@@ -69,7 +69,7 @@ fn test_graph_errors_precede_any_user_factory() {
             Ok(Arc::new(1))
         })
         .expect("stage ambiguous consumer");
-    let error = ambiguous.build().err().expect("ambiguous dependency");
+    let error = ambiguous.build_all().err().expect("ambiguous dependency");
     assert!(matches!(error, BuildError::AmbiguousBinding { candidates, path, .. }
         if candidates.len() == 2 && !path.is_empty()));
     assert_eq!(RUNS.load(Ordering::SeqCst), 0);
@@ -89,7 +89,7 @@ fn test_graph_errors_precede_any_user_factory() {
             Ok(Arc::new(CycleB))
         })
         .expect("stage second node");
-    let error = cyclic.build().err().expect("dependency cycle");
+    let error = cyclic.build_all().err().expect("dependency cycle");
     assert!(matches!(error, BuildError::DependencyCycle { path } if path.len() >= 3));
     assert_eq!(RUNS.load(Ordering::SeqCst), 0);
 }
@@ -118,9 +118,9 @@ fn test_mixed_factories_require_async_build_and_share_results() {
             .expect("stage async factory");
         builder
     }
-    assert!(matches!(builder().build(), Err(BuildError::AsyncRequired { .. })));
+    assert!(matches!(builder().build_all(), Err(BuildError::AsyncRequired { .. })));
     assert_eq!(RUNS.load(Ordering::SeqCst), 0);
-    let context = ready(builder().build_async()).expect("mixed graph builds asynchronously");
+    let context = ready(builder().build_all_async()).expect("mixed graph builds asynchronously");
     assert_eq!(*context.get::<u64>().expect("async result"), 7);
     assert_eq!(RUNS.load(Ordering::SeqCst), 2);
 }
@@ -148,7 +148,7 @@ fn test_spi_resolution_error_keeps_its_source_chain() {
                 .map_err(FactoryError::new)
         })
         .expect("stage SPI factory");
-    let error = builder.build().err().expect("empty registry cannot resolve");
+    let error = builder.build_all().err().expect("empty registry cannot resolve");
     assert!(matches!(&error, BuildError::FactoryFailed { path, .. } if path.len() == 1));
     let source = error.source().expect("factory error").source().expect("SPI error");
     assert!(

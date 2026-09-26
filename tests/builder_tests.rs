@@ -56,7 +56,7 @@ fn test_build_resolves_reverse_registered_chain() {
         .register_instance(Arc::new(LevelOne(42)))
         .expect("stage level one");
 
-    let context = builder.build().expect("valid graph must build");
+    let context = builder.build_all().expect("valid graph must build");
     assert_eq!(context.get::<LevelThree>().expect("built level three").0.0.0, 42);
 }
 
@@ -79,7 +79,7 @@ fn test_build_requires_async_before_running_any_factory() {
         })
         .expect("stage asynchronous factory");
 
-    assert!(matches!(builder.build(), Err(BuildError::AsyncRequired { .. })));
+    assert!(matches!(builder.build_all(), Err(BuildError::AsyncRequired { .. })));
     assert_eq!(calls.load(Ordering::SeqCst), 0);
 }
 
@@ -99,7 +99,7 @@ fn test_build_async_mixes_factory_kinds() {
         .expect("stage asynchronous factory");
 
     fn assert_send<T: Send>(_: &T) {}
-    let mut future = pin!(builder.build_async());
+    let mut future = pin!(builder.build_all_async());
     assert_send(&future);
     let waker = Waker::noop();
     let mut poll_context = Context::from_waker(waker);
@@ -120,7 +120,7 @@ fn test_build_retains_factory_source_chain() {
     builder
         .register_factory::<u32, _>(&[], |_| Err(FactoryError::new(DomainFailure)))
         .expect("stage failing factory");
-    let error = match builder.build() {
+    let error = match builder.build_all() {
         Ok(_) => panic!("factory must fail"),
         Err(error) => error,
     };
@@ -148,7 +148,7 @@ fn test_build_maps_generated_config_error_with_complete_path() {
         })
         .expect("stage generated-style read");
 
-    let error = builder.build().err().expect("missing config value must fail");
+    let error = builder.build_all().err().expect("missing config value must fail");
     let message = error.to_string();
     assert!(
         message.contains("for port from"),
@@ -191,7 +191,7 @@ fn test_build_failure_carries_consumer_to_dependency_path() {
         .register_factory::<u32, _>(&[], |_| Err(FactoryError::new(DomainFailure)))
         .expect("stage failing dependency");
 
-    let error = match builder.build() {
+    let error = match builder.build_all() {
         Ok(_) => panic!("dependency factory must fail"),
         Err(error) => error,
     };
@@ -217,7 +217,7 @@ fn test_build_failure_path_includes_later_registered_consumer() {
         })
         .expect("stage consumer second");
 
-    let error = match builder.build() {
+    let error = match builder.build_all() {
         Ok(_) => panic!("dependency factory must fail"),
         Err(error) => error,
     };
@@ -251,7 +251,7 @@ fn test_build_async_cancellation_does_not_start_later_factory() {
         })
         .expect("stage later factory");
 
-    let mut future = Box::pin(builder.build_async());
+    let mut future = Box::pin(builder.build_all_async());
     let waker = Waker::noop();
     let mut poll_context = Context::from_waker(waker);
     assert!(future.as_mut().poll(&mut poll_context).is_pending());
@@ -271,7 +271,11 @@ fn test_register_factory_rejects_duplicate_requests_atomically() {
         .register_instance(Arc::new(2_u64))
         .expect("failed definition left no binding");
     assert_eq!(
-        *builder.build().expect("valid graph").get::<u64>().expect("instance"),
+        *builder
+            .build_all()
+            .expect("valid graph")
+            .get::<u64>()
+            .expect("instance"),
         2
     );
 }
@@ -293,7 +297,7 @@ fn test_build_filters_inactive_profile_before_duplicate_check() {
         .expect("stage inactive instance");
     assert_eq!(
         *builder
-            .build()
+            .build_all()
             .expect("inactive duplicate is valid")
             .get::<u32>()
             .expect("active instance"),
@@ -323,7 +327,7 @@ fn test_invalid_registration_id_and_profile_return_structured_errors() {
         if error.value() == "invalid-id"));
     assert!(
         builder
-            .build()
+            .build_all()
             .expect("rejected registrations leave no bindings")
             .get_all::<u32>()
             .is_empty()
@@ -363,7 +367,7 @@ fn test_collection_dependency_uses_id_order_when_priorities_match() {
             ))
         })
         .expect("stage collection consumer");
-    let context = builder.build().expect("build ordered collection");
+    let context = builder.build_all().expect("build ordered collection");
     assert_eq!(
         context.get::<Vec<u32>>().expect("collection result").as_slice(),
         &[1, 26]
@@ -387,7 +391,7 @@ fn test_build_async_preserves_both_sync_and_async_factory_failures() {
     sync_builder
         .register_factory::<u32, _>(&[], |_| Err(FactoryError::new(DomainFailure)))
         .expect("stage failing sync factory");
-    let error = ready(sync_builder.build_async())
+    let error = ready(sync_builder.build_all_async())
         .err()
         .expect("sync failure must propagate from async build");
     assert!(matches!(&error, BuildError::FactoryFailed { .. }));
@@ -404,7 +408,7 @@ fn test_build_async_preserves_both_sync_and_async_factory_failures() {
     async_builder
         .register_async_factory::<u64, _>(&[], |_| Box::pin(async { Err(FactoryError::new(DomainFailure)) }))
         .expect("stage failing async factory");
-    let error = ready(async_builder.build_async())
+    let error = ready(async_builder.build_all_async())
         .err()
         .expect("async failure must propagate from async build");
     assert!(matches!(&error, BuildError::FactoryFailed { .. }));

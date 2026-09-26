@@ -25,7 +25,7 @@ fn test_get_rejects_undeclared_dependency() {
             Ok(Arc::new(9))
         })
         .expect("stage consumer");
-    builder.build().expect("factory must observe access error");
+    builder.build_all().expect("factory must observe access error");
 }
 
 #[test]
@@ -38,7 +38,7 @@ fn test_get_all_reads_only_declared_collection() {
             Ok(Arc::new(values.len()))
         })
         .expect("stage collection consumer");
-    let context = builder.build().expect("valid graph");
+    let context = builder.build_all().expect("valid graph");
     assert_eq!(*context.get::<usize>().expect("built count"), 1);
 }
 
@@ -56,7 +56,7 @@ fn test_try_get_by_id_distinguishes_missing_and_selected() {
             Ok(Arc::new(1))
         })
         .expect("stage optional consumer");
-    let context = builder.build().expect("optional absence is valid");
+    let context = builder.build_all().expect("optional absence is valid");
     assert_eq!(*context.get::<usize>().expect("built value"), 1);
 }
 
@@ -82,7 +82,11 @@ fn test_try_get_by_id_returns_the_declared_named_component() {
         })
         .expect("stage consumer");
     assert_eq!(
-        *builder.build().expect("valid graph").get::<u64>().expect("consumer"),
+        *builder
+            .build_all()
+            .expect("valid graph")
+            .get::<u64>()
+            .expect("consumer"),
         37
     );
 }

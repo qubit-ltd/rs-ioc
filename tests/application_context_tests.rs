@@ -19,7 +19,7 @@ fn test_get_reuses_shared_arc() {
     builder
         .register_instance(Arc::clone(&instance))
         .expect("stage instance");
-    let context = builder.build().expect("build context");
+    let context = builder.build_all().expect("build context");
     let first = context.get::<String>().expect("first lookup");
     let second = context.get::<String>().expect("second lookup");
     assert!(Arc::ptr_eq(&instance, &first));
@@ -51,7 +51,7 @@ fn test_get_by_id_and_get_all_share_instances() {
             },
         )
         .expect("stage second");
-    let context = builder.build().expect("build context");
+    let context = builder.build_all().expect("build context");
     assert!(Arc::ptr_eq(
         &first,
         &context.get_by_id::<u32>("first").expect("named lookup")
@@ -79,7 +79,7 @@ fn test_equal_order_sorts_by_id_and_missing_lookup_lists_available_keys() {
             )
             .expect("stage named value");
     }
-    let context = builder.build().expect("build named values");
+    let context = builder.build_all().expect("build named values");
     assert_eq!(
         context.get_all::<u32>().iter().map(|value| **value).collect::<Vec<_>>(),
         [1, 26]

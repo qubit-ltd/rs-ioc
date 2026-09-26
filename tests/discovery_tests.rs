@@ -217,7 +217,7 @@ fn test_discover_sorts_entries_before_registration_and_does_not_run_factories() 
     CONSTRUCTION_ORDER.lock().expect("order mutex").clear();
     let builder = ContainerBuilder::new().discover().expect("discover linked definitions");
     assert!(CONSTRUCTION_ORDER.lock().expect("order mutex").is_empty());
-    builder.build().expect("build discovered definitions");
+    builder.build_all().expect("build discovered definitions");
     assert_eq!(*CONSTRUCTION_ORDER.lock().expect("order mutex"), ["first", "second"]);
 }
 
@@ -227,7 +227,7 @@ fn test_manual_install_plus_discovery_reports_duplicate_at_build() {
     let mut builder = ContainerBuilder::new();
     builder.install::<SortedFirst>().expect("manual install");
     let builder = builder.discover().expect("discovery stages duplicates");
-    assert!(matches!(builder.build(), Err(BuildError::DuplicateBinding { .. })));
+    assert!(matches!(builder.build_all(), Err(BuildError::DuplicateBinding { .. })));
 }
 
 #[test]
@@ -236,7 +236,7 @@ fn test_exclude_definition_skips_concrete_and_alias_and_reports_missing_dependen
     let mut builder = ContainerBuilder::new();
     builder.exclude_definition::<MemoryRepository>();
     let builder = builder.discover().expect("discover with exclusion");
-    let context = builder.build().expect("excluded definition has no consumer");
+    let context = builder.build_all().expect("excluded definition has no consumer");
     assert!(
         context
             .try_get::<MemoryRepository>()
@@ -259,7 +259,7 @@ fn test_exclude_definition_skips_concrete_and_alias_and_reports_missing_dependen
         )
         .expect("stage consumer");
     assert!(matches!(
-        builder.discover().expect("discover").build(),
+        builder.discover().expect("discover").build_all(),
         Err(BuildError::MissingDependency { .. })
     ));
 }
@@ -272,7 +272,7 @@ fn test_exclude_uses_definition_id_when_sources_are_equal() {
     let context = builder
         .discover()
         .expect("discover equal source entries")
-        .build()
+        .build_all()
         .expect("build remaining definition");
     assert!(context.try_get::<SharedSourceA>().expect("excluded lookup").is_none());
     assert!(context.try_get::<SharedSourceB>().expect("retained lookup").is_some());
@@ -285,7 +285,7 @@ fn test_replace_binding_changes_only_the_selected_interface_key() {
     builder
         .replace_binding(repository_key(), ReplacementRepository::register)
         .expect("replace interface binding");
-    let context = builder.build().expect("build exact replacement");
+    let context = builder.build_all().expect("build exact replacement");
     assert!(context.get_by_id::<MemoryRepository>("example.repository").is_ok());
     assert_eq!(
         context
@@ -299,6 +299,30 @@ fn test_replace_binding_changes_only_the_selected_interface_key() {
         .expect("replacement provenance");
     assert!(replacement_source.item.contains("Repository"));
     assert_eq!(replaced_sources, &[MEMORY_SOURCE]);
+}
+
+#[test]
+fn test_replacing_concrete_binding_rejects_its_stale_alias_before_factory() {
+    let _guard = TEST_LOCK.lock().expect("test mutex");
+    let mut builder = ContainerBuilder::new().discover().expect("discover source component");
+    let key = BindingKey::of::<MemoryRepository>(Some(BindingId::parse("example.repository").expect("valid id")));
+    builder
+        .replace_binding(key, |builder| {
+            let options = BindingOptions {
+                id: Some("example.repository".into()),
+                ..BindingOptions::default()
+            };
+            let draft = DefinitionDraft::<MemoryRepository>::new_sync(
+                DefinitionSource::new("test", "discovery_tests", "discovery_tests.rs", 80, 1, "replacement"),
+                &[],
+                options,
+                |_| Ok(Arc::new(MemoryRepository)),
+            )?;
+            draft.register(builder)
+        })
+        .expect("replace concrete key");
+    builder.root::<dyn Repository>();
+    assert!(matches!(builder.build(), Err(BuildError::AliasTargetReplaced { .. })));
 }
 
 #[test]
@@ -323,7 +347,7 @@ fn test_definition_draft_rejects_duplicate_alias_without_partial_registration() 
     ));
     assert!(
         builder
-            .build()
+            .build_all()
             .expect("failed draft left no bindings")
             .try_get::<MemoryRepository>()
             .expect("lookup")

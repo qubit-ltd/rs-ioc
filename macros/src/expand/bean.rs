@@ -65,7 +65,9 @@ pub(crate) fn expand(value: BeanIr, context: &ExpansionContext) -> syn::Result<T
     let wrap = match output.shape {
         OutputShape::Bare => quote!(::std::sync::Arc::new(#invocation)),
         OutputShape::Arc => invocation,
-        OutputShape::ResultBare => quote!(::std::sync::Arc::new(#invocation.map_err(#runtime::FactoryError::new)?)),
+        OutputShape::ResultBare => {
+            quote!(::std::sync::Arc::new(#invocation.map_err(#runtime::FactoryError::new)?))
+        }
         OutputShape::ResultArc => quote!(#invocation.map_err(#runtime::FactoryError::new)?),
     };
     let factory = if item.sig.asyncness.is_some() {
