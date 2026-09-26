@@ -1,0 +1,9 @@
+[package]
+name = "qubit-ioc-fixture-manual"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+qubit-ioc = { path = "../../../../", default-features = false }
+thiserror = "2.0"

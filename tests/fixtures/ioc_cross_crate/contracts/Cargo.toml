@@ -1,0 +1,5 @@
+[package]
+name = "qubit-ioc-fixture-contracts"
+version = "0.0.0"
+edition = "2024"
+publish = false

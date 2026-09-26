@@ -1,0 +1,10 @@
+[package]
+name = "qubit-ioc-fixture-providers"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+qubit-ioc = { path = "../../../../" }
+qubit-ioc-fixture-contracts = { path = "../contracts" }
+serde = { version = "1.0", features = ["derive"] }
