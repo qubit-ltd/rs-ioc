@@ -40,14 +40,16 @@ struct RootSettings {
 struct ValueService {
     #[value("service.port")]
     port: u16,
+    #[value("service.port")]
+    port_copy: u16,
 }
 
 #[derive(Debug, PartialEq)]
-struct ValueBean(u16);
+struct ValueBean(u16, u16);
 
 #[bean(profile = "config_macro")]
-fn value_bean(#[value("service.port")] port: u16) -> ValueBean {
-    ValueBean(port)
+fn value_bean(#[value("service.port")] port: u16, #[value("service.port")] copy: u16) -> ValueBean {
+    ValueBean(port, copy)
 }
 
 /// Creates a snapshot for the successful macro cases.
@@ -163,7 +165,8 @@ fn test_value_reads_component_field_and_bean_parameter() {
     builder.install::<ValueBeanBean>().expect("install bean");
     let context = builder.build_all().expect("read both values");
     assert_eq!(context.get::<ValueService>().expect("component").port, 8140);
-    assert_eq!(*context.get::<ValueBean>().expect("bean"), ValueBean(8140));
+    assert_eq!(context.get::<ValueService>().expect("component").port_copy, 8140);
+    assert_eq!(*context.get::<ValueBean>().expect("bean"), ValueBean(8140, 8140));
 }
 
 #[test]
