@@ -64,7 +64,10 @@ struct Greeter {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let context = ApplicationContext::builder().discover()?.build()?;
+    let mut builder = ApplicationContext::builder().discover()?;
+    builder.root::<Greeter>();
+    builder.root::<usize>();
+    let context = builder.build()?;
     assert_eq!(context.get::<Greeter>()?.greeting.text(), "hello");
     Ok(())
 }

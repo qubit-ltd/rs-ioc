@@ -31,7 +31,9 @@ struct UserService {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let context = ApplicationContext::builder().discover()?.build()?;
+    let mut builder = ApplicationContext::builder().discover()?;
+builder.root::<UserService>();
+let context = builder.build()?;
     let service = context.get::<UserService>()?;
     assert_eq!(service.repository.find_name(7).as_deref(), Some("user-7"));
     Ok(())

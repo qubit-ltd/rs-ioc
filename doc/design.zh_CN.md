@@ -92,6 +92,7 @@ builder.register_factory::<UserService>(
     },
 )?;
 
+builder.root::<Application>();
 let context = builder.build()?;
 let service: Arc<UserService> = context.get::<UserService>()?;
 ```
@@ -125,7 +126,7 @@ builder.register_async_factory::<DbPool>(
     }),
 )?;
 
-let context = builder.build_async().await?;
+let context = builder.build_all_async().await?;
 ```
 
 `build_async()` 同时接受同步和异步工厂；`build()` 只接受实例与同步工厂。如果

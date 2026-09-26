@@ -80,7 +80,9 @@ impl UserRepository for MemoryRepository {
 #[Service]
 struct UserService { repository: Arc<dyn UserRepository> }
 
-let context = ApplicationContext::builder().discover()?.build()?;
+let mut builder = ApplicationContext::builder().discover()?;
+builder.root::<UserService>();
+let context = builder.build()?;
 let service = context.get::<UserService>()?;
 ```
 
