@@ -792,6 +792,16 @@ fn paths_to_all(
     resolved: &[Vec<ResolvedDependency>],
     selected: &HashSet<BindingLocation>,
 ) -> HashMap<BindingKey, Vec<BindingKey>> {
+    let locations: HashMap<BindingKey, BindingLocation> = definitions
+        .iter()
+        .enumerate()
+        .flat_map(|(definition, item)| {
+            item.bindings.iter().enumerate().filter_map(move |(binding, value)| {
+                let location = BindingLocation { definition, binding };
+                selected.contains(&location).then_some((value.key.clone(), location))
+            })
+        })
+        .collect();
     let mut targets = HashSet::new();
     for (definition_index, definition) in definitions.iter().enumerate() {
         for (binding_index, binding) in definition.bindings.iter().enumerate() {
@@ -824,7 +834,7 @@ fn paths_to_all(
                     &binding.key,
                     definitions,
                     resolved,
-                    selected,
+                    &locations,
                     &mut Vec::new(),
                     &mut paths,
                 );
@@ -844,7 +854,7 @@ fn paths_to_all(
                     &binding.key,
                     definitions,
                     resolved,
-                    selected,
+                    &locations,
                     &mut Vec::new(),
                     &mut paths,
                 );
@@ -859,7 +869,7 @@ fn trace_paths(
     key: &BindingKey,
     definitions: &[PendingDefinition],
     resolved: &[Vec<ResolvedDependency>],
-    selected: &HashSet<BindingLocation>,
+    locations: &HashMap<BindingKey, BindingLocation>,
     path: &mut Vec<BindingKey>,
     paths: &mut HashMap<BindingKey, Vec<BindingKey>>,
 ) {
@@ -868,33 +878,19 @@ fn trace_paths(
     }
     path.push(key.clone());
     paths.insert(key.clone(), path.clone());
-    for (definition_index, definition) in definitions.iter().enumerate() {
-        if let Some(binding) = definition
-            .bindings
-            .iter()
-            .enumerate()
-            .find_map(|(binding_index, binding)| {
-                (&binding.key == key
-                    && selected.contains(&BindingLocation {
-                        definition: definition_index,
-                        binding: binding_index,
-                    }))
-                .then_some(binding)
-            })
-        {
-            match &binding.kind {
-                PendingBindingKind::Alias { target, .. } => {
-                    trace_paths(target, definitions, resolved, selected, path, paths);
-                }
-                _ => {
-                    for dependency in &resolved[definition_index] {
-                        for target in &dependency.keys {
-                            trace_paths(target, definitions, resolved, selected, path, paths);
-                        }
-                    }
+    let location = locations.get(key).expect("selected path key must have a binding");
+    let definition_index = location.definition;
+    let binding = &definitions[definition_index].bindings[location.binding];
+    match &binding.kind {
+        PendingBindingKind::Alias { target, .. } => {
+            trace_paths(target, definitions, resolved, locations, path, paths);
+        }
+        _ => {
+            for dependency in &resolved[definition_index] {
+                for target in &dependency.keys {
+                    trace_paths(target, definitions, resolved, locations, path, paths);
                 }
             }
-            break;
         }
     }
     path.pop();

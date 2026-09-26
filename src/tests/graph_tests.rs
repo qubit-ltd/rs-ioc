@@ -227,6 +227,38 @@ fn test_graph_cycle_and_dependency_first_stable_topology() {
 }
 
 #[test]
+fn test_graph_keeps_registration_order_for_independent_bindings() {
+    let definitions = (0..128)
+        .map(|index| {
+            instance(
+                "independent",
+                index,
+                vec![],
+                Some(&format!("node.n{index}")),
+                false,
+                0,
+                None,
+            )
+        })
+        .collect();
+    let graph = ValidatedGraph::validate(definitions, &[]).expect("independent bindings validate");
+    let ids: Vec<_> = graph
+        .order
+        .iter()
+        .map(|location| {
+            graph.definitions[location.definition].bindings[location.binding]
+                .key
+                .id()
+                .expect("each binding has an ID")
+                .as_str()
+                .to_owned()
+        })
+        .collect();
+    let expected: Vec<_> = (0..128).map(|index| format!("node.n{index}")).collect();
+    assert_eq!(ids, expected);
+}
+
+#[test]
 fn test_graph_cycle_path_retains_root_before_repeated_non_root_node() {
     let cycle = ValidatedGraph::validate(
         vec![

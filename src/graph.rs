@@ -227,6 +227,15 @@ fn select_roots(
 /// definition and validates the newly included edges.
 #[allow(clippy::result_large_err)]
 fn close_definitions(nodes: &[Node], edges: &[Vec<Edge>], mut reachable: Vec<bool>) -> Result<Vec<bool>, BuildError> {
+    let definition_count = nodes
+        .iter()
+        .map(|node| node.location.definition)
+        .max()
+        .map_or(0, |index| index + 1);
+    let mut nodes_by_definition = vec![Vec::new(); definition_count];
+    for (index, node) in nodes.iter().enumerate() {
+        nodes_by_definition[node.location.definition].push(index);
+    }
     let mut queue = reachable
         .iter()
         .enumerate()
@@ -238,11 +247,8 @@ fn close_definitions(nodes: &[Node], edges: &[Vec<Edge>], mut reachable: Vec<boo
         if !visited_definitions.insert(definition) {
             continue;
         }
-        for (i, node) in nodes
-            .iter()
-            .enumerate()
-            .filter(|(_, n)| n.location.definition == definition)
-        {
+        for &i in &nodes_by_definition[definition] {
+            let node = &nodes[i];
             reachable[i] = true;
             let mut node_path = path.clone();
             if node_path.last() != Some(&node.key) {
