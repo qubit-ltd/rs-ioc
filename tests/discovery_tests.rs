@@ -11,6 +11,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 
 use qubit_ioc::__private::codegen_v1::DefinitionDraft;
+use qubit_ioc::__private::submit_component;
 use qubit_ioc::BindingId;
 use qubit_ioc::BindingKey;
 use qubit_ioc::BindingOptions;
@@ -77,12 +78,12 @@ impl ComponentDefinition for SortedSecond {
 }
 
 // Deliberately submitted in reverse source order.
-qubit_ioc::__private::submit_component!(RegistrationEntry::new(
+submit_component!(RegistrationEntry::new(
     SortedSecond::register,
     SECOND_SOURCE,
     "test::discovery_tests::SortedSecond",
 ));
-qubit_ioc::__private::submit_component!(RegistrationEntry::new(
+submit_component!(RegistrationEntry::new(
     SortedFirst::register,
     FIRST_SOURCE,
     "test::discovery_tests::SortedFirst",
@@ -127,7 +128,7 @@ fn register_memory_repository(builder: &mut ContainerBuilder) -> Result<(), Regi
     MemoryRepository::register(builder)
 }
 
-qubit_ioc::__private::submit_component!(RegistrationEntry::new(
+submit_component!(RegistrationEntry::new(
     register_memory_repository,
     MEMORY_SOURCE,
     "test::discovery_tests::MemoryRepository",
@@ -196,12 +197,12 @@ impl ComponentDefinition for SharedSourceB {
     }
 }
 
-qubit_ioc::__private::submit_component!(RegistrationEntry::new(
+submit_component!(RegistrationEntry::new(
     SharedSourceA::register,
     SHARED_SOURCE,
     "test::discovery_tests::SharedSourceA",
 ));
-qubit_ioc::__private::submit_component!(RegistrationEntry::new(
+submit_component!(RegistrationEntry::new(
     SharedSourceB::register,
     SHARED_SOURCE,
     "test::discovery_tests::SharedSourceB",

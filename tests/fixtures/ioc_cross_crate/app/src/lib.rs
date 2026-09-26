@@ -10,6 +10,7 @@
 use qubit_config::Config;
 use qubit_ioc::ContainerBuilder;
 use qubit_ioc::RegistrationError;
+use qubit_ioc_fixture_providers::linked_marker;
 pub use qubit_ioc_fixture_contracts::Repository;
 pub use qubit_ioc_fixture_providers::AppService;
 pub use qubit_ioc_fixture_providers::DiskRepository;
@@ -23,7 +24,7 @@ pub use qubit_ioc_fixture_providers::Settings;
 /// `profiles` replaces the default active profile set; invalid profile names
 /// or a registration error are returned before graph construction.
 pub fn discover(config: Config, profiles: &[&str]) -> Result<ContainerBuilder, RegistrationError> {
-    let _ = qubit_ioc_fixture_providers::linked_marker();
+    let _ = linked_marker();
     ContainerBuilder::new()
         .active_profiles(profiles)?
         .with_config(config)?

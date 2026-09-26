@@ -11,6 +11,8 @@ use std::sync::atomic::Ordering;
 
 use qubit_ioc::BuildError;
 use qubit_ioc::ContainerBuilder;
+use qubit_ioc::Dependency;
+use qubit_ioc::FactoryError;
 use qubit_ioc::RegistrationError;
 
 struct Wanted;
@@ -113,15 +115,13 @@ fn test_missing_root_reports_available_bindings() {
 fn test_root_build_missing_dependency_reports_complete_path() {
     let mut builder = ContainerBuilder::new();
     builder
-        .register_factory::<RootService, _>(&[qubit_ioc::Dependency::of::<MiddleService>()], |context| {
+        .register_factory::<RootService, _>(&[Dependency::of::<MiddleService>()], |context| {
             let _ = context.get::<MiddleService>().expect("declared dependency");
             Ok(Arc::new(RootService))
         })
         .expect("stage root factory");
     builder
-        .register_factory::<MiddleService, _>(&[qubit_ioc::Dependency::of::<MissingService>()], |_| {
-            Ok(Arc::new(MiddleService))
-        })
+        .register_factory::<MiddleService, _>(&[Dependency::of::<MissingService>()], |_| Ok(Arc::new(MiddleService)))
         .expect("stage middle factory");
     builder.root::<RootService>();
 
@@ -141,9 +141,6 @@ fn test_root_build_missing_dependency_reports_complete_path() {
 
 #[test]
 fn test_root_build_factory_failure_ignores_unselected_consumers() {
-    use qubit_ioc::Dependency;
-    use qubit_ioc::FactoryError;
-
     let mut builder = ContainerBuilder::new();
     builder
         .register_factory::<UnselectedConsumer, _>(&[Dependency::of::<FailingDependency>()], |context| {
