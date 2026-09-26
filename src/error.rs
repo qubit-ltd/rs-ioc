@@ -235,7 +235,10 @@ pub enum RegistrationError {
 /// use qubit_ioc::BuildError;
 /// use qubit_ioc::ContainerBuilder;
 ///
-/// let error = ContainerBuilder::new().build().expect_err("a root is required");
+/// let error = match ContainerBuilder::new().build() {
+///     Ok(_) => panic!("a root is required"),
+///     Err(error) => error,
+/// };
 /// assert!(matches!(error, BuildError::NoRootsSelected));
 /// ```
 #[derive(Debug, Error)]

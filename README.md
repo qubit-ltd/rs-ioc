@@ -72,6 +72,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
+Run `cargo run --example readme_declarative` to execute this example; its full
+source is in [`examples/readme_declarative.rs`](examples/readme_declarative.rs).
+`build()` requires at least one selected root. Use `build_all()` to construct
+the complete registered graph.
+
 The assertion observes the selected implementation. The builder checks the
 selected service's dependency graph before constructing either component.
 

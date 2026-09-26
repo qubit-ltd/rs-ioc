@@ -69,6 +69,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
+运行 `cargo run --example readme_declarative` 可执行此示例，完整源码见
+[`examples/readme_declarative.rs`](examples/readme_declarative.rs)。`build()` 至少需要一个
+选定的根节点；若要构造所有已注册定义，请使用 `build_all()`。
+
 断言能观察到选中的实现。构建器会在创建组件前验证该服务的依赖链。
 
 ## 核心能力
@@ -98,6 +102,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 ```
+
+运行 `cargo run --example readme_manual --no-default-features` 可执行此示例，完整源码见
+[`examples/readme_manual.rs`](examples/readme_manual.rs)。
 
 绑定身份由 Rust 类型和可选 ID 共同决定。ID 使用 `example.greeting.english` 这样
 以点分隔的 ASCII 段；每段以字母开头，后续可包含字母、数字或下划线。未指定 ID 的

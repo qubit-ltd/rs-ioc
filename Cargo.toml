@@ -18,6 +18,8 @@ include = [
     "/LICENSE",
     "/README.md",
     "/README.zh_CN.md",
+    "/examples/readme_declarative.rs",
+    "/examples/readme_manual.rs",
     "/src/**",
     "/doc/**",
     "/tests/**",
@@ -26,6 +28,10 @@ include = [
 
 [lib]
 name = "qubit_ioc"
+
+[[example]]
+name = "readme_declarative"
+required-features = ["macros", "inventory"]
 
 [features]
 default = ["macros", "inventory", "config"]
