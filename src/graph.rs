@@ -26,13 +26,17 @@ use crate::options::DefinitionSource;
 /// The position of one binding in its registered definition.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct BindingLocation {
+    /// Index of the owning definition in the active definition vector.
     pub(crate) definition: usize,
+    /// Index of the binding within that definition.
     pub(crate) binding: usize,
 }
 
 /// A declared request and its exact selected keys, in injection order.
 pub(crate) struct ResolvedDependency {
+    /// Original request declared by the definition.
     pub(crate) request: Dependency,
+    /// Selected keys in deterministic injection order.
     pub(crate) keys: Vec<BindingKey>,
 }
 
@@ -41,33 +45,50 @@ pub(crate) struct ResolvedDependency {
 /// Every binding occurs once in `order`; aliases follow their target, and
 /// concrete bindings follow every selected request of their definition.
 pub(crate) struct ValidatedGraph {
+    /// Definitions remaining after profile filtering.
     pub(crate) definitions: Vec<PendingDefinition>,
+    /// Dependency-first execution order for selected bindings.
     pub(crate) order: Vec<BindingLocation>,
+    /// Resolved request keys, indexed by definition and declaration order.
     pub(crate) resolved: Vec<Vec<ResolvedDependency>>,
 }
 
 /// One flattened binding with its stable registration position.
 #[derive(Clone)]
 struct Node {
+    /// Original position within the definition list.
     location: BindingLocation,
+    /// Exact typed identity used during matching.
     key: BindingKey,
+    /// Definition source retained for diagnostics and stable ordering.
     source: DefinitionSource,
+    /// Whether an unnamed request can select this candidate as primary.
     primary: bool,
+    /// Collection ordering value.
     order: i32,
 }
 
 /// A resolved edge or a failure delayed until its root path is known.
 enum Edge {
+    /// A dependency or alias target selected by validation.
     Target(usize),
+    /// A required request with no matching key.
     MissingDependency(Dependency),
+    /// A single-value request with multiple candidates.
     AmbiguousDependency(Dependency, Vec<BindingKey>),
+    /// An alias refers to a key absent from active definitions.
     MissingAliasTarget(BindingKey),
+    /// An alias target was replaced by another definition.
     AliasTargetReplaced(BindingKey, DefinitionSource, DefinitionSource),
 }
 
 // BuildError carries public candidate sets and complete dependency paths.
 #[allow(clippy::result_large_err)]
 impl ValidatedGraph {
+    /// Validates definitions as an unrooted test graph.
+    ///
+    /// This helper is available only to graph unit tests; production callers
+    /// use root selection through `ContainerBuilder`.
     #[cfg(test)]
     pub(crate) fn validate(
         definitions: Vec<PendingDefinition>,
@@ -151,6 +172,8 @@ impl ValidatedGraph {
     }
 }
 
+/// Keeps the first registered index for each key while root reachability is
+/// still being established.
 fn first_keys(nodes: &[Node]) -> HashMap<BindingKey, usize> {
     let mut result = HashMap::new();
     for (index, node) in nodes.iter().enumerate() {
@@ -159,6 +182,7 @@ fn first_keys(nodes: &[Node]) -> HashMap<BindingKey, usize> {
     result
 }
 
+/// Resolves each required root and returns the selected binding positions.
 #[allow(clippy::result_large_err)]
 fn select_roots(
     roots: &[Dependency],
@@ -198,6 +222,8 @@ fn select_roots(
     Ok(selected)
 }
 
+/// Extends root reachability to every binding that belongs to a selected
+/// definition and validates the newly included edges.
 #[allow(clippy::result_large_err)]
 fn close_definitions(nodes: &[Node], edges: &[Vec<Edge>], mut reachable: Vec<bool>) -> Result<Vec<bool>, BuildError> {
     let mut queue = reachable

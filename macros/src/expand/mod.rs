@@ -18,6 +18,7 @@ use crate::ir::Declaration;
 /// Context shared by expansion domains without assuming the runtime crate
 /// alias.
 pub(crate) struct ExpansionContext {
+    /// Absolute or crate-local path to the runtime crate in the consumer.
     #[allow(dead_code)] // The implementation tasks consume this resolved path.
     pub(crate) runtime: TokenStream,
 }

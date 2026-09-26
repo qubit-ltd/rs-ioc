@@ -21,6 +21,7 @@ pub(crate) type ErasedInstance = Box<dyn Any + Send + Sync>;
 /// Stores built components by exact type and optional identifier.
 #[derive(Default)]
 pub(crate) struct InstanceStore {
+    /// Values indexed by exact typed key.
     values: HashMap<BindingKey, ErasedInstance>,
 }
 

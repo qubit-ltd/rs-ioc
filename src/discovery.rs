@@ -15,8 +15,11 @@ use crate::options::DefinitionSource;
 ///
 /// The callback stages metadata; it must not construct its component.
 pub struct RegistrationEntry {
+    /// Callback that stages metadata without constructing the component.
     register: fn(&mut ContainerBuilder) -> Result<(), RegistrationError>,
+    /// Source used to sort linked entries and report registration errors.
     source: DefinitionSource,
+    /// Stable identity used to exclude an entry from discovery.
     definition_id: &'static str,
 }
 

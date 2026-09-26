@@ -38,20 +38,31 @@ pub(crate) type AliasProjector = Box<dyn Fn(&ErasedInstance) -> Option<ErasedIns
 
 /// A single concrete binding or interface alias in a definition.
 pub(crate) struct PendingBinding {
+    /// Typed identity of this concrete binding or interface alias.
     pub(crate) key: BindingKey,
+    /// Whether unnamed dependency requests may prefer this binding.
     pub(crate) primary: bool,
+    /// Collection ordering value, compared before ID and source.
     pub(crate) order: i32,
+    /// Sources removed by explicit replacement of this key.
     pub(crate) replaced_sources: Vec<DefinitionSource>,
+    /// Deferred instance, factory, or interface projection operation.
     pub(crate) kind: PendingBindingKind,
 }
 
 /// Deferred construction or projection action for a binding.
 pub(crate) enum PendingBindingKind {
+    /// A shared instance supplied before graph construction.
     Instance(ErasedInstance),
+    /// A one-shot synchronous factory.
     SyncFactory(SyncFactory),
+    /// A one-shot asynchronous factory.
     AsyncFactory(AsyncFactory),
+    /// A projection from a previously constructed concrete binding.
     Alias {
+        /// Key of the concrete binding to project.
         target: BindingKey,
+        /// Type checked projection to the alias type.
         project: AliasProjector,
     },
 }
@@ -155,9 +166,13 @@ impl PendingBinding {
 
 /// A concrete binding and all its interface aliases, staged atomically.
 pub(crate) struct PendingDefinition {
+    /// Source attached to every binding declared by this definition.
     pub(crate) source: DefinitionSource,
+    /// Optional profile required for activation.
     pub(crate) profile: Option<String>,
+    /// Requests that must be selected before executing the concrete factory.
     pub(crate) dependencies: Vec<Dependency>,
+    /// Concrete binding followed by its interface aliases.
     pub(crate) bindings: Vec<PendingBinding>,
 }
 

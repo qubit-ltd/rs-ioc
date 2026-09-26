@@ -20,16 +20,34 @@ use crate::store::InstanceStore;
 
 /// Lookup metadata retained for candidate selection after construction.
 pub(crate) struct BuiltBinding {
+    /// Typed key used for exact lookup and candidate selection.
     pub(crate) key: BindingKey,
+    /// Whether unnamed requests prefer this binding over other candidates.
     pub(crate) primary: bool,
+    /// Position used to order collection queries.
     pub(crate) order: i32,
+    /// Source of the currently active definition.
     pub(crate) source: DefinitionSource,
+    /// Earlier sources whose exact key was replaced.
     pub(crate) replaced_sources: Vec<DefinitionSource>,
 }
 
 /// Shared, read-only component context after successful construction.
 ///
 /// Every successful query clones an existing `Arc`; factories never run again.
+///
+/// # Examples
+///
+/// ```
+/// use std::sync::Arc;
+/// use qubit_ioc::ApplicationContext;
+///
+/// let mut builder = ApplicationContext::builder();
+/// builder.register_instance(Arc::new(String::from("hello")))?;
+/// let context = builder.build_all()?;
+/// assert_eq!(context.get::<String>()?.as_str(), "hello");
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 pub struct ApplicationContext {
     store: Arc<RwLock<InstanceStore>>,
     bindings: Vec<BuiltBinding>,
@@ -47,6 +65,7 @@ impl ApplicationContext {
     /// `None` means that `key` is absent. The returned slice borrows this
     /// immutable context and lists removed active bindings in registration
     /// order.
+    #[must_use]
     pub fn binding_sources(&self, key: &BindingKey) -> Option<(DefinitionSource, &[DefinitionSource])> {
         self.bindings
             .iter()
@@ -54,7 +73,11 @@ impl ApplicationContext {
             .map(|binding| (binding.source, binding.replaced_sources.as_slice()))
     }
 
-    /// Publishes a fully constructed store and its active lookup metadata.
+    /// Creates a context from a fully constructed store and active lookup
+    /// metadata.
+    ///
+    /// The caller must publish only bindings whose keys and erased values
+    /// agree.
     pub(crate) fn new(store: Arc<RwLock<InstanceStore>>, bindings: Vec<BuiltBinding>) -> Self {
         Self { store, bindings }
     }
@@ -62,6 +85,7 @@ impl ApplicationContext {
     /// Returns the only `T`, or the unique primary when several exist.
     ///
     /// Missing and ambiguous selections return structured [`ResolveError`].
+    #[must_use = "handle the component lookup result"]
     pub fn get<T: ?Sized + Send + Sync + 'static>(&self) -> Result<Arc<T>, ResolveError> {
         let request = BindingKey::of::<T>(None);
         let candidates = self.candidates(TypeId::of::<T>());
@@ -73,6 +97,7 @@ impl ApplicationContext {
     ///
     /// Invalid IDs, missing bindings and ambiguous bindings return
     /// [`ResolveError`] with the original request and candidates.
+    #[must_use = "handle the component lookup result"]
     pub fn get_by_id<T: ?Sized + Send + Sync + 'static>(&self, id: &str) -> Result<Arc<T>, ResolveError> {
         let request = BindingKey::of::<T>(Some(BindingId::parse(id)?));
         let candidates = self.candidates(TypeId::of::<T>());
@@ -82,6 +107,7 @@ impl ApplicationContext {
 
     /// Returns `Some` for a unique selected `T`, `None` when absent, or an
     /// ambiguity error when multiple non-primary candidates exist.
+    #[must_use = "handle the optional component lookup result"]
     pub fn try_get<T: ?Sized + Send + Sync + 'static>(&self) -> Result<Option<Arc<T>>, ResolveError> {
         let request = BindingKey::of::<T>(None);
         let candidates = self.candidates(TypeId::of::<T>());
@@ -95,6 +121,7 @@ impl ApplicationContext {
     /// Returns all built `T` values sorted by order, ID and source location.
     ///
     /// A type with no bindings yields an empty vector.
+    #[must_use]
     pub fn get_all<T: ?Sized + Send + Sync + 'static>(&self) -> Vec<Arc<T>> {
         let mut candidates = self.candidates(TypeId::of::<T>());
         candidates.sort_by(|left, right| {

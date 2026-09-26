@@ -534,13 +534,21 @@ fn configuration_properties(
 /// The checked option set before it is split into declaration-specific IR.
 #[derive(Default)]
 struct ValidatedOptions {
+    /// Validated optional component ID.
     id: Option<LitStr>,
+    /// Interface projections declared by repeated `bind` options.
     binds: Vec<syn::TypeTraitObject>,
+    /// Whether the binding is preferred by unnamed selection.
     primary: bool,
+    /// Order value used by collection requests.
     order: i32,
+    /// Optional activation profile.
     profile: Option<LitStr>,
+    /// Required configuration subtree prefix.
     prefix: Option<LitStr>,
+    /// Explicit component type for an opaque bean return alias.
     explicit_type: Option<Type>,
+    /// Optional generated registration marker name.
     marker: Option<Ident>,
 }
 

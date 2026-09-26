@@ -20,6 +20,7 @@ use crate::options::DefinitionSource;
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 #[error("invalid binding ID `{value}`; expected dot-separated ASCII segments beginning with a letter")]
 pub struct InvalidBindingId {
+    /// Original text supplied by the caller.
     value: String,
 }
 
@@ -32,6 +33,8 @@ impl InvalidBindingId {
     }
 
     /// Returns the original invalid text.
+    #[must_use]
+    #[inline]
     pub fn value(&self) -> &str {
         &self.value
     }
@@ -41,15 +44,19 @@ impl InvalidBindingId {
 #[derive(Debug, Error)]
 #[error("factory failed: {source}")]
 pub struct FactoryError {
+    /// Original user or configuration error retained as the source chain.
     #[source]
     source: Box<dyn Error + Send + Sync + 'static>,
+    /// Extra target information for generated configuration reads.
     config_read: Option<ConfigReadContext>,
 }
 
 /// Path and destination retained for a generated configuration read.
 #[derive(Debug)]
 struct ConfigReadContext {
+    /// Configuration key or subtree prefix that failed to read.
     path_key: String,
+    /// Generated field, parameter, or properties type being built.
     target: String,
 }
 
@@ -79,6 +86,9 @@ impl FactoryError {
     }
 
     /// Returns the generated read's path and destination, when one failed.
+    ///
+    /// `None` indicates an ordinary factory error; `Some` borrows the stored
+    /// configuration key and target name.
     pub(crate) fn config_read_context(&self) -> Option<(&str, &str)> {
         self.config_read
             .as_ref()

@@ -25,23 +25,38 @@ use crate::ir::MacroKind;
 
 /// An attribute whose syntax has been parsed but not semantically validated.
 pub(crate) struct RawDeclaration {
+    /// Macro attribute that selected the accepted syntax.
     pub(crate) kind: MacroKind,
+    /// Parsed Rust item receiving the attribute.
     pub(crate) item: Item,
+    /// Options retained until semantic validation.
     pub(crate) options: Vec<RawOption>,
 }
 
 /// A single option with its original key span.
 pub(crate) struct RawOption {
+    /// Option key and its original source span.
     pub(crate) key: Ident,
+    /// Parsed syntactic value, not yet checked against the option key.
     pub(crate) value: RawValue,
 }
 
 /// Syntactic values accepted by the common option grammar.
 pub(crate) enum RawValue {
+    /// A marker option with no assigned value.
     Flag,
+    /// A string literal option value.
     String(LitStr),
-    Integer { literal: LitInt, negative: bool },
+    /// An integer literal with its source sign tracked separately.
+    Integer {
+        /// Integer token before semantic range checking.
+        literal: LitInt,
+        /// Whether a leading minus token was present.
+        negative: bool,
+    },
+    /// A Rust type value such as `dyn Trait`.
     Type(Type),
+    /// An identifier value such as a generated marker name.
     Ident(Ident),
 }
 

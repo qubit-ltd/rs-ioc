@@ -55,18 +55,38 @@ pub trait ComponentDefinition {
 }
 
 /// Collects component definitions without running their factories.
+///
+/// # Examples
+///
+/// ```
+/// use std::sync::Arc;
+/// use qubit_ioc::ContainerBuilder;
+///
+/// let mut builder = ContainerBuilder::new();
+/// builder.register_instance(Arc::new(42_u32))?;
+/// let context = builder.build_all()?;
+/// assert_eq!(*context.get::<u32>()?, 42);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 #[derive(Default)]
 pub struct ContainerBuilder {
+    /// Definitions staged by generated and explicit registration calls.
     pub(crate) definitions: Vec<PendingDefinition>,
+    /// Profiles whose definitions are active during graph validation.
     active_profiles: Vec<String>,
+    /// Required requests that select the subgraph for a root-scoped build.
     roots: Vec<Dependency>,
+    /// Generated definitions excluded from later linked discovery.
     pub(crate) excluded_definitions: Vec<&'static str>,
+    /// Exact-key replacements applied after profile filtering.
     replacements: Vec<Replacement>,
 }
 
 /// One explicit exact-key override and the definition that supplied it.
 struct Replacement {
+    /// Exact typed key whose earlier active binding is removed.
     key: BindingKey,
+    /// Index of the staged definition that supplies the replacement.
     definition_index: usize,
 }
 
@@ -424,6 +444,9 @@ impl ContainerBuilder {
 
 /// Reports the caller's file location and marks unavailable package/module
 /// data.
+///
+/// The type name becomes the diagnostic item name; package and module are
+/// placeholders because explicit registrations have no generated source.
 #[track_caller]
 fn source<T: ?Sized + 'static>() -> DefinitionSource {
     let location = Location::caller();
@@ -438,6 +461,8 @@ fn source<T: ?Sized + 'static>() -> DefinitionSource {
 }
 
 /// Records source location for builder-level profile input.
+///
+/// The caller location points to the public profile-selection call.
 #[track_caller]
 fn profile_source() -> DefinitionSource {
     let location = Location::caller();
@@ -506,12 +531,19 @@ pub(crate) fn validate_dependencies(
 
 /// Owns a validated graph and its private, partially populated store.
 struct Construction {
+    /// Source location for each definition after graph validation.
     sources: Vec<DefinitionSource>,
+    /// One-shot binding actions indexed by definition and binding position.
     actions: Vec<Vec<Option<PendingBinding>>>,
+    /// Dependency-first order selected by graph validation.
     order: Vec<BindingLocation>,
+    /// Exact dependency keys made available to each factory.
     resolved: Vec<Vec<ResolvedDependency>>,
+    /// Stable root-to-binding paths used when wrapping factory failures.
     paths: HashMap<BindingKey, Vec<BindingKey>>,
+    /// Lookup metadata published with the completed context.
     bindings: Vec<BuiltBinding>,
+    /// Partially populated store, kept private until construction succeeds.
     store: Arc<RwLock<InstanceStore>>,
 }
 

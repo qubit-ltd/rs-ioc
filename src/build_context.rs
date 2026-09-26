@@ -19,8 +19,11 @@ use crate::store::InstanceStore;
 
 /// Gives one factory access only to the requests it declared at registration.
 pub struct BuildContext {
+    /// Shared store containing dependencies constructed earlier in graph order.
     store: Arc<RwLock<InstanceStore>>,
+    /// Definition whose factory is currently running.
     source: DefinitionSource,
+    /// Requests and keys declared and resolved before construction.
     resolved: Vec<ResolvedDependency>,
 }
 
@@ -44,6 +47,7 @@ impl BuildContext {
     ///
     /// Returns [`BuildAccessError`] if the factory did not declare this exact
     /// type and cardinality. Graph validation guarantees a built target.
+    #[must_use = "handle the declared dependency lookup result"]
     pub fn get<T: ?Sized + Send + Sync + 'static>(&self) -> Result<Arc<T>, BuildAccessError> {
         let request = Dependency::of::<T>();
         let keys = self.keys_for(&request)?;
@@ -54,6 +58,7 @@ impl BuildContext {
     ///
     /// An undeclared request returns [`BuildAccessError`]; registration
     /// validates ID syntax before a factory can run.
+    #[must_use = "handle the declared dependency lookup result"]
     pub fn get_by_id<T: ?Sized + Send + Sync + 'static>(&self, id: &str) -> Result<Arc<T>, BuildAccessError> {
         let request = Dependency::with_id::<T>(id);
         let keys = self.keys_for(&request)?;
@@ -62,6 +67,7 @@ impl BuildContext {
 
     /// Returns `Some` for a selected optional request and `None` when it had no
     /// candidate; returns an error if the optional request was not declared.
+    #[must_use = "handle the optional dependency lookup result"]
     pub fn try_get<T: ?Sized + Send + Sync + 'static>(&self) -> Result<Option<Arc<T>>, BuildAccessError> {
         let request = Dependency::optional::<T>();
         let keys = self.keys_for(&request)?;
@@ -71,6 +77,7 @@ impl BuildContext {
     /// Returns a selected optional `T` by exact `id`, or `None` if absent.
     ///
     /// An undeclared optional request returns [`BuildAccessError`].
+    #[must_use = "handle the optional dependency lookup result"]
     pub fn try_get_by_id<T: ?Sized + Send + Sync + 'static>(
         &self,
         id: &str,
@@ -84,6 +91,7 @@ impl BuildContext {
     ///
     /// An empty declared collection returns an empty vector; an undeclared
     /// collection returns [`BuildAccessError`].
+    #[must_use = "handle the collection dependency lookup result"]
     pub fn get_all<T: ?Sized + Send + Sync + 'static>(&self) -> Result<Vec<Arc<T>>, BuildAccessError> {
         let request = Dependency::all::<T>();
         let keys = self.keys_for(&request)?;
