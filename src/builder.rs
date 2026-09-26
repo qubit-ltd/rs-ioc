@@ -59,6 +59,7 @@ pub trait ComponentDefinition {
 pub struct ContainerBuilder {
     pub(crate) definitions: Vec<PendingDefinition>,
     active_profiles: Vec<String>,
+    roots: Vec<Dependency>,
     pub(crate) excluded_definitions: Vec<&'static str>,
     replacements: Vec<Replacement>,
 }
@@ -76,6 +77,38 @@ impl ContainerBuilder {
     /// Creates an empty container builder with the `default` profile active.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Selects `T` as a required root for [`Self::build`] or
+    /// [`Self::build_async`].
+    ///
+    /// Roots are resolved against every active binding before the dependency
+    /// graph is reduced to the selected components. Repeating the same request
+    /// keeps its first registration position.
+    pub fn root<T: ?Sized + 'static>(&mut self) {
+        let request = Dependency::of::<T>();
+        if !self.roots.contains(&request) {
+            self.roots.push(request);
+        }
+    }
+
+    /// Selects the `T` binding with the exact `id` as a required build root.
+    ///
+    /// The ID is validated at registration time. Repeating the same request
+    /// keeps its first registration position.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RegistrationError::InvalidBindingId`] when `id` does not
+    /// match the binding ID grammar.
+    #[track_caller]
+    pub fn root_by_id<T: ?Sized + 'static>(&mut self, id: &str) -> Result<(), RegistrationError> {
+        let request = Dependency::with_id::<T>(id);
+        validate_dependencies(std::slice::from_ref(&request), source::<T>())?;
+        if !self.roots.contains(&request) {
+            self.roots.push(request);
+        }
+        Ok(())
     }
 
     /// Stages a complete shared instance with default binding options.
@@ -250,46 +283,83 @@ impl ContainerBuilder {
         Ok(self)
     }
 
-    /// Validates the full graph, then runs only synchronous factories in order.
+    /// Builds the components selected by one or more calls to [`Self::root`]
+    /// or [`Self::root_by_id`].
     ///
     /// An active asynchronous factory yields `AsyncRequired` before any factory
     /// runs. Factory failures retain their source and no partial context
     /// escapes.
     pub fn build(self) -> Result<ApplicationContext, BuildError> {
-        let (definitions, profiles) = self.prepare_definitions();
-        let graph = ValidatedGraph::validate(definitions, &profiles)?;
-        for definition in &graph.definitions {
-            for binding in &definition.bindings {
-                if matches!(binding.kind, PendingBindingKind::AsyncFactory(_)) {
-                    return Err(BuildError::AsyncRequired {
-                        definition: definition.source,
-                        key: binding.key.clone(),
-                    });
-                }
+        if self.roots.is_empty() {
+            return Err(BuildError::NoRootsSelected);
+        }
+        let (definitions, profiles, roots) = self.prepare_definitions();
+        let graph = ValidatedGraph::validate_roots(definitions, &profiles, Some(&roots))?;
+        for location in &graph.order {
+            let definition = &graph.definitions[location.definition];
+            let binding = &definition.bindings[location.binding];
+            if matches!(binding.kind, PendingBindingKind::AsyncFactory(_)) {
+                return Err(BuildError::AsyncRequired {
+                    definition: definition.source,
+                    key: binding.key.clone(),
+                });
             }
         }
         Construction::new(graph).run_sync()
     }
 
-    /// Validates the full graph, then serially runs synchronous and
-    /// asynchronous factories. The future is `Send` and uses the caller's
-    /// executor.
+    /// Validates and constructs every definition active under the configured
+    /// profiles, whether or not a root was registered.
+    ///
+    /// Prefer [`Self::build`] when the application only needs a subset of
+    /// discovered definitions.
+    pub fn build_all(self) -> Result<ApplicationContext, BuildError> {
+        let (definitions, profiles, _) = self.prepare_definitions();
+        let graph = ValidatedGraph::validate_roots(definitions, &profiles, None)?;
+        for location in &graph.order {
+            let definition = &graph.definitions[location.definition];
+            let binding = &definition.bindings[location.binding];
+            if matches!(binding.kind, PendingBindingKind::AsyncFactory(_)) {
+                return Err(BuildError::AsyncRequired {
+                    definition: definition.source,
+                    key: binding.key.clone(),
+                });
+            }
+        }
+        Construction::new(graph).run_sync()
+    }
+
+    /// Builds the components selected by one or more calls to [`Self::root`]
+    /// or [`Self::root_by_id`], including their transitive dependencies.
+    /// The future is `Send` and uses the caller's executor.
     ///
     /// Dropping it stops unstarted factories; completed external side effects
     /// remain the factory's responsibility. A failure publishes no context.
     pub async fn build_async(self) -> Result<ApplicationContext, BuildError> {
-        let (definitions, profiles) = self.prepare_definitions();
-        let graph = ValidatedGraph::validate(definitions, &profiles)?;
+        if self.roots.is_empty() {
+            return Err(BuildError::NoRootsSelected);
+        }
+        let (definitions, profiles, roots) = self.prepare_definitions();
+        let graph = ValidatedGraph::validate_roots(definitions, &profiles, Some(&roots))?;
+        Construction::new(graph).run_async().await
+    }
+
+    /// Validates and asynchronously constructs every definition active under
+    /// the configured profiles, whether or not a root was registered.
+    pub async fn build_all_async(self) -> Result<ApplicationContext, BuildError> {
+        let (definitions, profiles, _) = self.prepare_definitions();
+        let graph = ValidatedGraph::validate_roots(definitions, &profiles, None)?;
         Construction::new(graph).run_async().await
     }
 
     /// Filters profiles, then applies each exact-key override before graph
     /// validation.
-    fn prepare_definitions(self) -> (Vec<PendingDefinition>, Vec<String>) {
+    fn prepare_definitions(self) -> (Vec<PendingDefinition>, Vec<String>, Vec<Dependency>) {
         let Self {
             definitions,
             active_profiles,
             replacements,
+            roots,
             ..
         } = self;
         let mut active: Vec<_> = definitions
@@ -341,6 +411,7 @@ impl ContainerBuilder {
                 .filter_map(|(_, definition)| (!definition.bindings.is_empty()).then_some(definition))
                 .collect(),
             active_profiles,
+            roots,
         )
     }
 
@@ -451,17 +522,30 @@ impl Construction {
     /// bindings.
     fn new(graph: ValidatedGraph) -> Self {
         let paths = paths_to_all(&graph.definitions, &graph.resolved);
+        let selected: HashSet<_> = graph.order.iter().copied().collect();
         let bindings = graph
             .definitions
             .iter()
-            .flat_map(|definition| {
-                definition.bindings.iter().map(|binding| BuiltBinding {
-                    key: binding.key.clone(),
-                    primary: binding.primary,
-                    order: binding.order,
-                    source: definition.source,
-                    replaced_sources: binding.replaced_sources.clone(),
-                })
+            .enumerate()
+            .flat_map(|(definition_index, definition)| {
+                let selected = &selected;
+                definition
+                    .bindings
+                    .iter()
+                    .enumerate()
+                    .filter(move |(binding_index, _)| {
+                        selected.contains(&BindingLocation {
+                            definition: definition_index,
+                            binding: *binding_index,
+                        })
+                    })
+                    .map(move |(_, binding)| BuiltBinding {
+                        key: binding.key.clone(),
+                        primary: binding.primary,
+                        order: binding.order,
+                        source: definition.source,
+                        replaced_sources: binding.replaced_sources.clone(),
+                    })
             })
             .collect();
         let sources = graph.definitions.iter().map(|definition| definition.source).collect();

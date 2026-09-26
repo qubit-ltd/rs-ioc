@@ -23,7 +23,7 @@ use crate::key::BindingKey;
 use crate::options::DefinitionSource;
 
 /// The position of one binding in its registered definition.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct BindingLocation {
     pub(crate) definition: usize,
     pub(crate) binding: usize,
@@ -46,6 +46,7 @@ pub(crate) struct ValidatedGraph {
 }
 
 /// One flattened binding with its stable registration position.
+#[derive(Clone)]
 struct Node {
     location: BindingLocation,
     key: BindingKey,
@@ -60,18 +61,28 @@ enum Edge {
     MissingDependency(Dependency),
     AmbiguousDependency(Dependency, Vec<BindingKey>),
     MissingAliasTarget(BindingKey),
+    AliasTargetReplaced(BindingKey, DefinitionSource, DefinitionSource),
 }
 
 // BuildError carries public candidate sets and complete dependency paths.
 #[allow(clippy::result_large_err)]
 impl ValidatedGraph {
+    #[cfg(test)]
+    pub(crate) fn validate(
+        definitions: Vec<PendingDefinition>,
+        active_profiles: &[String],
+    ) -> Result<Self, BuildError> {
+        Self::validate_roots(definitions, active_profiles, None)
+    }
+
     /// Filters `definitions` using `active_profiles`, then validates the graph.
     ///
     /// An empty profile slice activates `default`. This never calls a factory
     /// or alias projector. Errors carry the relevant binding path.
-    pub(crate) fn validate(
+    pub(crate) fn validate_roots(
         definitions: Vec<PendingDefinition>,
         active_profiles: &[String],
+        roots: Option<&[Dependency]>,
     ) -> Result<Self, BuildError> {
         let definitions: Vec<_> = definitions
             .into_iter()
@@ -86,21 +97,170 @@ impl ValidatedGraph {
             })
             .collect();
         let nodes = flatten(&definitions);
-        let by_key = exact_keys(&nodes)?;
-        validate_primary(&nodes)?;
+        let by_key = if roots.is_none() {
+            exact_keys(&nodes)?
+        } else {
+            first_keys(&nodes)
+        };
+        if roots.is_none() {
+            validate_primary(&nodes)?;
+        }
         let mut by_type: HashMap<TypeId, Vec<usize>> = HashMap::new();
         for (index, node) in nodes.iter().enumerate() {
             by_type.entry(node.key.type_id()).or_default().push(index);
         }
         let (edges, resolved) = resolve_edges(&definitions, &nodes, &by_key, &by_type);
-        detect_errors_and_cycles(&nodes, &edges)?;
-        let order = stable_topology(&nodes, &edges);
+        let reachable = if let Some(roots) = roots {
+            select_roots(roots, &nodes, &by_type)?
+        } else {
+            vec![true; nodes.len()]
+        };
+        let reachable = if roots.is_some() {
+            close_definitions(&definitions, &nodes, &edges, reachable)?
+        } else {
+            reachable
+        };
+        if roots.is_some() {
+            let mut keys = HashSet::new();
+            for (i, node) in nodes.iter().enumerate().filter(|(i, _)| reachable[*i]) {
+                let _ = i;
+                if !keys.insert(node.key.clone()) {
+                    return Err(BuildError::DuplicateBinding {
+                        key: node.key.clone(),
+                        first: node.source,
+                        second: node.source,
+                    });
+                }
+            }
+            let selected: Vec<_> = nodes
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| reachable[*i])
+                .map(|(_, n)| n.clone())
+                .collect();
+            validate_primary(&selected)?;
+        }
+        detect_errors_and_cycles(&nodes, &edges, &reachable)?;
+        let order = stable_topology(&nodes, &edges, &reachable);
         Ok(Self {
             definitions,
             order,
             resolved,
         })
     }
+}
+
+fn first_keys(nodes: &[Node]) -> HashMap<BindingKey, usize> {
+    let mut result = HashMap::new();
+    for (index, node) in nodes.iter().enumerate() {
+        result.entry(node.key.clone()).or_insert(index);
+    }
+    result
+}
+
+#[allow(clippy::result_large_err)]
+fn select_roots(
+    roots: &[Dependency],
+    nodes: &[Node],
+    by_type: &HashMap<TypeId, Vec<usize>>,
+) -> Result<Vec<bool>, BuildError> {
+    let mut selected = vec![false; nodes.len()];
+    for request in roots {
+        let candidates = candidates_for(request, nodes, by_type);
+        let available = by_type
+            .get(&request.type_id())
+            .into_iter()
+            .flatten()
+            .map(|&i| nodes[i].key.clone())
+            .collect::<Vec<_>>();
+        match select(request, &candidates, nodes) {
+            Ok(indices) => {
+                for index in indices {
+                    selected[index] = true;
+                }
+            }
+            Err(Edge::MissingDependency(_)) => {
+                return Err(BuildError::MissingRoot {
+                    request: request.clone(),
+                    available,
+                });
+            }
+            Err(Edge::AmbiguousDependency(_, candidates)) => {
+                return Err(BuildError::AmbiguousRoot {
+                    request: request.clone(),
+                    candidates,
+                });
+            }
+            _ => unreachable!(),
+        }
+    }
+    Ok(selected)
+}
+
+#[allow(clippy::result_large_err)]
+fn close_definitions(
+    definitions: &[PendingDefinition],
+    nodes: &[Node],
+    edges: &[Vec<Edge>],
+    mut reachable: Vec<bool>,
+) -> Result<Vec<bool>, BuildError> {
+    let mut queue: Vec<usize> = reachable
+        .iter()
+        .enumerate()
+        .filter_map(|(i, yes)| yes.then_some(i))
+        .collect();
+    let mut visited_definitions = HashSet::new();
+    while let Some(index) = queue.pop() {
+        let definition = nodes[index].location.definition;
+        if !visited_definitions.insert(definition) {
+            continue;
+        }
+        for (i, node) in nodes
+            .iter()
+            .enumerate()
+            .filter(|(_, n)| n.location.definition == definition)
+        {
+            reachable[i] = true;
+            for edge in &edges[i] {
+                match edge {
+                    Edge::Target(target) => queue.push(*target),
+                    Edge::MissingDependency(dependency) => {
+                        return Err(BuildError::MissingDependency {
+                            dependency: dependency.clone(),
+                            definition: node.source,
+                            path: vec![node.key.clone()],
+                        });
+                    }
+                    Edge::AmbiguousDependency(dependency, candidates) => {
+                        return Err(BuildError::AmbiguousBinding {
+                            dependency: dependency.clone(),
+                            definition: node.source,
+                            candidates: candidates.clone(),
+                            path: vec![node.key.clone()],
+                        });
+                    }
+                    Edge::MissingAliasTarget(target) => {
+                        return Err(BuildError::MissingAliasTarget {
+                            alias: node.key.clone(),
+                            target: target.clone(),
+                            definition: node.source,
+                            path: vec![node.key.clone()],
+                        });
+                    }
+                    Edge::AliasTargetReplaced(target, original, replacement) => {
+                        return Err(BuildError::AliasTargetReplaced {
+                            alias: node.key.clone(),
+                            target: target.clone(),
+                            original: *original,
+                            replacement: *replacement,
+                        });
+                    }
+                }
+            }
+        }
+    }
+    let _ = definitions;
+    Ok(reachable)
 }
 
 /// Flattens definitions in builder entry order and binding declaration order.
@@ -184,6 +344,15 @@ fn resolve_edges(
         let binding = &definitions[node.location.definition].bindings[node.location.binding];
         if let PendingBindingKind::Alias { target, .. } = &binding.kind {
             edges.push(vec![match by_key.get(target) {
+                Some(&target_index)
+                    if nodes[target_index].location.definition != node.location.definition
+                        && !definitions[nodes[target_index].location.definition].bindings
+                            [nodes[target_index].location.binding]
+                            .replaced_sources
+                            .is_empty() =>
+                {
+                    Edge::AliasTargetReplaced(target.clone(), node.source, nodes[target_index].source)
+                }
                 Some(&target_index) => Edge::Target(target_index),
                 None => Edge::MissingAliasTarget(target.clone()),
             }]);
@@ -224,6 +393,7 @@ fn candidates_for(request: &Dependency, nodes: &[Node], by_type: &HashMap<TypeId
 }
 
 /// Applies cardinality, primary, and collection ordering to candidates.
+#[allow(clippy::result_large_err)]
 fn select(request: &Dependency, candidates: &[usize], nodes: &[Node]) -> Result<Vec<usize>, Edge> {
     if request.cardinality() == DependencyCardinality::All {
         let mut selected = candidates.to_vec();
@@ -261,11 +431,13 @@ fn select(request: &Dependency, candidates: &[usize], nodes: &[Node]) -> Result<
 /// Visits registration roots to report the first failure with its full path.
 // BuildError preserves a complete path from a root to the graph failure.
 #[allow(clippy::result_large_err)]
-fn detect_errors_and_cycles(nodes: &[Node], edges: &[Vec<Edge>]) -> Result<(), BuildError> {
+fn detect_errors_and_cycles(nodes: &[Node], edges: &[Vec<Edge>], reachable: &[bool]) -> Result<(), BuildError> {
     let mut state = vec![0u8; nodes.len()];
     let mut stack = Vec::new();
-    for root in 0..nodes.len() {
-        visit(root, nodes, edges, &mut state, &mut stack)?;
+    for (root, is_reachable) in reachable.iter().copied().enumerate() {
+        if is_reachable {
+            visit(root, nodes, edges, &mut state, &mut stack)?;
+        }
     }
     Ok(())
 }
@@ -319,6 +491,14 @@ fn visit(
                     path: stack.iter().map(|&entry| nodes[entry].key.clone()).collect(),
                 });
             }
+            Edge::AliasTargetReplaced(target, original, replacement) => {
+                return Err(BuildError::AliasTargetReplaced {
+                    alias: nodes[index].key.clone(),
+                    target: target.clone(),
+                    original: *original,
+                    replacement: *replacement,
+                });
+            }
         }
     }
     stack.pop();
@@ -327,13 +507,17 @@ fn visit(
 }
 
 /// Uses registration position to break ties among currently ready bindings.
-fn stable_topology(nodes: &[Node], edges: &[Vec<Edge>]) -> Vec<BindingLocation> {
+fn stable_topology(nodes: &[Node], edges: &[Vec<Edge>], reachable: &[bool]) -> Vec<BindingLocation> {
     let mut indegree = vec![0usize; nodes.len()];
     let mut dependents = vec![Vec::new(); nodes.len()];
     for (index, requests) in edges.iter().enumerate() {
         let mut unique = HashSet::new();
+        if !reachable[index] {
+            continue;
+        }
         for edge in requests {
             if let Edge::Target(target) = edge
+                && reachable[*target]
                 && unique.insert(target)
             {
                 indegree[index] += 1;
@@ -343,7 +527,7 @@ fn stable_topology(nodes: &[Node], edges: &[Vec<Edge>]) -> Vec<BindingLocation> 
     }
     let mut ready = BinaryHeap::new();
     for (index, &count) in indegree.iter().enumerate() {
-        if count == 0 {
+        if reachable[index] && count == 0 {
             ready.push(Reverse(index));
         }
     }
@@ -357,6 +541,10 @@ fn stable_topology(nodes: &[Node], edges: &[Vec<Edge>]) -> Vec<BindingLocation> 
             }
         }
     }
-    debug_assert_eq!(order.len(), nodes.len(), "cycles were checked before sorting");
+    debug_assert_eq!(
+        order.len(),
+        reachable.iter().filter(|yes| **yes).count(),
+        "cycles were checked before sorting"
+    );
     order
 }

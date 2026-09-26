@@ -185,6 +185,37 @@ pub enum RegistrationError {
 /// Errors detected before or during container construction.
 #[derive(Debug, Error)]
 pub enum BuildError {
+    /// A root-scoped build was requested without selecting a root component.
+    #[error("no build roots were selected; register at least one root or call build_all")]
+    NoRootsSelected,
+    /// No active binding satisfies a required root request.
+    #[error("missing root {request:?}; available bindings: {available:?}")]
+    MissingRoot {
+        /// Requested root binding.
+        request: Dependency,
+        /// Active bindings of the requested type.
+        available: Vec<BindingKey>,
+    },
+    /// An alias still points to a concrete key replaced by another definition.
+    #[error("alias {alias:?} targets replaced key {target:?}: {original} was replaced by {replacement}")]
+    AliasTargetReplaced {
+        /// Alias whose projection was invalidated.
+        alias: BindingKey,
+        /// Replaced concrete key.
+        target: BindingKey,
+        /// Source definition that originally owned the key.
+        original: DefinitionSource,
+        /// Replacement definition now owning the key.
+        replacement: DefinitionSource,
+    },
+    /// Several active bindings satisfy a root request without a unique primary.
+    #[error("ambiguous root {request:?}; candidates: {candidates:?}")]
+    AmbiguousRoot {
+        /// Requested root binding.
+        request: Dependency,
+        /// Active matching bindings.
+        candidates: Vec<BindingKey>,
+    },
     /// Two active definitions own the same exact key.
     #[error("duplicate binding {key:?} from {first} and {second}")]
     DuplicateBinding {
