@@ -18,6 +18,17 @@ use std::sync::Arc;
 /// # Type Parameters
 ///
 /// `T` is the concrete or trait-object value returned by the factory.
+///
+/// # Examples
+///
+/// ```
+/// use std::sync::Arc;
+/// use qubit_ioc::FactoryFuture;
+///
+/// fn make_value() -> FactoryFuture<u32> {
+///     Box::pin(async { Ok(Arc::new(42)) })
+/// }
+/// ```
 pub type FactoryFuture<T> = Pin<Box<dyn Future<Output = Result<Arc<T>, FactoryError>> + Send + 'static>>;
 use crate::build_context::BuildContext;
 use crate::dependency::Dependency;
