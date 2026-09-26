@@ -57,6 +57,7 @@ pub struct Dependency {
 }
 
 impl PartialEq for Dependency {
+    /// Compares type, optional ID, and request cardinality.
     fn eq(&self, other: &Self) -> bool {
         self.type_id == other.type_id && self.id == other.id && self.cardinality == other.cardinality
     }
@@ -65,6 +66,7 @@ impl PartialEq for Dependency {
 impl Eq for Dependency {}
 
 impl Hash for Dependency {
+    /// Hashes the same request identity components used by equality.
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.type_id.hash(state);
         self.id.hash(state);
@@ -76,6 +78,11 @@ impl Dependency {
     /// Requests one binding of `T` by candidate selection.
     ///
     /// The request is required and does not constrain an ID.
+    ///
+    /// # Type Parameters
+    ///
+    /// `T` is the requested Rust type and must be `'static` for runtime type
+    /// identity tracking.
     pub fn of<T: ?Sized + 'static>() -> Self {
         Self::make::<T>(None, DependencyCardinality::Required)
     }
@@ -83,6 +90,11 @@ impl Dependency {
     /// Requests the binding of `T` with the exact raw `id`.
     ///
     /// The ID is validated when this request is registered with a builder.
+    ///
+    /// # Type Parameters
+    ///
+    /// `T` is the requested Rust type and must be `'static` for runtime type
+    /// identity tracking.
     pub fn with_id<T: ?Sized + 'static>(id: &str) -> Self {
         Self::make::<T>(Some(id), DependencyCardinality::Required)
     }
@@ -90,6 +102,11 @@ impl Dependency {
     /// Requests zero or one binding of `T` by candidate selection.
     ///
     /// Absence is permitted; ambiguity still fails graph validation.
+    ///
+    /// # Type Parameters
+    ///
+    /// `T` is the requested Rust type and must be `'static` for runtime type
+    /// identity tracking.
     pub fn optional<T: ?Sized + 'static>() -> Self {
         Self::make::<T>(None, DependencyCardinality::Optional)
     }
@@ -97,6 +114,11 @@ impl Dependency {
     /// Requests zero or one binding of `T` with the exact raw `id`.
     ///
     /// Absence is permitted and the ID is validated during registration.
+    ///
+    /// # Type Parameters
+    ///
+    /// `T` is the requested Rust type and must be `'static` for runtime type
+    /// identity tracking.
     pub fn optional_with_id<T: ?Sized + 'static>(id: &str) -> Self {
         Self::make::<T>(Some(id), DependencyCardinality::Optional)
     }
@@ -104,6 +126,11 @@ impl Dependency {
     /// Requests all bindings of `T` in collection order.
     ///
     /// No candidates produce an empty collection.
+    ///
+    /// # Type Parameters
+    ///
+    /// `T` is the requested Rust type and must be `'static` for runtime type
+    /// identity tracking.
     pub fn all<T: ?Sized + 'static>() -> Self {
         Self::make::<T>(None, DependencyCardinality::All)
     }
@@ -136,8 +163,8 @@ impl Dependency {
         self.cardinality
     }
 
-    /// Builds a request while keeping its ID unvalidated until registration.
-    /// Creates a normalized request for the supplied type, ID, and cardinality.
+    /// Creates a normalized request while keeping its ID unvalidated until
+    /// registration.
     fn make<T: ?Sized + 'static>(id: Option<&str>, cardinality: DependencyCardinality) -> Self {
         Self {
             type_id: TypeId::of::<T>(),

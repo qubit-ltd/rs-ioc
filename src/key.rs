@@ -105,6 +105,10 @@ impl Hash for BindingKey {
 
 impl BindingKey {
     /// Creates a key for `T` and an optional validated identifier.
+    ///
+    /// # Type Parameters
+    ///
+    /// `T` is the Rust type namespace for this binding and must be `'static`.
     pub fn of<T: ?Sized + 'static>(id: Option<BindingId>) -> Self {
         Self {
             type_id: TypeId::of::<T>(),

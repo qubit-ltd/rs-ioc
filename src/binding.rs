@@ -14,6 +14,10 @@ use std::sync::Arc;
 
 /// A sendable future that produces one shared component or a retained factory
 /// error.
+///
+/// # Type Parameters
+///
+/// `T` is the concrete or trait-object value returned by the factory.
 pub type FactoryFuture<T> = Pin<Box<dyn Future<Output = Result<Arc<T>, FactoryError>> + Send + 'static>>;
 use crate::build_context::BuildContext;
 use crate::dependency::Dependency;

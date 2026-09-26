@@ -17,6 +17,15 @@ use crate::key::BindingKey;
 use crate::options::DefinitionSource;
 
 /// An ID that does not match the binding identifier grammar.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_ioc::BindingId;
+///
+/// let error = BindingId::parse("bad-id").expect_err("hyphens are not allowed");
+/// assert_eq!(error.value(), "bad-id");
+/// ```
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 #[error("invalid binding ID `{value}`; expected dot-separated ASCII segments beginning with a letter")]
 pub struct InvalidBindingId {
@@ -41,6 +50,15 @@ impl InvalidBindingId {
 }
 
 /// A concrete wrapper retaining the original user factory error as its source.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_ioc::FactoryError;
+///
+/// let error = FactoryError::new(std::io::Error::other("connection refused"));
+/// assert!(std::error::Error::source(&error).is_some());
+/// ```
 #[derive(Debug, Error)]
 #[error("factory failed: {source}")]
 pub struct FactoryError {
@@ -97,6 +115,22 @@ impl FactoryError {
 }
 
 /// Errors detected while adding one definition to a builder.
+///
+/// # Examples
+///
+/// ```
+/// use std::sync::Arc;
+/// use qubit_ioc::BindingOptions;
+/// use qubit_ioc::ContainerBuilder;
+/// use qubit_ioc::RegistrationError;
+///
+/// let mut builder = ContainerBuilder::new();
+/// let result = builder.register_instance_with(
+///     Arc::new(1_u32),
+///     BindingOptions { id: Some("bad-id".to_owned()), ..BindingOptions::default() },
+/// );
+/// assert!(matches!(result, Err(RegistrationError::InvalidBindingId { .. })));
+/// ```
 #[derive(Debug, Error)]
 pub enum RegistrationError {
     /// An interface alias attempted to use a different activation profile.
@@ -193,6 +227,16 @@ pub enum RegistrationError {
 }
 
 /// Errors detected before or during container construction.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_ioc::BuildError;
+/// use qubit_ioc::ContainerBuilder;
+///
+/// let error = ContainerBuilder::new().build().expect_err("a root is required");
+/// assert!(matches!(error, BuildError::NoRootsSelected));
+/// ```
 #[derive(Debug, Error)]
 pub enum BuildError {
     /// A root-scoped build was requested without selecting a root component.
@@ -322,6 +366,22 @@ pub enum BuildError {
 }
 
 /// Errors from a factory's access to its declared dependencies.
+///
+/// # Examples
+///
+/// ```
+/// use std::sync::Arc;
+/// use qubit_ioc::BuildAccessError;
+/// use qubit_ioc::ContainerBuilder;
+///
+/// let mut builder = ContainerBuilder::new();
+/// builder.register_factory::<u64, _>(&[], |context| {
+///     assert!(matches!(context.get::<u32>(), Err(BuildAccessError::UndeclaredDependency { .. })));
+///     Ok(Arc::new(1))
+/// })?;
+/// builder.build_all()?;
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 #[derive(Debug, Error)]
 pub enum BuildAccessError {
     /// The factory requested a dependency absent from its declaration.
@@ -335,6 +395,17 @@ pub enum BuildAccessError {
 }
 
 /// Errors from looking up built components.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_ioc::ContainerBuilder;
+/// use qubit_ioc::ResolveError;
+///
+/// let context = ContainerBuilder::new().build_all()?;
+/// assert!(matches!(context.get::<String>(), Err(ResolveError::MissingComponent { .. })));
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 #[derive(Debug, Error)]
 pub enum ResolveError {
     /// No built binding satisfies the requested type and ID.

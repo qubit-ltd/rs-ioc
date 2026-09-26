@@ -83,8 +83,14 @@ pub mod codegen_v1 {
     ///
     /// This type is a generated-code protocol and can change in a later
     /// version.
+    ///
+    /// # Type Parameters
+    ///
+    /// `T` is the concrete component type produced by the staged definition.
     pub struct DefinitionDraft<T: ?Sized + Send + Sync + 'static> {
+        /// Concrete binding and its staged interface projections.
         definition: PendingDefinition,
+        /// Retains the component type for compile-time protocol checking.
         marker: PhantomData<Arc<T>>,
     }
 
@@ -96,6 +102,11 @@ pub mod codegen_v1 {
         /// IDs, profile and dependencies are checked before the factory is
         /// stored; the factory itself runs only during a validated
         /// build.
+        ///
+        /// # Type Parameters
+        ///
+        /// `F` is a sendable one-shot factory that returns a shared `T` or a
+        /// [`FactoryError`].
         pub fn new_sync<F>(
             source: DefinitionSource,
             dependencies: &[Dependency],
@@ -118,6 +129,11 @@ pub mod codegen_v1 {
         ///
         /// Invalid IDs, profile or duplicate requests return a registration
         /// error.
+        ///
+        /// # Type Parameters
+        ///
+        /// `F` is a sendable one-shot factory that creates a future returning
+        /// a shared `T` or a [`FactoryError`].
         pub fn new_async<F>(
             source: DefinitionSource,
             dependencies: &[Dependency],
@@ -139,6 +155,10 @@ pub mod codegen_v1 {
         /// Stages an already constructed concrete instance.
         ///
         /// Invalid IDs or profile return a registration error.
+        ///
+        /// # Type Parameters
+        ///
+        /// `T` is the concrete component type held by `value`.
         pub fn from_instance(
             source: DefinitionSource,
             options: BindingOptions,
@@ -158,6 +178,11 @@ pub mod codegen_v1 {
         /// conversion. The alias shares this definition's activation
         /// profile; a conflicting alias profile or invalid ID returns a
         /// registration error.
+        ///
+        /// # Type Parameters
+        ///
+        /// `U` is the interface type added as an alias. `F` projects a shared
+        /// `T` into a shared `U` and must be safe to call across threads.
         pub fn bind<U, F>(&mut self, options: BindingOptions, project: F) -> Result<(), RegistrationError>
         where
             U: ?Sized + Send + Sync + 'static,

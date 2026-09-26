@@ -14,6 +14,19 @@ use crate::options::DefinitionSource;
 /// A static registration callback, diagnostic source and stable definition ID.
 ///
 /// The callback stages metadata; it must not construct its component.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_ioc::ContainerBuilder;
+/// use qubit_ioc::DefinitionSource;
+/// use qubit_ioc::RegistrationError;
+/// use qubit_ioc::discovery::RegistrationEntry;
+///
+/// fn register(_: &mut ContainerBuilder) -> Result<(), RegistrationError> { Ok(()) }
+/// let source = DefinitionSource::new("app", "app", "src/main.rs", 1, 1, "Service");
+/// let _entry = RegistrationEntry::new(register, source, "app::Service");
+/// ```
 pub struct RegistrationEntry {
     /// Callback that stages metadata without constructing the component.
     register: fn(&mut ContainerBuilder) -> Result<(), RegistrationError>,

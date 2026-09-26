@@ -34,6 +34,32 @@ use crate::options::DefinitionSource;
 use crate::store::InstanceStore;
 
 /// A declaration that can install itself into a container builder.
+///
+/// # Examples
+///
+/// ```
+/// use std::sync::Arc;
+/// use qubit_ioc::ComponentDefinition;
+/// use qubit_ioc::ContainerBuilder;
+/// use qubit_ioc::DefinitionSource;
+/// use qubit_ioc::RegistrationError;
+///
+/// struct Message;
+/// impl ComponentDefinition for Message {
+///     fn source() -> DefinitionSource {
+///         DefinitionSource::new("app", "app", "src/main.rs", 1, 1, "Message")
+///     }
+///     fn definition_id() -> &'static str { "app::Message" }
+///     fn register(builder: &mut ContainerBuilder) -> Result<(), RegistrationError> {
+///         builder.register_instance(Arc::new(Message))
+///     }
+/// }
+///
+/// let mut builder = ContainerBuilder::new();
+/// builder.install::<Message>()?;
+/// assert!(builder.build_all()?.get::<Message>().is_ok());
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 pub trait ComponentDefinition {
     /// Returns this definition's diagnostic source location.
     ///
@@ -47,8 +73,12 @@ pub trait ComponentDefinition {
     /// coincide; a package, module and item name combination is recommended.
     fn definition_id() -> &'static str;
 
-    /// Registers the definition, returning a structured registration error on
-    /// invalid input.
+    /// Registers this definition into `builder`.
+    ///
+    /// # Errors
+    ///
+    /// Returns the registration error produced when one of the definition's
+    /// keys, options, or declared requests is invalid.
     // Keep the public error's full key and source fields in generated definitions.
     #[allow(clippy::result_large_err)]
     fn register(builder: &mut ContainerBuilder) -> Result<(), RegistrationError>;
@@ -105,6 +135,10 @@ impl ContainerBuilder {
     /// Roots are resolved against every active binding before the dependency
     /// graph is reduced to the selected components. Repeating the same request
     /// keeps its first registration position.
+    ///
+    /// # Type Parameters
+    ///
+    /// `T` is the component type whose dependency closure should be built.
     pub fn root<T: ?Sized + 'static>(&mut self) {
         let request = Dependency::of::<T>();
         if !self.roots.contains(&request) {
@@ -116,6 +150,10 @@ impl ContainerBuilder {
     ///
     /// The ID is validated at registration time. Repeating the same request
     /// keeps its first registration position.
+    ///
+    /// # Type Parameters
+    ///
+    /// `T` is the component type whose exact-ID binding should be built.
     ///
     /// # Errors
     ///
@@ -132,6 +170,11 @@ impl ContainerBuilder {
     }
 
     /// Stages a complete shared instance with default binding options.
+    ///
+    /// # Type Parameters
+    ///
+    /// `T` is the concrete or trait-object component type and must be
+    /// thread-safe and `'static` for storage in the context.
     #[track_caller]
     pub fn register_instance<T: ?Sized + Send + Sync + 'static>(
         &mut self,
@@ -145,6 +188,11 @@ impl ContainerBuilder {
     /// Invalid IDs or profiles return a registration error with caller
     /// location. Cross-definition collisions are checked after profile
     /// filtering at build.
+    ///
+    /// # Type Parameters
+    ///
+    /// `T` is the concrete or trait-object component type and must be
+    /// thread-safe and `'static` for storage in the context.
     #[track_caller]
     pub fn register_instance_with<T: ?Sized + Send + Sync + 'static>(
         &mut self,
@@ -160,6 +208,11 @@ impl ContainerBuilder {
     /// Stages a one-shot synchronous factory with default binding options.
     ///
     /// The factory receives only its declared requests during construction.
+    ///
+    /// # Type Parameters
+    ///
+    /// `T` is the component type returned by the factory. `F` is a sendable,
+    /// one-shot factory that returns a shared `T` or [`FactoryError`].
     #[track_caller]
     pub fn register_factory<T, F>(&mut self, dependencies: &[Dependency], factory: F) -> Result<(), RegistrationError>
     where
@@ -173,6 +226,11 @@ impl ContainerBuilder {
     ///
     /// Duplicate requests or invalid IDs and profiles fail at registration;
     /// the closure itself runs only after the complete graph validates.
+    ///
+    /// # Type Parameters
+    ///
+    /// `T` is the component type returned by the factory. `F` is a sendable,
+    /// one-shot factory that returns a shared `T` or [`FactoryError`].
     #[track_caller]
     pub fn register_factory_with<T, F>(
         &mut self,
@@ -195,6 +253,11 @@ impl ContainerBuilder {
     ///
     /// Its returned future owns its data, is `Send`, and is driven only by
     /// [`Self::build_async`]; no runtime is chosen by this crate.
+    ///
+    /// # Type Parameters
+    ///
+    /// `T` is the component type returned by the future. `F` is a sendable,
+    /// one-shot factory that creates that future.
     #[track_caller]
     pub fn register_async_factory<T, F>(
         &mut self,
@@ -211,6 +274,11 @@ impl ContainerBuilder {
     /// Stages an asynchronous factory of `T` with binding options.
     ///
     /// Invalid options and duplicate requests fail before any factory executes.
+    ///
+    /// # Type Parameters
+    ///
+    /// `T` is the component type returned by the future. `F` is a sendable,
+    /// one-shot factory that creates that future.
     #[track_caller]
     pub fn register_async_factory_with<T, F>(
         &mut self,
@@ -232,6 +300,11 @@ impl ContainerBuilder {
     /// Invokes a generated or handwritten definition registration entry.
     ///
     /// The definition's own registration errors are returned unchanged.
+    ///
+    /// # Type Parameters
+    ///
+    /// `D` is a generated or handwritten definition implementing
+    /// [`ComponentDefinition`].
     pub fn install<D: ComponentDefinition>(&mut self) -> Result<(), RegistrationError> {
         D::register(self)
     }
@@ -240,6 +313,10 @@ impl ContainerBuilder {
     ///
     /// Every binding declared by that entry, including interface aliases, is
     /// skipped. Explicit registrations already staged in this builder remain.
+    ///
+    /// # Type Parameters
+    ///
+    /// `D` is the definition whose generated discovery entry is excluded.
     pub fn exclude_definition<D: ComponentDefinition>(&mut self) {
         self.excluded_definitions.push(D::definition_id());
     }

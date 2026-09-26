@@ -11,6 +11,20 @@
 ///
 /// `id` stays unvalidated until the definition is registered, so that
 /// registration errors can include its source.
+///
+/// # Examples
+///
+/// ```
+/// use std::sync::Arc;
+/// use qubit_ioc::BindingOptions;
+/// use qubit_ioc::ContainerBuilder;
+///
+/// let options = BindingOptions { primary: true, order: 2, ..BindingOptions::default() };
+/// let mut builder = ContainerBuilder::new();
+/// builder.register_instance_with(Arc::new(7_u32), options)?;
+/// assert_eq!(*builder.build_all()?.get::<u32>()?, 7);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct BindingOptions {
     /// Original binding ID text, if supplied.
@@ -24,6 +38,15 @@ pub struct BindingOptions {
 }
 
 /// Stable source location for a registered definition.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_ioc::DefinitionSource;
+///
+/// let source = DefinitionSource::new("app", "app::services", "src/services.rs", 12, 3, "Database");
+/// assert_eq!(source.to_string(), "src/services.rs:12:3 (Database)");
+/// ```
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct DefinitionSource {
     /// Cargo package containing the definition.
@@ -62,6 +85,7 @@ impl DefinitionSource {
 }
 
 impl std::fmt::Display for DefinitionSource {
+    /// Formats the source file, line, column, and declared item name.
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(formatter, "{}:{}:{} ({})", self.file, self.line, self.column, self.item)
     }

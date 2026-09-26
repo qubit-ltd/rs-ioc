@@ -49,7 +49,9 @@ pub(crate) struct BuiltBinding {
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 pub struct ApplicationContext {
+    /// Constructed instances shared with factories and lookup callers.
     store: Arc<RwLock<InstanceStore>>,
+    /// Active binding metadata used to resolve and order queries.
     bindings: Vec<BuiltBinding>,
 }
 
@@ -85,6 +87,11 @@ impl ApplicationContext {
     /// Returns the only `T`, or the unique primary when several exist.
     ///
     /// Missing and ambiguous selections return structured [`ResolveError`].
+    ///
+    /// # Type Parameters
+    ///
+    /// `T` is the concrete or trait-object type used to identify the binding.
+    /// It must be thread-safe and `'static` so the context can share it.
     #[must_use = "handle the component lookup result"]
     pub fn get<T: ?Sized + Send + Sync + 'static>(&self) -> Result<Arc<T>, ResolveError> {
         let request = BindingKey::of::<T>(None);
@@ -97,6 +104,11 @@ impl ApplicationContext {
     ///
     /// Invalid IDs, missing bindings and ambiguous bindings return
     /// [`ResolveError`] with the original request and candidates.
+    ///
+    /// # Type Parameters
+    ///
+    /// `T` is the concrete or trait-object type used to identify the binding.
+    /// It must be thread-safe and `'static` so the context can share it.
     #[must_use = "handle the component lookup result"]
     pub fn get_by_id<T: ?Sized + Send + Sync + 'static>(&self, id: &str) -> Result<Arc<T>, ResolveError> {
         let request = BindingKey::of::<T>(Some(BindingId::parse(id)?));
@@ -107,6 +119,11 @@ impl ApplicationContext {
 
     /// Returns `Some` for a unique selected `T`, `None` when absent, or an
     /// ambiguity error when multiple non-primary candidates exist.
+    ///
+    /// # Type Parameters
+    ///
+    /// `T` is the concrete or trait-object type used to identify candidates.
+    /// It must be thread-safe and `'static` so the context can share it.
     #[must_use = "handle the optional component lookup result"]
     pub fn try_get<T: ?Sized + Send + Sync + 'static>(&self) -> Result<Option<Arc<T>>, ResolveError> {
         let request = BindingKey::of::<T>(None);
@@ -121,6 +138,11 @@ impl ApplicationContext {
     /// Returns all built `T` values sorted by order, ID and source location.
     ///
     /// A type with no bindings yields an empty vector.
+    ///
+    /// # Type Parameters
+    ///
+    /// `T` is the concrete or trait-object type whose bindings are collected.
+    /// It must be thread-safe and `'static` so the context can share them.
     #[must_use]
     pub fn get_all<T: ?Sized + Send + Sync + 'static>(&self) -> Vec<Arc<T>> {
         let mut candidates = self.candidates(TypeId::of::<T>());
