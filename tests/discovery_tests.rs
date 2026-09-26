@@ -302,6 +302,7 @@ fn test_replace_binding_changes_only_the_selected_interface_key() {
 }
 
 #[test]
+#[allow(clippy::result_large_err)]
 fn test_replacing_concrete_binding_rejects_its_stale_alias_before_factory() {
     let _guard = TEST_LOCK.lock().expect("test mutex");
     let mut builder = ContainerBuilder::new().discover().expect("discover source component");
