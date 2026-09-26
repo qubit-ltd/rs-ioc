@@ -96,7 +96,7 @@ impl PendingBinding {
             primary,
             order,
             replaced_sources: Vec::new(),
-            kind: PendingBindingKind::Instance(Box::new(value)),
+            kind: PendingBindingKind::Instance(Arc::new(value)),
         }
     }
 
@@ -110,7 +110,7 @@ impl PendingBinding {
         F: FnOnce(BuildContext) -> Result<Arc<T>, FactoryError> + Send + 'static,
     {
         let erased = move |context: BuildContext| -> Result<ErasedInstance, FactoryError> {
-            factory(context).map(|value| Box::new(value) as ErasedInstance)
+            factory(context).map(|value| Arc::new(value) as ErasedInstance)
         };
         Self {
             key,
@@ -132,7 +132,7 @@ impl PendingBinding {
     {
         let erased = move |context: BuildContext| -> ErasedFactoryFuture {
             let future = factory(context);
-            Box::pin(async move { future.await.map(|value| Box::new(value) as ErasedInstance) })
+            Box::pin(async move { future.await.map(|value| Arc::new(value) as ErasedInstance) })
         };
         Self {
             key,
@@ -155,7 +155,7 @@ impl PendingBinding {
     {
         let erased = move |value: &ErasedInstance| -> Option<ErasedInstance> {
             let concrete = value.downcast_ref::<Arc<T>>()?;
-            Some(Box::new(project(Arc::clone(concrete))))
+            Some(Arc::new(project(Arc::clone(concrete))))
         };
         Self {
             key,

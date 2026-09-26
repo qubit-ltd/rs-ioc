@@ -7,15 +7,15 @@
 // =============================================================================
 //! Restricted access to dependencies selected before factory execution.
 
+use std::collections::HashMap;
 use std::sync::Arc;
-use std::sync::RwLock;
 
 use crate::dependency::Dependency;
 use crate::error::BuildAccessError;
 use crate::graph::ResolvedDependency;
 use crate::key::BindingKey;
 use crate::options::DefinitionSource;
-use crate::store::InstanceStore;
+use crate::store::ErasedInstance;
 
 /// Gives one factory access only to the requests it declared at registration.
 ///
@@ -25,19 +25,20 @@ use crate::store::InstanceStore;
 /// use std::sync::Arc;
 /// use qubit_ioc::ContainerBuilder;
 /// use qubit_ioc::Dependency;
+/// use qubit_ioc::FactoryError;
 ///
 /// let mut builder = ContainerBuilder::new();
 /// builder.register_instance(Arc::new(7_u32))?;
 /// builder.register_factory::<usize, _>(&[Dependency::of::<u32>()], |context| {
-///     Ok(Arc::new(*context.get::<u32>()? as usize))
+///     Ok(Arc::new(*context.get::<u32>().map_err(FactoryError::new)? as usize))
 /// })?;
 /// let context = builder.build_all()?;
 /// assert_eq!(*context.get::<usize>()?, 7);
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 pub struct BuildContext {
-    /// Shared store containing dependencies constructed earlier in graph order.
-    store: Arc<RwLock<InstanceStore>>,
+    /// Erased values for the exact dependency keys resolved for this factory.
+    values: HashMap<BindingKey, ErasedInstance>,
     /// Definition whose factory is currently running.
     source: DefinitionSource,
     /// Requests and keys declared and resolved before construction.
@@ -47,14 +48,15 @@ pub struct BuildContext {
 // BuildAccessError preserves the rejected request and its definition source.
 #[allow(clippy::result_large_err)]
 impl BuildContext {
-    /// Creates a factory view from the validated requests for one definition.
+    /// Creates a factory view from the validated requests and their value
+    /// snapshot.
     pub(crate) fn new(
-        store: Arc<RwLock<InstanceStore>>,
+        values: HashMap<BindingKey, ErasedInstance>,
         source: DefinitionSource,
         resolved: Vec<ResolvedDependency>,
     ) -> Self {
         Self {
-            store,
+            values,
             source,
             resolved,
         }
@@ -153,12 +155,12 @@ impl BuildContext {
             })
     }
 
-    /// Clones a graph-guaranteed value without exposing the mutable store.
+    /// Clones a graph-guaranteed value from this factory's dependency snapshot.
     fn read<T: ?Sized + Send + Sync + 'static>(&self, key: &BindingKey) -> Arc<T> {
-        self.store
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .get::<T>(key)
+        self.values
+            .get(key)
+            .and_then(|value| value.downcast_ref::<Arc<T>>())
+            .cloned()
             .expect("validated dependency must be constructed before its factory")
     }
 }

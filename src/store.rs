@@ -17,7 +17,7 @@ use std::sync::Arc;
 use crate::key::BindingKey;
 
 /// An erased complete `Arc<T>`, including any trait-object vtable metadata.
-pub(crate) type ErasedInstance = Box<dyn Any + Send + Sync>;
+pub(crate) type ErasedInstance = Arc<dyn Any + Send + Sync>;
 
 /// Stores built components by exact type and optional identifier.
 #[derive(Default)]
@@ -36,7 +36,7 @@ impl InstanceStore {
     #[cfg(test)]
     pub(crate) fn insert<T: ?Sized + Send + Sync + 'static>(&mut self, key: BindingKey, value: Arc<T>) {
         debug_assert_eq!(key.type_id(), TypeId::of::<T>());
-        self.insert_erased(key, Box::new(value));
+        self.insert_erased(key, Arc::new(value));
     }
 
     /// Inserts an already erased `Arc` under `key`, replacing any prior value.
@@ -57,5 +57,11 @@ impl InstanceStore {
     /// Borrows the erased value for alias projection, or `None` if absent.
     pub(crate) fn get_erased(&self, key: &BindingKey) -> Option<&ErasedInstance> {
         self.values.get(key)
+    }
+
+    /// Clones one erased value so a factory can retain only its resolved
+    /// dependencies.
+    pub(crate) fn get_erased_cloned(&self, key: &BindingKey) -> Option<ErasedInstance> {
+        self.values.get(key).cloned()
     }
 }

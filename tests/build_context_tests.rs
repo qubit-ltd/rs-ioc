@@ -6,11 +6,38 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 use std::sync::Arc;
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
 
 use qubit_ioc::BindingOptions;
 use qubit_ioc::BuildAccessError;
+use qubit_ioc::BuildContext;
 use qubit_ioc::ContainerBuilder;
 use qubit_ioc::Dependency;
+
+struct DropProbe(Arc<AtomicUsize>);
+
+impl Drop for DropProbe {
+    fn drop(&mut self) {
+        self.0.fetch_add(1, Ordering::SeqCst);
+    }
+}
+
+struct RetainedContext {
+    _context: BuildContext,
+    _probe: DropProbe,
+}
+
+struct UsedValue {
+    _probe: DropProbe,
+}
+struct UnusedValue {
+    _probe: DropProbe,
+}
+
+struct RetainedDependencyContext {
+    _context: BuildContext,
+}
 
 #[test]
 fn test_get_rejects_undeclared_dependency() {
@@ -89,4 +116,57 @@ fn test_try_get_by_id_returns_the_declared_named_component() {
             .expect("consumer"),
         37
     );
+}
+
+#[test]
+fn test_retained_build_context_does_not_keep_its_container_alive() {
+    let drops = Arc::new(AtomicUsize::new(0));
+    let factory_drops = Arc::clone(&drops);
+    let mut builder = ContainerBuilder::new();
+    builder
+        .register_factory::<RetainedContext, _>(&[], move |context| {
+            Ok(Arc::new(RetainedContext {
+                _context: context,
+                _probe: DropProbe(factory_drops),
+            }))
+        })
+        .expect("stage retained context factory");
+
+    let application = builder.build_all().expect("build retained context");
+    drop(application);
+
+    assert_eq!(drops.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn test_retained_build_context_keeps_only_declared_dependencies_alive() {
+    let used_drops = Arc::new(AtomicUsize::new(0));
+    let unused_drops = Arc::new(AtomicUsize::new(0));
+    let mut builder = ContainerBuilder::new();
+    builder
+        .register_instance(Arc::new(UsedValue {
+            _probe: DropProbe(Arc::clone(&used_drops)),
+        }))
+        .expect("stage used dependency");
+    builder
+        .register_instance(Arc::new(UnusedValue {
+            _probe: DropProbe(Arc::clone(&unused_drops)),
+        }))
+        .expect("stage unused dependency");
+    builder
+        .register_factory::<RetainedDependencyContext, _>(&[Dependency::of::<UsedValue>()], |context| {
+            Ok(Arc::new(RetainedDependencyContext { _context: context }))
+        })
+        .expect("stage retained dependency context");
+
+    let application = builder.build_all().expect("build all staged components");
+    let retained = application
+        .get::<RetainedDependencyContext>()
+        .expect("resolve retained context");
+    drop(application);
+
+    assert_eq!(unused_drops.load(Ordering::SeqCst), 1);
+    assert_eq!(used_drops.load(Ordering::SeqCst), 0);
+    drop(retained);
+    assert_eq!(used_drops.load(Ordering::SeqCst), 1);
 }

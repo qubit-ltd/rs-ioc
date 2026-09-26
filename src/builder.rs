@@ -12,7 +12,6 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::panic::Location;
 use std::sync::Arc;
-use std::sync::RwLock;
 
 use crate::FactoryFuture;
 use crate::application_context::ApplicationContext;
@@ -622,7 +621,7 @@ struct Construction {
     /// Lookup metadata published with the completed context.
     bindings: Vec<BuiltBinding>,
     /// Partially populated store, kept private until construction succeeds.
-    store: Arc<RwLock<InstanceStore>>,
+    store: InstanceStore,
 }
 
 // BuildError keeps full dependency paths and original factory sources.
@@ -671,7 +670,7 @@ impl Construction {
             resolved: graph.resolved,
             paths,
             bindings,
-            store: Arc::new(RwLock::new(InstanceStore::default())),
+            store: InstanceStore::default(),
         }
     }
 
@@ -730,7 +729,17 @@ impl Construction {
     fn build_context(&mut self, definition_index: usize) -> BuildContext {
         let source = self.sources[definition_index];
         let resolved = std::mem::take(&mut self.resolved[definition_index]);
-        BuildContext::new(Arc::clone(&self.store), source, resolved)
+        let mut values = HashMap::new();
+        for dependency in &resolved {
+            for key in &dependency.keys {
+                values.entry(key.clone()).or_insert_with(|| {
+                    self.store
+                        .get_erased_cloned(key)
+                        .expect("validated dependency must be constructed before its factory")
+                });
+            }
+        }
+        BuildContext::new(values, source, resolved)
     }
 
     /// Projects one alias from its already constructed concrete binding.
@@ -741,8 +750,7 @@ impl Construction {
         target: &BindingKey,
         project: crate::binding::AliasProjector,
     ) -> Result<crate::store::ErasedInstance, BuildError> {
-        let store = self.store.read().unwrap_or_else(std::sync::PoisonError::into_inner);
-        let value = store.get_erased(target).and_then(project);
+        let value = self.store.get_erased(target).and_then(project);
         value.ok_or_else(|| {
             self.factory_error(
                 key,
@@ -754,10 +762,7 @@ impl Construction {
 
     /// Inserts one successfully constructed complete erased `Arc`.
     fn insert(&mut self, key: BindingKey, value: crate::store::ErasedInstance) {
-        self.store
-            .write()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .insert_erased(key, value);
+        self.store.insert_erased(key, value);
     }
 
     /// Wraps a factory failure with source and the complete first root path.

@@ -10,7 +10,6 @@
 
 use std::any::TypeId;
 use std::sync::Arc;
-use std::sync::RwLock;
 
 use crate::builder::ContainerBuilder;
 use crate::error::ResolveError;
@@ -50,8 +49,8 @@ pub(crate) struct BuiltBinding {
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 pub struct ApplicationContext {
-    /// Constructed instances shared with factories and lookup callers.
-    store: Arc<RwLock<InstanceStore>>,
+    /// Immutable constructed instances shared with lookup callers.
+    store: InstanceStore,
     /// Active binding metadata used to resolve and order queries.
     bindings: Vec<BuiltBinding>,
 }
@@ -81,7 +80,7 @@ impl ApplicationContext {
     ///
     /// The caller must publish only bindings whose keys and erased values
     /// agree.
-    pub(crate) fn new(store: Arc<RwLock<InstanceStore>>, bindings: Vec<BuiltBinding>) -> Self {
+    pub(crate) fn new(store: InstanceStore, bindings: Vec<BuiltBinding>) -> Self {
         Self { store, bindings }
     }
 
@@ -202,8 +201,6 @@ impl ApplicationContext {
     /// Clones an `Arc<T>` that must exist after successful construction.
     fn read<T: ?Sized + Send + Sync + 'static>(&self, key: &BindingKey) -> Arc<T> {
         self.store
-            .read()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .get::<T>(key)
             .expect("published binding must exist with its registered type")
     }
