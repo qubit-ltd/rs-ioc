@@ -5,6 +5,7 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
+// qubit-style: allow type-file-name
 //! Internal storage for constructed component values.
 
 use std::any::Any;

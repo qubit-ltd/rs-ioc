@@ -5,6 +5,7 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
+// qubit-style: allow type-file-name
 //! Linked definition discovery, available with the `inventory` feature.
 
 use crate::builder::ContainerBuilder;
