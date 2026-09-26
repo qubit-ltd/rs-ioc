@@ -38,7 +38,6 @@ default = ["macros", "inventory", "config"]
 macros = ["dep:qubit-ioc-macros"]
 inventory = ["dep:inventory"]
 config = ["dep:qubit-config", "dep:serde"]
-reflect = []
 
 [dependencies]
 thiserror = "2.0"
