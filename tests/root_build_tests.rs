@@ -9,6 +9,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 
+use qubit_ioc::BindingOptions;
 use qubit_ioc::BuildError;
 use qubit_ioc::ContainerBuilder;
 use qubit_ioc::Dependency;
@@ -201,4 +202,56 @@ fn test_root_build_duplicate_binding_reports_both_definition_sources() {
                 && second.line == second_line
                 && first != second
     ));
+}
+
+#[test]
+fn test_root_build_skips_unrelated_definitions_in_wide_graph() {
+    const UNSELECTED_COUNT: usize = 1_000;
+    const CHAIN_COUNT: usize = 100;
+    let unselected_calls = Arc::new(AtomicUsize::new(0));
+    let selected_calls = Arc::new(AtomicUsize::new(0));
+    let mut builder = ContainerBuilder::new();
+
+    for index in 0..UNSELECTED_COUNT {
+        let calls = Arc::clone(&unselected_calls);
+        builder
+            .register_factory_with::<u32, _>(
+                &[],
+                BindingOptions {
+                    id: Some(format!("unused.n{index}")),
+                    ..BindingOptions::default()
+                },
+                move |_| {
+                    calls.fetch_add(1, Ordering::SeqCst);
+                    Ok(Arc::new(index as u32))
+                },
+            )
+            .expect("stage unrelated definition");
+    }
+    for index in 0..CHAIN_COUNT {
+        let calls = Arc::clone(&selected_calls);
+        let dependencies = if index + 1 < CHAIN_COUNT {
+            vec![Dependency::with_id::<u32>(&format!("chain.n{}", index + 1))]
+        } else {
+            Vec::new()
+        };
+        builder
+            .register_factory_with::<u32, _>(
+                &dependencies,
+                BindingOptions {
+                    id: Some(format!("chain.n{index}")),
+                    ..BindingOptions::default()
+                },
+                move |_| {
+                    calls.fetch_add(1, Ordering::SeqCst);
+                    Ok(Arc::new(index as u32))
+                },
+            )
+            .expect("stage selected chain node");
+    }
+    builder.root_by_id::<u32>("chain.n0").expect("select chain root");
+
+    let _context = builder.build().expect("selected root closure builds");
+    assert_eq!(selected_calls.load(Ordering::SeqCst), CHAIN_COUNT);
+    assert_eq!(unselected_calls.load(Ordering::SeqCst), 0);
 }

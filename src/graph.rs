@@ -236,13 +236,15 @@ fn close_definitions(nodes: &[Node], edges: &[Vec<Edge>], mut reachable: Vec<boo
     for (index, node) in nodes.iter().enumerate() {
         nodes_by_definition[node.location.definition].push(index);
     }
+    let mut discovered = reachable.clone();
+    let mut predecessors = vec![None; nodes.len()];
     let mut queue = reachable
         .iter()
         .enumerate()
-        .filter_map(|(index, yes)| yes.then_some((index, vec![nodes[index].key.clone()])))
+        .filter_map(|(index, yes)| yes.then_some(index))
         .collect::<VecDeque<_>>();
     let mut visited_definitions = HashSet::new();
-    while let Some((index, path)) = queue.pop_front() {
+    while let Some(index) = queue.pop_front() {
         let definition = nodes[index].location.definition;
         if !visited_definitions.insert(definition) {
             continue;
@@ -250,16 +252,15 @@ fn close_definitions(nodes: &[Node], edges: &[Vec<Edge>], mut reachable: Vec<boo
         for &i in &nodes_by_definition[definition] {
             let node = &nodes[i];
             reachable[i] = true;
-            let mut node_path = path.clone();
-            if node_path.last() != Some(&node.key) {
-                node_path.push(node.key.clone());
-            }
+            let node_path = binding_path(index, &predecessors, nodes);
             for edge in &edges[i] {
                 match edge {
                     Edge::Target(target) => {
-                        let mut target_path = node_path.clone();
-                        target_path.push(nodes[*target].key.clone());
-                        queue.push_back((*target, target_path));
+                        if !discovered[*target] {
+                            discovered[*target] = true;
+                            predecessors[*target] = Some(i);
+                            queue.push_back(*target);
+                        }
                     }
                     Edge::MissingDependency(dependency) => {
                         return Err(BuildError::MissingDependency {
@@ -297,6 +298,18 @@ fn close_definitions(nodes: &[Node], edges: &[Vec<Edge>], mut reachable: Vec<boo
         }
     }
     Ok(reachable)
+}
+
+/// Reconstructs the first root path to a binding from predecessor links.
+fn binding_path(index: usize, predecessors: &[Option<usize>], nodes: &[Node]) -> Vec<BindingKey> {
+    let mut path = Vec::new();
+    let mut current = Some(index);
+    while let Some(entry) = current {
+        path.push(nodes[entry].key.clone());
+        current = predecessors[entry];
+    }
+    path.reverse();
+    path
 }
 
 /// Flattens definitions in builder entry order and binding declaration order.
@@ -471,74 +484,68 @@ fn detect_errors_and_cycles(nodes: &[Node], edges: &[Vec<Edge>], reachable: &[bo
     let mut state = vec![0u8; nodes.len()];
     let mut stack = Vec::new();
     for (root, is_reachable) in reachable.iter().copied().enumerate() {
-        if is_reachable {
-            visit(root, nodes, edges, &mut state, &mut stack)?;
-        }
-    }
-    Ok(())
-}
-
-/// Recursively checks one binding while retaining its active dependency path.
-// BuildError preserves the complete path while traversing the graph.
-#[allow(clippy::result_large_err)]
-fn visit(
-    index: usize,
-    nodes: &[Node],
-    edges: &[Vec<Edge>],
-    state: &mut [u8],
-    stack: &mut Vec<usize>,
-) -> Result<(), BuildError> {
-    if state[index] == 2 {
-        return Ok(());
-    }
-    if state[index] == 1 {
-        let path = stack
-            .iter()
-            .chain(std::iter::once(&index))
-            .map(|&entry| nodes[entry].key.clone())
-            .collect();
-        return Err(BuildError::DependencyCycle { path });
-    }
-    state[index] = 1;
-    stack.push(index);
-    for edge in &edges[index] {
-        match edge {
-            Edge::Target(target) => visit(*target, nodes, edges, state, stack)?,
-            Edge::MissingDependency(dependency) => {
-                return Err(BuildError::MissingDependency {
-                    dependency: dependency.clone(),
-                    definition: nodes[index].source,
-                    path: stack.iter().map(|&entry| nodes[entry].key.clone()).collect(),
-                });
-            }
-            Edge::AmbiguousDependency(dependency, candidates) => {
-                return Err(BuildError::AmbiguousBinding {
-                    dependency: dependency.clone(),
-                    definition: nodes[index].source,
-                    candidates: candidates.clone(),
-                    path: stack.iter().map(|&entry| nodes[entry].key.clone()).collect(),
-                });
-            }
-            Edge::MissingAliasTarget(target) => {
-                return Err(BuildError::MissingAliasTarget {
-                    alias: nodes[index].key.clone(),
-                    target: target.clone(),
-                    definition: nodes[index].source,
-                    path: stack.iter().map(|&entry| nodes[entry].key.clone()).collect(),
-                });
-            }
-            Edge::AliasTargetReplaced(target, original, replacement) => {
-                return Err(BuildError::AliasTargetReplaced {
-                    alias: nodes[index].key.clone(),
-                    target: target.clone(),
-                    original: *original,
-                    replacement: *replacement,
-                });
+        if is_reachable && state[root] == 0 {
+            state[root] = 1;
+            stack.push((root, 0));
+            while let Some((index, next_edge)) = stack.last_mut() {
+                if *next_edge == edges[*index].len() {
+                    let (finished, _) = stack.pop().expect("DFS frame exists");
+                    state[finished] = 2;
+                    continue;
+                }
+                let edge = &edges[*index][*next_edge];
+                *next_edge += 1;
+                match edge {
+                    Edge::Target(target) => match state[*target] {
+                        2 => {}
+                        1 => {
+                            let path = stack
+                                .iter()
+                                .map(|(entry, _)| nodes[*entry].key.clone())
+                                .chain(std::iter::once(nodes[*target].key.clone()))
+                                .collect();
+                            return Err(BuildError::DependencyCycle { path });
+                        }
+                        _ => {
+                            state[*target] = 1;
+                            stack.push((*target, 0));
+                        }
+                    },
+                    Edge::MissingDependency(dependency) => {
+                        return Err(BuildError::MissingDependency {
+                            dependency: dependency.clone(),
+                            definition: nodes[*index].source,
+                            path: stack.iter().map(|(entry, _)| nodes[*entry].key.clone()).collect(),
+                        });
+                    }
+                    Edge::AmbiguousDependency(dependency, candidates) => {
+                        return Err(BuildError::AmbiguousBinding {
+                            dependency: dependency.clone(),
+                            definition: nodes[*index].source,
+                            candidates: candidates.clone(),
+                            path: stack.iter().map(|(entry, _)| nodes[*entry].key.clone()).collect(),
+                        });
+                    }
+                    Edge::MissingAliasTarget(target) => {
+                        return Err(BuildError::MissingAliasTarget {
+                            alias: nodes[*index].key.clone(),
+                            target: target.clone(),
+                            definition: nodes[*index].source,
+                            path: stack.iter().map(|(entry, _)| nodes[*entry].key.clone()).collect(),
+                        });
+                    }
+                    Edge::AliasTargetReplaced(target, original, replacement) => {
+                        return Err(BuildError::AliasTargetReplaced {
+                            alias: nodes[*index].key.clone(),
+                            target: target.clone(),
+                            original: *original,
+                            replacement: *replacement,
+                        });
+                    }
+                }
             }
         }
     }
-    stack.pop();
-    state[index] = 2;
     Ok(())
 }
 

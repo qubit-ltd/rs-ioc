@@ -202,6 +202,87 @@ fn test_graph_profiles_filter_before_duplicate_check() {
 }
 
 #[test]
+fn test_graph_validates_deep_chain_without_recursion() {
+    const NODE_COUNT: usize = 10_000;
+    let definitions = (0..NODE_COUNT)
+        .map(|index| {
+            let dependencies = if index + 1 < NODE_COUNT {
+                vec![Dependency::with_id::<u32>(&format!("node.n{}", index + 1))]
+            } else {
+                Vec::new()
+            };
+            instance(
+                "deep node",
+                index as u32,
+                dependencies,
+                Some(&format!("node.n{index}")),
+                false,
+                0,
+                None,
+            )
+        })
+        .collect();
+
+    let graph = ValidatedGraph::validate(definitions, &[]).expect("deep chain validates");
+    assert_eq!(graph.order.len(), NODE_COUNT);
+}
+
+#[test]
+fn test_graph_reports_full_missing_path_for_deep_chain() {
+    const NODE_COUNT: usize = 10_000;
+    let definitions = (0..NODE_COUNT)
+        .map(|index| {
+            let dependencies = if index + 1 < NODE_COUNT {
+                vec![Dependency::with_id::<u32>(&format!("node.n{}", index + 1))]
+            } else {
+                vec![Dependency::of::<C>()]
+            };
+            instance(
+                "deep node",
+                index as u32,
+                dependencies,
+                Some(&format!("node.n{index}")),
+                false,
+                0,
+                None,
+            )
+        })
+        .collect();
+
+    let error = match ValidatedGraph::validate(definitions, &[]) {
+        Ok(_) => panic!("missing dependency must fail"),
+        Err(error) => error,
+    };
+    assert!(matches!(error, BuildError::MissingDependency { path, .. } if path.len() == NODE_COUNT));
+}
+
+#[test]
+fn test_graph_reports_cycle_for_deep_chain() {
+    const NODE_COUNT: usize = 10_000;
+    let definitions = (0..NODE_COUNT)
+        .map(|index| {
+            let target = if index + 1 < NODE_COUNT { index + 1 } else { 0 };
+            let dependencies = vec![Dependency::with_id::<u32>(&format!("node.n{target}"))];
+            instance(
+                "deep node",
+                index as u32,
+                dependencies,
+                Some(&format!("node.n{index}")),
+                false,
+                0,
+                None,
+            )
+        })
+        .collect();
+
+    let error = match ValidatedGraph::validate(definitions, &[]) {
+        Ok(_) => panic!("back edge must form a cycle"),
+        Err(error) => error,
+    };
+    assert!(matches!(error, BuildError::DependencyCycle { path } if path.len() == NODE_COUNT + 1));
+}
+
+#[test]
 fn test_graph_cycle_and_dependency_first_stable_topology() {
     let graph = ValidatedGraph::validate(
         vec![
