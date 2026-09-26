@@ -144,13 +144,13 @@ impl ValidatedGraph {
             reachable
         };
         if roots.is_some() {
-            let mut keys = HashSet::new();
+            let mut sources = HashMap::new();
             for (i, node) in nodes.iter().enumerate().filter(|(i, _)| reachable[*i]) {
                 let _ = i;
-                if !keys.insert(node.key.clone()) {
+                if let Some(first) = sources.insert(node.key.clone(), node.source) {
                     return Err(BuildError::DuplicateBinding {
                         key: node.key.clone(),
-                        first: node.source,
+                        first,
                         second: node.source,
                     });
                 }

@@ -17,6 +17,7 @@ use qubit_ioc::RegistrationError;
 
 struct Wanted;
 struct Unused;
+struct Leaf;
 struct RootService;
 struct MiddleService;
 struct MissingService;
@@ -173,4 +174,31 @@ fn test_root_build_factory_failure_ignores_unselected_consumers() {
         }
         other => panic!("unexpected build error: {other}"),
     }
+}
+
+#[test]
+fn test_root_build_duplicate_binding_reports_both_definition_sources() {
+    let mut builder = ContainerBuilder::new();
+    let first_line = line!() + 1;
+    builder.register_instance(Arc::new(Leaf)).expect("stage first leaf");
+    let second_line = line!() + 1;
+    builder.register_instance(Arc::new(Leaf)).expect("stage second leaf");
+    builder
+        .register_factory::<RootService, _>(&[Dependency::all::<Leaf>()], |_| Ok(Arc::new(RootService)))
+        .expect("stage root service");
+    builder.root::<RootService>();
+
+    let error = match builder.build() {
+        Ok(_) => panic!("selected duplicate leaves must fail graph validation"),
+        Err(error) => error,
+    };
+    assert!(matches!(
+        error,
+        BuildError::DuplicateBinding { first, second, .. }
+            if first.file == file!()
+                && second.file == file!()
+                && first.line == first_line
+                && second.line == second_line
+                && first != second
+    ));
 }
