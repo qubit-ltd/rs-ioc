@@ -13,6 +13,7 @@ use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::collections::VecDeque;
 
 use crate::binding::PendingBindingKind;
 use crate::binding::PendingDefinition;
@@ -116,7 +117,7 @@ impl ValidatedGraph {
             vec![true; nodes.len()]
         };
         let reachable = if roots.is_some() {
-            close_definitions(&definitions, &nodes, &edges, reachable)?
+            close_definitions(&nodes, &edges, reachable)?
         } else {
             reachable
         };
@@ -198,19 +199,14 @@ fn select_roots(
 }
 
 #[allow(clippy::result_large_err)]
-fn close_definitions(
-    definitions: &[PendingDefinition],
-    nodes: &[Node],
-    edges: &[Vec<Edge>],
-    mut reachable: Vec<bool>,
-) -> Result<Vec<bool>, BuildError> {
-    let mut queue: Vec<usize> = reachable
+fn close_definitions(nodes: &[Node], edges: &[Vec<Edge>], mut reachable: Vec<bool>) -> Result<Vec<bool>, BuildError> {
+    let mut queue = reachable
         .iter()
         .enumerate()
-        .filter_map(|(i, yes)| yes.then_some(i))
-        .collect();
+        .filter_map(|(index, yes)| yes.then_some((index, vec![nodes[index].key.clone()])))
+        .collect::<VecDeque<_>>();
     let mut visited_definitions = HashSet::new();
-    while let Some(index) = queue.pop() {
+    while let Some((index, path)) = queue.pop_front() {
         let definition = nodes[index].location.definition;
         if !visited_definitions.insert(definition) {
             continue;
@@ -221,14 +217,22 @@ fn close_definitions(
             .filter(|(_, n)| n.location.definition == definition)
         {
             reachable[i] = true;
+            let mut node_path = path.clone();
+            if node_path.last() != Some(&node.key) {
+                node_path.push(node.key.clone());
+            }
             for edge in &edges[i] {
                 match edge {
-                    Edge::Target(target) => queue.push(*target),
+                    Edge::Target(target) => {
+                        let mut target_path = node_path.clone();
+                        target_path.push(nodes[*target].key.clone());
+                        queue.push_back((*target, target_path));
+                    }
                     Edge::MissingDependency(dependency) => {
                         return Err(BuildError::MissingDependency {
                             dependency: dependency.clone(),
                             definition: node.source,
-                            path: vec![node.key.clone()],
+                            path: node_path,
                         });
                     }
                     Edge::AmbiguousDependency(dependency, candidates) => {
@@ -236,7 +240,7 @@ fn close_definitions(
                             dependency: dependency.clone(),
                             definition: node.source,
                             candidates: candidates.clone(),
-                            path: vec![node.key.clone()],
+                            path: node_path,
                         });
                     }
                     Edge::MissingAliasTarget(target) => {
@@ -244,7 +248,7 @@ fn close_definitions(
                             alias: node.key.clone(),
                             target: target.clone(),
                             definition: node.source,
-                            path: vec![node.key.clone()],
+                            path: node_path,
                         });
                     }
                     Edge::AliasTargetReplaced(target, original, replacement) => {
@@ -259,7 +263,6 @@ fn close_definitions(
             }
         }
     }
-    let _ = definitions;
     Ok(reachable)
 }
 

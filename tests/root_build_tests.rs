@@ -15,6 +15,12 @@ use qubit_ioc::RegistrationError;
 
 struct Wanted;
 struct Unused;
+struct RootService;
+struct MiddleService;
+struct MissingService;
+struct FailingDependency;
+struct SelectedConsumer;
+struct UnselectedConsumer;
 
 #[test]
 fn test_build_all_runs_every_staged_factory_even_when_a_root_is_registered() {
@@ -101,4 +107,73 @@ fn test_missing_root_reports_available_bindings() {
     builder.register_instance(Arc::new(Unused)).expect("unused instance");
     builder.root::<Wanted>();
     assert!(matches!(builder.build(), Err(BuildError::MissingRoot { .. })));
+}
+
+#[test]
+fn test_root_build_missing_dependency_reports_complete_path() {
+    let mut builder = ContainerBuilder::new();
+    builder
+        .register_factory::<RootService, _>(&[qubit_ioc::Dependency::of::<MiddleService>()], |context| {
+            let _ = context.get::<MiddleService>().expect("declared dependency");
+            Ok(Arc::new(RootService))
+        })
+        .expect("stage root factory");
+    builder
+        .register_factory::<MiddleService, _>(&[qubit_ioc::Dependency::of::<MissingService>()], |_| {
+            Ok(Arc::new(MiddleService))
+        })
+        .expect("stage middle factory");
+    builder.root::<RootService>();
+
+    let error = match builder.build() {
+        Ok(_) => panic!("missing nested dependency must fail"),
+        Err(error) => error,
+    };
+    match error {
+        BuildError::MissingDependency { path, .. } => {
+            assert_eq!(path.len(), 2);
+            assert_eq!(path[0].type_name(), std::any::type_name::<RootService>());
+            assert_eq!(path[1].type_name(), std::any::type_name::<MiddleService>());
+        }
+        other => panic!("unexpected build error: {other}"),
+    }
+}
+
+#[test]
+fn test_root_build_factory_failure_ignores_unselected_consumers() {
+    use qubit_ioc::Dependency;
+    use qubit_ioc::FactoryError;
+
+    let mut builder = ContainerBuilder::new();
+    builder
+        .register_factory::<UnselectedConsumer, _>(&[Dependency::of::<FailingDependency>()], |context| {
+            let _ = context.get::<FailingDependency>().expect("declared dependency");
+            Ok(Arc::new(UnselectedConsumer))
+        })
+        .expect("stage unselected consumer");
+    builder
+        .register_factory::<SelectedConsumer, _>(&[Dependency::of::<FailingDependency>()], |context| {
+            let _ = context.get::<FailingDependency>().expect("declared dependency");
+            Ok(Arc::new(SelectedConsumer))
+        })
+        .expect("stage selected consumer");
+    builder
+        .register_factory::<FailingDependency, _>(&[], |_| {
+            Err(FactoryError::new(std::io::Error::other("expected failure")))
+        })
+        .expect("stage failing dependency");
+    builder.root::<SelectedConsumer>();
+
+    let error = match builder.build() {
+        Ok(_) => panic!("dependency factory must fail"),
+        Err(error) => error,
+    };
+    match error {
+        BuildError::FactoryFailed { path, .. } => {
+            assert_eq!(path.len(), 2);
+            assert_eq!(path[0].type_name(), std::any::type_name::<SelectedConsumer>());
+            assert_eq!(path[1].type_name(), std::any::type_name::<FailingDependency>());
+        }
+        other => panic!("unexpected build error: {other}"),
+    }
 }

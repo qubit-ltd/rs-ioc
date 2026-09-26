@@ -521,8 +521,8 @@ impl Construction {
     /// Retains lookup and diagnostic metadata before consuming one-shot
     /// bindings.
     fn new(graph: ValidatedGraph) -> Self {
-        let paths = paths_to_all(&graph.definitions, &graph.resolved);
         let selected: HashSet<_> = graph.order.iter().copied().collect();
+        let paths = paths_to_all(&graph.definitions, &graph.resolved, &selected);
         let bindings = graph
             .definitions
             .iter()
@@ -675,10 +675,17 @@ impl Construction {
 fn paths_to_all(
     definitions: &[PendingDefinition],
     resolved: &[Vec<ResolvedDependency>],
+    selected: &HashSet<BindingLocation>,
 ) -> HashMap<BindingKey, Vec<BindingKey>> {
     let mut targets = HashSet::new();
     for (definition_index, definition) in definitions.iter().enumerate() {
-        for binding in &definition.bindings {
+        for (binding_index, binding) in definition.bindings.iter().enumerate() {
+            if !selected.contains(&BindingLocation {
+                definition: definition_index,
+                binding: binding_index,
+            }) {
+                continue;
+            }
             if let PendingBindingKind::Alias { target, .. } = &binding.kind {
                 targets.insert(target.clone());
             } else {
@@ -689,17 +696,43 @@ fn paths_to_all(
         }
     }
     let mut paths = HashMap::new();
-    for definition in definitions {
-        for binding in &definition.bindings {
+    for (definition_index, definition) in definitions.iter().enumerate() {
+        for (binding_index, binding) in definition.bindings.iter().enumerate() {
+            if !selected.contains(&BindingLocation {
+                definition: definition_index,
+                binding: binding_index,
+            }) {
+                continue;
+            }
             if !targets.contains(&binding.key) {
-                trace_paths(&binding.key, definitions, resolved, &mut Vec::new(), &mut paths);
+                trace_paths(
+                    &binding.key,
+                    definitions,
+                    resolved,
+                    selected,
+                    &mut Vec::new(),
+                    &mut paths,
+                );
             }
         }
     }
-    for definition in definitions {
-        for binding in &definition.bindings {
+    for (definition_index, definition) in definitions.iter().enumerate() {
+        for (binding_index, binding) in definition.bindings.iter().enumerate() {
+            if !selected.contains(&BindingLocation {
+                definition: definition_index,
+                binding: binding_index,
+            }) {
+                continue;
+            }
             if !paths.contains_key(&binding.key) {
-                trace_paths(&binding.key, definitions, resolved, &mut Vec::new(), &mut paths);
+                trace_paths(
+                    &binding.key,
+                    definitions,
+                    resolved,
+                    selected,
+                    &mut Vec::new(),
+                    &mut paths,
+                );
             }
         }
     }
@@ -711,6 +744,7 @@ fn trace_paths(
     key: &BindingKey,
     definitions: &[PendingDefinition],
     resolved: &[Vec<ResolvedDependency>],
+    selected: &HashSet<BindingLocation>,
     path: &mut Vec<BindingKey>,
     paths: &mut HashMap<BindingKey, Vec<BindingKey>>,
 ) {
@@ -720,15 +754,27 @@ fn trace_paths(
     path.push(key.clone());
     paths.insert(key.clone(), path.clone());
     for (definition_index, definition) in definitions.iter().enumerate() {
-        if let Some(binding) = definition.bindings.iter().find(|binding| &binding.key == key) {
+        if let Some(binding) = definition
+            .bindings
+            .iter()
+            .enumerate()
+            .find_map(|(binding_index, binding)| {
+                (&binding.key == key
+                    && selected.contains(&BindingLocation {
+                        definition: definition_index,
+                        binding: binding_index,
+                    }))
+                .then_some(binding)
+            })
+        {
             match &binding.kind {
                 PendingBindingKind::Alias { target, .. } => {
-                    trace_paths(target, definitions, resolved, path, paths);
+                    trace_paths(target, definitions, resolved, selected, path, paths);
                 }
                 _ => {
                     for dependency in &resolved[definition_index] {
                         for target in &dependency.keys {
-                            trace_paths(target, definitions, resolved, path, paths);
+                            trace_paths(target, definitions, resolved, selected, path, paths);
                         }
                     }
                 }
