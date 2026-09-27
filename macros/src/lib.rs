@@ -17,6 +17,9 @@ mod ir;
 mod parse;
 mod validate;
 
+#[cfg(test)]
+mod parse_tests;
+
 use ir::MacroKind;
 
 /// Runs every declaration through parsing, validation, normalization, and

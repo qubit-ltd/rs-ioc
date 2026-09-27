@@ -5,26 +5,19 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-#[allow(dead_code)]
-#[path = "../src/ir.rs"]
-mod ir;
-#[path = "../src/parse.rs"]
-mod parse;
-#[path = "../src/validate.rs"]
-mod validate;
-
-use ir::Declaration;
-use ir::DependencyKind;
-use ir::MacroKind;
-use ir::OutputShape;
 use proc_macro2::TokenStream;
 use quote::ToTokens;
 use quote::quote;
 
+use crate::ir::Declaration;
+use crate::ir::DependencyKind;
+use crate::ir::MacroKind;
+use crate::ir::OutputShape;
+
 /// Parses an attribute declaration through the same validation boundary as a
 /// macro entry.
 fn declaration(kind: MacroKind, attributes: TokenStream, item: TokenStream) -> syn::Result<Declaration> {
-    validate::validate(parse::parse(kind, attributes, item)?)
+    crate::validate::validate(crate::parse::parse(kind, attributes, item)?)
 }
 
 #[test]
