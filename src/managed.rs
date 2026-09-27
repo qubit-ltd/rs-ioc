@@ -11,10 +11,12 @@
 use std::any::Any;
 use std::error::Error;
 use std::future::Future;
+use std::future::poll_fn;
 use std::panic::AssertUnwindSafe;
 use std::panic::catch_unwind;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::task::Poll;
 
 use thiserror::Error;
 
@@ -38,6 +40,73 @@ pub type CleanupFuture = Pin<Box<dyn Future<Output = Result<(), CleanupError>> +
 /// `T` is the thread-safe component value returned by the future.
 pub type ManagedFactoryFuture<T> =
     Pin<Box<dyn Future<Output = Result<Managed<T>, crate::error::FactoryError>> + Send + 'static>>;
+
+/// Converts a cleanup callback or future panic into a structured cleanup error.
+///
+/// # Parameters
+///
+/// * `action` - Lifecycle operation whose unwind was caught.
+/// * `payload` - Panic payload returned by `catch_unwind`.
+///
+/// # Returns
+///
+/// A cleanup error retaining the panic message in its source.
+fn panic_cleanup_error(action: &'static str, payload: Box<dyn Any + Send>) -> CleanupError {
+    let message = payload
+        .downcast_ref::<String>()
+        .map(String::as_str)
+        .or_else(|| payload.downcast_ref::<&str>().copied())
+        .unwrap_or("non-string panic payload");
+    CleanupError::new(std::io::Error::other(format!("{action} panicked: {message}")))
+}
+
+/// Starts one wait callback while converting any callback panic to an error.
+///
+/// The returned future is still polled separately so panics during polling are
+/// attributed to the wait future.
+///
+/// # Parameters
+///
+/// * `wait` - One-shot callback that creates the component's wait future.
+///
+/// # Returns
+///
+/// The created cleanup future.
+///
+/// # Errors
+///
+/// Returns a cleanup error if the callback panics while creating the future.
+fn start_wait(wait: ErasedWait) -> Result<CleanupFuture, CleanupError> {
+    catch_unwind(AssertUnwindSafe(wait)).map_err(|payload| panic_cleanup_error("wait callback", payload))
+}
+
+/// Polls a retained wait future and converts an unwind panic into a cleanup
+/// error.
+///
+/// The future is borrowed so a `Pending` result preserves its state if the
+/// caller cancels the surrounding wait operation.
+///
+/// # Parameters
+///
+/// * `future` - Retained future for one component's wait action.
+///
+/// # Returns
+///
+/// `Ok(())` when the wait future succeeds.
+///
+/// # Errors
+///
+/// Returns its cleanup error, or a cleanup error containing a caught panic.
+async fn poll_wait(future: &mut CleanupFuture) -> Result<(), CleanupError> {
+    poll_fn(
+        |context| match catch_unwind(AssertUnwindSafe(|| future.as_mut().poll(context))) {
+            Ok(Poll::Ready(result)) => Poll::Ready(result),
+            Ok(Poll::Pending) => Poll::Pending,
+            Err(payload) => Poll::Ready(Err(panic_cleanup_error("wait future", payload))),
+        },
+    )
+    .await
+}
 
 /// An error returned by a component stop or wait action.
 ///
@@ -217,7 +286,9 @@ impl ShutdownHandle {
     /// # Errors
     ///
     /// Returns a cloneable [`ShutdownError`] containing all stop and wait
-    /// failures observed after the final wait completes.
+    /// failures observed after the final wait completes. Panics while creating
+    /// or polling a wait future are recorded as wait failures and do not
+    /// prevent later wait actions from running.
     pub async fn wait(&mut self) -> Result<(), ShutdownError> {
         if let Some(result) = &self.result {
             return Self::clone_result(result);
@@ -228,9 +299,19 @@ impl ShutdownHandle {
                     self.next_wait -= 1;
                     let entry = &mut self.cleanup.entries[self.next_wait];
                     if let Some(wait) = entry.action.wait.take() {
-                        self.active_binding = Some((entry.key.clone(), entry.definition));
-                        self.active_wait = Some(wait());
-                        break;
+                        match start_wait(wait) {
+                            Ok(future) => {
+                                self.active_binding = Some((entry.key.clone(), entry.definition));
+                                self.active_wait = Some(future);
+                                break;
+                            }
+                            Err(error) => self.failures.push(ShutdownFailure {
+                                key: entry.key.clone(),
+                                definition: entry.definition,
+                                phase: ShutdownPhase::Wait,
+                                error,
+                            }),
+                        }
                     }
                 }
                 if self.active_wait.is_none() {
@@ -240,7 +321,7 @@ impl ShutdownHandle {
                 }
             }
 
-            let result = self.active_wait.as_mut().expect("active wait was initialized").await;
+            let result = poll_wait(self.active_wait.as_mut().expect("active wait was initialized")).await;
             self.active_wait = None;
             let (key, definition) = self.active_binding.take().expect("active binding was set");
             if let Err(error) = result {
@@ -414,16 +495,7 @@ impl CleanupJournal {
                 let error = match catch_unwind(AssertUnwindSafe(stop)) {
                     Ok(Ok(())) => None,
                     Ok(Err(error)) => Some(error),
-                    Err(payload) => {
-                        let message = payload
-                            .downcast_ref::<String>()
-                            .map(String::as_str)
-                            .or_else(|| payload.downcast_ref::<&str>().copied())
-                            .unwrap_or("non-string panic payload");
-                        Some(CleanupError::new(std::io::Error::other(format!(
-                            "stop callback panicked: {message}"
-                        ))))
-                    }
+                    Err(payload) => Some(panic_cleanup_error("stop callback", payload)),
                 };
                 if let Some(error) = error {
                     failures.push(ShutdownFailure {
@@ -442,15 +514,19 @@ impl CleanupJournal {
     pub(crate) async fn wait_reverse(&mut self) -> Vec<ShutdownFailure> {
         let mut failures = Vec::new();
         for entry in self.entries.iter_mut().rev() {
-            if let Some(wait) = entry.action.wait.take()
-                && let Err(error) = wait().await
-            {
-                failures.push(ShutdownFailure {
-                    key: entry.key.clone(),
-                    definition: entry.definition,
-                    phase: ShutdownPhase::Wait,
-                    error,
-                });
+            if let Some(wait) = entry.action.wait.take() {
+                let result = match start_wait(wait) {
+                    Ok(mut future) => poll_wait(&mut future).await,
+                    Err(error) => Err(error),
+                };
+                if let Err(error) = result {
+                    failures.push(ShutdownFailure {
+                        key: entry.key.clone(),
+                        definition: entry.definition,
+                        phase: ShutdownPhase::Wait,
+                        error,
+                    });
+                }
             }
         }
         self.entries.clear();
