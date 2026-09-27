@@ -150,17 +150,19 @@ use qubit_ioc::{CleanupError, ContainerBuilder, Managed};
 struct Worker;
 impl Worker { fn request_stop(&self) -> Result<(), std::io::Error> { Ok(()) } }
 
-let mut builder = ContainerBuilder::new();
-builder.register_managed_factory::<Worker, _>(&[], |_| {
-    let worker = Arc::new(Worker);
-    Ok(Managed::new(Arc::clone(&worker), |worker| {
-        worker.request_stop().map_err(CleanupError::new)
-    }))
-})?;
-builder.root::<Worker>();
-let context = builder.build_async().await?;
-context.shutdown_async().await?;
-# Ok::<(), Box<dyn std::error::Error>>(())
+async fn managed_lifecycle() -> Result<(), Box<dyn std::error::Error>> {
+    let mut builder = ContainerBuilder::new();
+    builder.register_managed_factory::<Worker, _>(&[], |_| {
+        let worker = Arc::new(Worker);
+        Ok(Managed::new(Arc::clone(&worker), |worker| {
+            worker.request_stop().map_err(CleanupError::new)
+        }))
+    })?;
+    builder.root::<Worker>();
+    let context = builder.build_async().await?;
+    context.shutdown_async().await?;
+    Ok(())
+}
 ```
 
 `Managed::new` 接收同步 stop 请求，`.with_wait` 可添加异步终止等待。
