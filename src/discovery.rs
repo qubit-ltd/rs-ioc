@@ -40,6 +40,15 @@ pub struct RegistrationEntry {
 impl RegistrationEntry {
     /// Constructs an entry from a generated or handwritten registration
     /// function.
+    ///
+    /// # Parameters
+    ///
+    /// `register` stages one definition. `source` supplies stable sorting and
+    /// diagnostics. `definition_id` identifies the entry for exclusions.
+    ///
+    /// # Returns
+    ///
+    /// A static discovery entry; construction does not invoke `register`.
     pub const fn new(
         register: fn(&mut ContainerBuilder) -> Result<(), RegistrationError>,
         source: DefinitionSource,
@@ -62,6 +71,14 @@ impl ContainerBuilder {
     ///
     /// A registration error stops discovery and returns that error. Repeating
     /// discovery stages the definitions again; active collisions fail at build.
+    ///
+    /// # Returns
+    ///
+    /// The builder with every non-excluded entry staged in source order.
+    ///
+    /// # Errors
+    ///
+    /// Returns the first [`RegistrationError`] produced by an entry callback.
     pub fn discover(mut self) -> Result<Self, RegistrationError> {
         let mut entries: Vec<_> = inventory::iter::<RegistrationEntry>.into_iter().collect();
         entries.sort_by(|left, right| {

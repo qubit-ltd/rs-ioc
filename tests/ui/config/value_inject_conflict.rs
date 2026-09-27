@@ -15,3 +15,5 @@ struct Invalid {
 }
 
 fn main() {}
+
+// qubit-style: allow test-file-name

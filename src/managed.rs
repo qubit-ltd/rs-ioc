@@ -5,6 +5,7 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
+// qubit-style: allow multiple-public-types
 //! Opt-in component shutdown actions owned by a built application context.
 
 use std::any::Any;
@@ -22,13 +23,31 @@ use crate::options::DefinitionSource;
 use crate::store::ErasedInstance;
 
 /// A future used to wait for a managed component to finish shutting down.
+///
+/// The future is `Send` and owns everything needed to finish after the
+/// component context begins shutdown.
 pub type CleanupFuture = Pin<Box<dyn Future<Output = Result<(), CleanupError>> + Send + 'static>>;
 
 /// A sendable future that constructs one managed component.
+///
+/// The runtime polls the future only while executing an asynchronous build.
+///
+/// # Type Parameters
+///
+/// `T` is the thread-safe component value returned by the future.
 pub type ManagedFactoryFuture<T> =
     Pin<Box<dyn Future<Output = Result<Managed<T>, crate::error::FactoryError>> + Send + 'static>>;
 
 /// An error returned by a component stop or wait action.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_ioc::CleanupError;
+///
+/// let error = CleanupError::new(std::io::Error::other("stop failed"));
+/// assert!(std::error::Error::source(&error).is_some());
+/// ```
 #[derive(Debug, Error)]
 #[error("component cleanup failed: {source}")]
 pub struct CleanupError {
@@ -39,6 +58,14 @@ pub struct CleanupError {
 
 impl CleanupError {
     /// Wraps a cleanup error while retaining its source chain.
+    ///
+    /// # Parameters
+    ///
+    /// `source` is the original error produced by a stop or wait action.
+    ///
+    /// # Returns
+    ///
+    /// A cleanup error whose source chain contains `source`.
     pub fn new<E: Error + Send + Sync + 'static>(source: E) -> Self {
         Self {
             source: Box::new(source),
@@ -47,6 +74,14 @@ impl CleanupError {
 }
 
 /// Identifies which lifecycle phase failed.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_ioc::ShutdownPhase;
+///
+/// assert_ne!(ShutdownPhase::Stop, ShutdownPhase::Wait);
+/// ```
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ShutdownPhase {
     /// The component's synchronous stop action failed.
@@ -56,6 +91,24 @@ pub enum ShutdownPhase {
 }
 
 /// One failed component cleanup action with its registered binding metadata.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_ioc::BindingKey;
+/// use qubit_ioc::CleanupError;
+/// use qubit_ioc::DefinitionSource;
+/// use qubit_ioc::ShutdownFailure;
+/// use qubit_ioc::ShutdownPhase;
+///
+/// let failure = ShutdownFailure {
+///     key: BindingKey::of::<String>(None),
+///     definition: DefinitionSource::new("app", "app", "src/main.rs", 1, 1, "Worker"),
+///     phase: ShutdownPhase::Stop,
+///     error: CleanupError::new(std::io::Error::other("stop failed")),
+/// };
+/// assert_eq!(failure.phase, ShutdownPhase::Stop);
+/// ```
 #[derive(Debug, Error)]
 #[error("{phase:?} cleanup for {key:?} from {definition} failed: {error}")]
 pub struct ShutdownFailure {
@@ -71,6 +124,15 @@ pub struct ShutdownFailure {
 }
 
 /// All failures observed while stopping and waiting for managed components.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_ioc::ShutdownError;
+///
+/// let error = ShutdownError { failures: Vec::new() };
+/// assert!(error.failures.is_empty());
+/// ```
 #[derive(Debug, Error)]
 #[error("{} component cleanup action(s) failed", failures.len())]
 pub struct ShutdownError {
@@ -83,6 +145,19 @@ pub struct ShutdownError {
 /// `stop` is synchronous so an in-progress asynchronous build can request
 /// shutdown if its future is cancelled. `wait` is optional and runs during an
 /// explicit asynchronous shutdown or a returned asynchronous build failure.
+///
+/// # Type Parameters
+///
+/// `T` is the thread-safe component value managed by the cleanup actions.
+///
+/// # Examples
+///
+/// ```
+/// use std::sync::Arc;
+/// use qubit_ioc::Managed;
+///
+/// let _worker = Managed::new(Arc::new("worker"), |_| Ok(()));
+/// ```
 pub struct Managed<T: ?Sized + Send + Sync + 'static> {
     value: Arc<T>,
     stop: Box<dyn FnOnce(Arc<T>) -> Result<(), CleanupError> + Send + 'static>,
@@ -91,6 +166,23 @@ pub struct Managed<T: ?Sized + Send + Sync + 'static> {
 
 impl<T: ?Sized + Send + Sync + 'static> Managed<T> {
     /// Creates a managed value with a synchronous stop action.
+    ///
+    /// The stop closure runs once during explicit shutdown or when an
+    /// asynchronous build future is cancelled after construction.
+    ///
+    /// # Type Parameters
+    ///
+    /// `F` is a sendable one-shot cleanup action that consumes a shared
+    /// component handle.
+    ///
+    /// # Parameters
+    ///
+    /// `value` is the shared component exposed to lookups. `stop` releases its
+    /// external resources and may return a [`CleanupError`].
+    ///
+    /// # Returns
+    ///
+    /// A managed component with no asynchronous wait action.
     pub fn new<F>(value: Arc<T>, stop: F) -> Self
     where
         F: FnOnce(Arc<T>) -> Result<(), CleanupError> + Send + 'static,
@@ -103,6 +195,19 @@ impl<T: ?Sized + Send + Sync + 'static> Managed<T> {
     }
 
     /// Adds an asynchronous action that waits for this component to terminate.
+    ///
+    /// # Type Parameters
+    ///
+    /// `F` is a sendable one-shot callback that returns the owned wait future.
+    ///
+    /// # Parameters
+    ///
+    /// `wait` runs after stop actions during asynchronous shutdown.
+    ///
+    /// # Returns
+    ///
+    /// This managed component with the wait action installed, replacing any
+    /// previously configured wait action.
     pub fn with_wait<F>(mut self, wait: F) -> Self
     where
         F: FnOnce(Arc<T>) -> CleanupFuture + Send + 'static,
@@ -168,6 +273,7 @@ impl CleanupJournal {
         self.abort_on_drop = false;
     }
 
+    /// Adds one constructed component's cleanup actions in construction order.
     pub(crate) fn push(&mut self, key: BindingKey, definition: DefinitionSource, action: CleanupAction) {
         self.entries.push(CleanupEntry {
             key,

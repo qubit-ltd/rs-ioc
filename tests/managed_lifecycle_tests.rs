@@ -16,6 +16,7 @@ use std::task::Poll;
 use std::task::Waker;
 
 use qubit_ioc::__private::codegen_v1::DefinitionDraft;
+use qubit_ioc::BindingOptions;
 use qubit_ioc::BuildError;
 use qubit_ioc::CleanupError;
 use qubit_ioc::ContainerBuilder;
@@ -353,7 +354,7 @@ fn test_managed_instance_registration_with_options_stops_on_explicit_shutdown() 
                 captured.fetch_add(1, Ordering::SeqCst);
                 Ok(())
             }),
-            qubit_ioc::BindingOptions {
+            BindingOptions {
                 id: Some("managed.second".to_owned()),
                 ..Default::default()
             },

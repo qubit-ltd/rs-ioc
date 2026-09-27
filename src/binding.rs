@@ -13,6 +13,16 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
+use crate::build_context::BuildContext;
+use crate::dependency::Dependency;
+use crate::error::FactoryError;
+use crate::error::RegistrationError;
+use crate::key::BindingKey;
+use crate::managed::CleanupAction;
+use crate::managed::Managed;
+use crate::options::DefinitionSource;
+use crate::store::ErasedInstance;
+
 /// A sendable future that produces one shared component or a retained factory
 /// error.
 ///
@@ -31,15 +41,6 @@ use std::sync::Arc;
 /// }
 /// ```
 pub type FactoryFuture<T> = Pin<Box<dyn Future<Output = Result<Arc<T>, FactoryError>> + Send + 'static>>;
-use crate::build_context::BuildContext;
-use crate::dependency::Dependency;
-use crate::error::FactoryError;
-use crate::error::RegistrationError;
-use crate::key::BindingKey;
-use crate::managed::CleanupAction;
-use crate::managed::Managed;
-use crate::options::DefinitionSource;
-use crate::store::ErasedInstance;
 
 /// A sendable factory future returning one erased complete `Arc<T>`.
 pub(crate) type ErasedFactoryFuture =

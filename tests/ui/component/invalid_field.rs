@@ -13,3 +13,5 @@ struct InvalidField {
 }
 
 fn main() {}
+
+// qubit-style: allow test-file-name

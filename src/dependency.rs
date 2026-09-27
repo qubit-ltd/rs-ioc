@@ -84,6 +84,10 @@ impl Dependency {
     ///
     /// `T` is the requested Rust type and must be `'static` for runtime type
     /// identity tracking.
+    ///
+    /// # Returns
+    ///
+    /// A required request for any binding in `T`'s type namespace.
     pub fn of<T: ?Sized + 'static>() -> Self {
         Self::make::<T>(None, DependencyCardinality::Required)
     }
@@ -92,10 +96,18 @@ impl Dependency {
     ///
     /// The ID is validated when this request is registered with a builder.
     ///
+    /// # Parameters
+    ///
+    /// `id` is the exact identifier text retained until registration.
+    ///
     /// # Type Parameters
     ///
     /// `T` is the requested Rust type and must be `'static` for runtime type
     /// identity tracking.
+    ///
+    /// # Returns
+    ///
+    /// A required request for a binding with the exact raw identifier.
     pub fn with_id<T: ?Sized + 'static>(id: &str) -> Self {
         Self::make::<T>(Some(id), DependencyCardinality::Required)
     }
@@ -108,6 +120,10 @@ impl Dependency {
     ///
     /// `T` is the requested Rust type and must be `'static` for runtime type
     /// identity tracking.
+    ///
+    /// # Returns
+    ///
+    /// An optional request for any binding in `T`'s type namespace.
     pub fn optional<T: ?Sized + 'static>() -> Self {
         Self::make::<T>(None, DependencyCardinality::Optional)
     }
@@ -120,6 +136,14 @@ impl Dependency {
     ///
     /// `T` is the requested Rust type and must be `'static` for runtime type
     /// identity tracking.
+    ///
+    /// # Parameters
+    ///
+    /// `id` is the exact identifier text retained until registration.
+    ///
+    /// # Returns
+    ///
+    /// An optional request for a binding with the exact raw identifier.
     pub fn optional_with_id<T: ?Sized + 'static>(id: &str) -> Self {
         Self::make::<T>(Some(id), DependencyCardinality::Optional)
     }
@@ -132,11 +156,19 @@ impl Dependency {
     ///
     /// `T` is the requested Rust type and must be `'static` for runtime type
     /// identity tracking.
+    ///
+    /// # Returns
+    ///
+    /// A collection request for every matching binding in collection order.
     pub fn all<T: ?Sized + 'static>() -> Self {
         Self::make::<T>(None, DependencyCardinality::All)
     }
 
     /// Returns the Rust type identity used to match bindings.
+    ///
+    /// # Returns
+    ///
+    /// The process-local `TypeId` captured for the requested type.
     #[must_use]
     #[inline]
     pub fn type_id(&self) -> TypeId {

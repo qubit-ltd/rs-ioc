@@ -25,6 +25,14 @@ impl ContainerBuilder {
     /// The builder is returned for further registrations. An invalid
     /// registration returns [`RegistrationError`]; a second active `Config`
     /// binding with the same key is reported when the builder is built.
+    ///
+    /// # Returns
+    ///
+    /// The builder containing the registered shared configuration snapshot.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RegistrationError`] if staging the snapshot fails.
     #[track_caller]
     pub fn with_config(mut self, config: Config) -> Result<Self, RegistrationError> {
         self.register_instance(Arc::new(config))?;
@@ -37,6 +45,18 @@ impl ContainerBuilder {
 ///
 /// `T` must support [`FromConfig`]. Missing values and conversion failures
 /// retain their original [`qubit_config::ConfigError`] and path as the source.
+///
+/// # Type Parameters
+///
+/// `T` is the value type to convert from the configuration entry.
+///
+/// # Returns
+///
+/// The converted value at `path`.
+///
+/// # Errors
+///
+/// Returns [`FactoryError`] when the path is absent or conversion fails.
 pub fn get_value<T: FromConfig>(config: &Config, path: &str) -> Result<T, FactoryError> {
     config.get::<T>(path).map_err(FactoryError::new)
 }
@@ -45,6 +65,19 @@ pub fn get_value<T: FromConfig>(config: &Config, path: &str) -> Result<T, Factor
 ///
 /// Missing values and conversions return a factory error whose source is the
 /// original Config error. This function is a macro code-generation protocol.
+///
+/// # Type Parameters
+///
+/// `T` is the value type to convert from the configuration entry.
+///
+/// # Returns
+///
+/// The converted value at `path`.
+///
+/// # Errors
+///
+/// Returns [`FactoryError`] with `path` and `target` context when the path is
+/// absent or conversion fails.
 #[doc(hidden)]
 pub fn get_value_for<T: FromConfig>(config: &Config, path: &str, target: &str) -> Result<T, FactoryError> {
     config
@@ -57,6 +90,19 @@ pub fn get_value_for<T: FromConfig>(config: &Config, path: &str, target: &str) -
 /// `T` must be an owned Serde target. The default `Config::deserialize`
 /// rejects unknown fields. Any configuration error keeps its root-relative
 /// field path in the retained source chain.
+///
+/// # Type Parameters
+///
+/// `T` is the owned target type deserialized from the selected subtree.
+///
+/// # Returns
+///
+/// The deserialized value for the subtree at `prefix`.
+///
+/// # Errors
+///
+/// Returns [`FactoryError`] when the subtree is absent or cannot be
+/// deserialized as `T`.
 pub fn deserialize_properties<T: DeserializeOwned>(config: &Config, prefix: &str) -> Result<T, FactoryError> {
     config.deserialize::<T>(prefix).map_err(FactoryError::new)
 }
@@ -65,6 +111,19 @@ pub fn deserialize_properties<T: DeserializeOwned>(config: &Config, prefix: &str
 ///
 /// The Config error stays as the direct source of the factory error. This
 /// function is a macro code-generation protocol.
+///
+/// # Type Parameters
+///
+/// `T` is the owned properties type deserialized from the selected subtree.
+///
+/// # Returns
+///
+/// The deserialized properties value for `prefix`.
+///
+/// # Errors
+///
+/// Returns [`FactoryError`] with `prefix` and `target` context when
+/// deserialization fails.
 #[doc(hidden)]
 pub fn deserialize_properties_for<T: DeserializeOwned>(
     config: &Config,

@@ -34,6 +34,19 @@ impl BindingId {
     ///
     /// An empty value or any segment outside `[A-Za-z][A-Za-z0-9_]*`
     /// returns [`InvalidBindingId`] containing the original input.
+    ///
+    /// # Returns
+    ///
+    /// The owned identifier with the supplied spelling.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InvalidBindingId`] when the input is empty or any
+    /// dot-delimited segment violates the identifier grammar.
+    ///
+    /// # Parameters
+    ///
+    /// `value` is the identifier text to validate and own.
     pub fn parse(value: &str) -> Result<Self, InvalidBindingId> {
         if value.split('.').all(valid_segment) {
             Ok(Self(value.to_owned()))
@@ -43,6 +56,10 @@ impl BindingId {
     }
 
     /// Returns the original, validated identifier text.
+    ///
+    /// # Returns
+    ///
+    /// The exact identifier spelling borrowed from this value.
     #[must_use]
     #[inline]
     pub fn as_str(&self) -> &str {
@@ -110,6 +127,15 @@ impl BindingKey {
     /// # Type Parameters
     ///
     /// `T` is the Rust type namespace for this binding and must be `'static`.
+    ///
+    /// # Parameters
+    ///
+    /// `id` is the validated identifier for the binding, or `None` for an
+    /// unnamed binding.
+    ///
+    /// # Returns
+    ///
+    /// A key combining `T`'s runtime type identity with `id`.
     pub fn of<T: ?Sized + 'static>(id: Option<BindingId>) -> Self {
         Self {
             type_id: TypeId::of::<T>(),
@@ -119,6 +145,10 @@ impl BindingKey {
     }
 
     /// Returns the Rust type identity used for equality.
+    ///
+    /// # Returns
+    ///
+    /// The process-local `TypeId` captured when this key was created.
     #[must_use]
     #[inline]
     pub fn type_id(&self) -> TypeId {
@@ -126,6 +156,10 @@ impl BindingKey {
     }
 
     /// Returns the Rust type name used for diagnostics.
+    ///
+    /// # Returns
+    ///
+    /// The compiler-provided type name captured when this key was created.
     #[must_use]
     #[inline]
     pub fn type_name(&self) -> &'static str {
@@ -133,6 +167,10 @@ impl BindingKey {
     }
 
     /// Returns the validated ID, or `None` for an unnamed binding.
+    ///
+    /// # Returns
+    ///
+    /// `Some` borrows the validated ID; `None` indicates an unnamed key.
     #[must_use]
     #[inline]
     pub fn id(&self) -> Option<&BindingId> {

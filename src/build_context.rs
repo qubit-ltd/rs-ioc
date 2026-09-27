@@ -71,6 +71,15 @@ impl BuildContext {
     ///
     /// `T` identifies the declared concrete or trait-object dependency and
     /// must be thread-safe and `'static`.
+    ///
+    /// # Returns
+    ///
+    /// A shared handle to the component selected for the declared request.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BuildAccessError`] if this exact required request was not
+    /// declared.
     #[must_use = "handle the declared dependency lookup result"]
     pub fn get<T: ?Sized + Send + Sync + 'static>(&self) -> Result<Arc<T>, BuildAccessError> {
         let request = Dependency::of::<T>();
@@ -87,6 +96,14 @@ impl BuildContext {
     ///
     /// `T` identifies the declared concrete or trait-object dependency and
     /// must be thread-safe and `'static`.
+    ///
+    /// # Returns
+    ///
+    /// A shared handle to the component selected by `id`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BuildAccessError`] if the exact request was not declared.
     #[must_use = "handle the declared dependency lookup result"]
     pub fn get_by_id<T: ?Sized + Send + Sync + 'static>(&self, id: &str) -> Result<Arc<T>, BuildAccessError> {
         let request = Dependency::with_id::<T>(id);
@@ -101,6 +118,15 @@ impl BuildContext {
     ///
     /// `T` identifies the declared concrete or trait-object dependency and
     /// must be thread-safe and `'static`.
+    ///
+    /// # Returns
+    ///
+    /// `Some` contains the selected component; `None` means the declared
+    /// optional request had no candidate.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BuildAccessError`] if the optional request was not declared.
     #[must_use = "handle the optional dependency lookup result"]
     pub fn try_get<T: ?Sized + Send + Sync + 'static>(&self) -> Result<Option<Arc<T>>, BuildAccessError> {
         let request = Dependency::optional::<T>();
@@ -116,6 +142,16 @@ impl BuildContext {
     ///
     /// `T` identifies the declared concrete or trait-object dependency and
     /// must be thread-safe and `'static`.
+    ///
+    /// # Returns
+    ///
+    /// `Some` contains the selected component; `None` means no candidate has
+    /// the exact ID.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BuildAccessError`] if the exact optional request was not
+    /// declared.
     #[must_use = "handle the optional dependency lookup result"]
     pub fn try_get_by_id<T: ?Sized + Send + Sync + 'static>(
         &self,
@@ -135,6 +171,16 @@ impl BuildContext {
     ///
     /// `T` identifies the declared concrete or trait-object dependency and
     /// must be thread-safe and `'static`.
+    ///
+    /// # Returns
+    ///
+    /// Every selected component in graph order; an empty declaration result
+    /// is an empty vector.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BuildAccessError`] if the collection request was not
+    /// declared.
     #[must_use = "handle the collection dependency lookup result"]
     pub fn get_all<T: ?Sized + Send + Sync + 'static>(&self) -> Result<Vec<Arc<T>>, BuildAccessError> {
         let request = Dependency::all::<T>();

@@ -66,6 +66,16 @@ pub struct DefinitionSource {
 
 impl DefinitionSource {
     /// Creates a source value from static compiler metadata.
+    ///
+    /// # Parameters
+    ///
+    /// `package` and `module_path` identify the defining crate and module;
+    /// `file`, `line`, and `column` identify the source location; `item` names
+    /// the declared component.
+    ///
+    /// # Returns
+    ///
+    /// A source location suitable for diagnostics and stable ordering.
     pub const fn new(
         package: &'static str,
         module_path: &'static str,

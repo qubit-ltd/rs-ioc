@@ -61,6 +61,10 @@ pub struct ApplicationContext {
 
 impl ApplicationContext {
     /// Creates a builder for this context.
+    ///
+    /// # Returns
+    ///
+    /// A new builder with the default activation profile.
     pub fn builder() -> ContainerBuilder {
         ContainerBuilder::new()
     }
@@ -71,6 +75,11 @@ impl ApplicationContext {
     /// `None` means that `key` is absent. The returned slice borrows this
     /// immutable context and lists removed active bindings in registration
     /// order.
+    ///
+    /// # Returns
+    ///
+    /// `Some` contains the active definition source and replaced sources;
+    /// `None` means no active binding has the exact key.
     #[must_use]
     pub fn binding_sources(&self, key: &BindingKey) -> Option<(DefinitionSource, &[DefinitionSource])> {
         self.bindings
@@ -101,6 +110,14 @@ impl ApplicationContext {
     /// retained in the returned [`ShutdownError`]. Dropping the context without
     /// calling this method does not stop components. Cloned component `Arc`s
     /// may remain alive after shutdown completes.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` when all cleanup actions succeed.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ShutdownError`] containing every failed stop or wait action.
     pub async fn shutdown_async(mut self) -> Result<(), ShutdownError> {
         let mut cleanup = std::mem::take(&mut self.cleanup);
         let mut failures = cleanup.stop_reverse();
@@ -120,6 +137,15 @@ impl ApplicationContext {
     ///
     /// `T` is the concrete or trait-object type used to identify the binding.
     /// It must be thread-safe and `'static` so the context can share it.
+    ///
+    /// # Returns
+    ///
+    /// The selected shared component.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ResolveError`] when no component matches or selection is
+    /// ambiguous.
     #[must_use = "handle the component lookup result"]
     pub fn get<T: ?Sized + Send + Sync + 'static>(&self) -> Result<Arc<T>, ResolveError> {
         let request = BindingKey::of::<T>(None);
@@ -137,6 +163,15 @@ impl ApplicationContext {
     ///
     /// `T` is the concrete or trait-object type used to identify the binding.
     /// It must be thread-safe and `'static` so the context can share it.
+    ///
+    /// # Returns
+    ///
+    /// The component bound to the validated exact identifier.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ResolveError`] for an invalid ID, missing binding, or
+    /// ambiguous selection.
     #[must_use = "handle the component lookup result"]
     pub fn get_by_id<T: ?Sized + Send + Sync + 'static>(&self, id: &str) -> Result<Arc<T>, ResolveError> {
         let request = BindingKey::of::<T>(Some(BindingId::parse(id)?));
@@ -152,6 +187,15 @@ impl ApplicationContext {
     ///
     /// `T` is the concrete or trait-object type used to identify candidates.
     /// It must be thread-safe and `'static` so the context can share it.
+    ///
+    /// # Returns
+    ///
+    /// `Some` contains the uniquely selected component; `None` means no
+    /// binding exists for `T`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ResolveError`] when multiple non-primary candidates remain.
     #[must_use = "handle the optional component lookup result"]
     pub fn try_get<T: ?Sized + Send + Sync + 'static>(&self) -> Result<Option<Arc<T>>, ResolveError> {
         let request = BindingKey::of::<T>(None);
@@ -171,6 +215,11 @@ impl ApplicationContext {
     ///
     /// `T` is the concrete or trait-object type whose bindings are collected.
     /// It must be thread-safe and `'static` so the context can share them.
+    ///
+    /// # Returns
+    ///
+    /// All matching shared components, ordered by binding order, ID, and
+    /// source location. An absent type produces an empty vector.
     #[must_use]
     pub fn get_all<T: ?Sized + Send + Sync + 'static>(&self) -> Vec<Arc<T>> {
         let mut candidates = self.candidates(TypeId::of::<T>());

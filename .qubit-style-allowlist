@@ -7,3 +7,4 @@ multiple-public-types | src/error.rs | Registration, build, access, lookup, and 
 multiple-public-types | src/graph.rs | Binding positions, resolved requests, graph state, and edges are one private validation representation.
 multiple-public-types | src/key.rs | BindingId and BindingKey jointly define the exact identity of a binding.
 multiple-public-types | src/options.rs | BindingOptions and DefinitionSource jointly describe registration metadata and its provenance.
+multiple-public-types | src/managed.rs | Lifecycle errors and managed cleanup actions form one public lifecycle API and share private action state.
