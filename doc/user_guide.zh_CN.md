@@ -194,6 +194,10 @@ async fn managed_lifecycle() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
+托管资源应在托管工厂中创建；工厂只会在依赖图验证后运行。装配前已启动的外部资源
+使用 `register_instance(Arc<T>)` 注入，关闭动作由应用负责。不要在托管工厂闭包中捕获
+已创建的 `Managed<T>`。
+
 `Managed::new` 接收同步 stop 请求，`.with_wait` 可添加异步终止等待。
 `begin_shutdown(self)` 在返回前按实际构建顺序的逆序调用所有 stop。返回的
 `ShutdownHandle::wait(&mut self)` 按同一顺序等待并返回所有清理错误。若 wait future
@@ -206,8 +210,13 @@ async fn managed_lifecycle() -> Result<(), Box<dyn std::error::Error>> {
 
 普通释放上下文不会自动停止资源。外部持有的 `Arc` 可使对象在
 关闭后继续存活；关闭动作不能撤销这些克隆。stop 回调 panic 会作为 Stop 阶段失败
-记录，后续 stop 仍会执行；wait future panic 会按 Rust 机制传播。构造工厂 panic
-也会传播。
+记录。wait 回调创建或 wait future 轮询时发生的 unwind panic 会作为 Wait 阶段失败
+记录，其他 wait 仍会执行。`panic = "abort"` 和 future 析构时的 panic 不会被捕获。
+构造工厂 panic 仍会传播。
+
+`register_managed_instance` 和 `DefinitionDraft::from_managed_instance` 已移除。资源应在
+`register_managed_factory` 或 `DefinitionDraft::new_managed_sync` 中创建；若资源必须在
+注册前创建，则通过 `register_instance(Arc<T>)` 注入，并由应用自行处理关闭。
 
 当前不提供原型或请求作用域、热更新、未托管组件的自动生命周期管理、循环代理和动态库发现。
 结构体宏支持具名字段和单元结构体；其他形状可使用手动工厂。组件构造不使用运行时

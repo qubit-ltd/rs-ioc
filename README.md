@@ -91,6 +91,10 @@ parameter. `Option<Arc<T>>` and `Vec<Arc<T>>` express optional and all-candidate
 requests. `#[bean]` supports synchronous and asynchronous free functions,
 including factories returning `Managed<T>` or `Result<Managed<T>, E>`;
 asynchronous definitions require `build_async()`.
+Create each managed resource inside its managed factory, after graph
+validation. Register an already-running external resource with
+`register_instance(Arc<T>)` and keep its shutdown responsibility in the
+application; do not capture an already-created `Managed<T>` in a factory.
 
 ### Manual assembly
 

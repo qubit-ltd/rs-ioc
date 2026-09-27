@@ -214,6 +214,11 @@ async fn managed_lifecycle() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
+Create managed resources inside managed factories, which run only after graph
+validation. For an external resource that is already running, register its
+`Arc<T>` with `register_instance` and keep shutdown ownership in the
+application. Do not capture an already-created `Managed<T>` in a factory.
+
 `Managed::new` provides a synchronous stop request; `.with_wait` can add an
 asynchronous termination wait. `begin_shutdown(self)` calls all stop actions
 in reverse construction order before returning a `ShutdownHandle`.
@@ -231,9 +236,17 @@ remain the factory's responsibility.
 
 Dropping the context does not stop resources. External `Arc` clones can keep a
 value alive after shutdown; shutdown requests termination but cannot
-revoke those clones. A stop callback panic is collected as a Stop failure and
-later stop callbacks still run. A wait future panic propagates as a Rust panic.
-Factory panics during construction also propagate.
+revoke those clones. Stop callback panics are collected as Stop failures.
+Panics while creating a wait future or polling it are collected as Wait
+failures, and remaining waits still run. `panic = "abort"` and panics while
+dropping a cleanup future cannot be caught. Factory panics during construction
+also propagate.
+
+The old `register_managed_instance` and
+`DefinitionDraft::from_managed_instance` entry points have been removed.
+Create the resource in `register_managed_factory` or `new_managed_sync`; if it
+must exist before registration, use `register_instance` and let the
+application own its shutdown actions.
 
 There are no prototype or request scopes, hot reload, automatic lifecycle
 management for unmanaged components, circular proxies, or dynamic-library discovery. Struct macros support named

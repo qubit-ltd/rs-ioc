@@ -84,6 +84,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 `Option<Arc<T>>` 表示可缺省，`Vec<Arc<T>>` 注入全部候选。`#[bean]` 可标注同步或
 异步自由函数，也支持返回 `Managed<T>` 或 `Result<Managed<T>, E>` 的托管工厂；
 图中含异步工厂时须调用 `build_async()`。
+托管资源应在图验证通过后由托管工厂创建。装配前已启动的外部资源使用
+`register_instance(Arc<T>)` 注入，并由应用负责关闭；不要在工厂闭包中捕获已创建的
+`Managed<T>`。
 
 ### 手动组装
 

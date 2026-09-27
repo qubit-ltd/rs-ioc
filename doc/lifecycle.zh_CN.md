@@ -3,6 +3,8 @@
 `qubit-ioc` 只对显式标记为 `Managed<T>` 的组件保存 stop 和可选 wait 动作。
 普通组件仍由应用自行管理。托管组件在成功构建后由 `ApplicationContext` 持有关闭动作；
 应用应在退出时消费上下文并调用 `begin_shutdown()`，再等待返回的句柄。
+托管资源应在托管工厂执行时创建，使图验证失败或 root 未选中时不会提前启动资源。
+已启动的外部资源通过 `register_instance(Arc<T>)` 注入，并由应用负责关闭。
 
 ```rust
 use std::sync::Arc;
@@ -37,8 +39,9 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 本身都是同步的。异步构建失败会 stop 后 wait，并保留原始构建错误及清理错误。
 
 stop 返回错误或发生 panic 时，失败会记录为 `ShutdownPhase::Stop` 并继续调用其他
-stop；panic 文本会放入对应的 `CleanupError`。wait 返回错误会聚合；wait future 的
-panic 仍会传播，不会转换为 `ShutdownError`。
+stop；panic 文本会放入对应的 `CleanupError`。wait 回调创建或 wait future 轮询时发生的
+unwind panic 会转换为 `ShutdownPhase::Wait` 失败，其他 wait 仍会执行。`panic = "abort"`
+以及 future 析构期间的 panic 不会被捕获。
 
 异步构建 future 被取消时，已构造资源会收到 stop，但不会 wait；stop 错误无法返回给已
 取消的调用方。工厂在返回 `Managed<T>` 前产生的副作用由工厂自己清理。普通上下文 drop

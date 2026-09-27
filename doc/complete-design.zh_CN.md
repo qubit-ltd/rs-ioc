@@ -51,7 +51,7 @@ provider crate 应导出显式 `register_ioc(&mut builder)`，由应用决定纳
 
 错误按阶段表达：`RegistrationError` 表示 ID、profile、重复请求等登记问题；`BuildError` 表示 roots、候选、图、异步要求、配置或工厂问题；`ResolveError` 表示 context 查询问题；`ShutdownError` 聚合资源关闭失败。工厂和配置错误保留 source 链，构建错误尽可能包含完整依赖路径和定义来源。
 
-托管资源通过 `Managed<T>` 注册 stop，可选地注册异步 wait。应用显式调用 `context.begin_shutdown()`，再对返回句柄调用 `wait().await`。关闭会先按逆构建顺序执行全部 stop，再按该顺序执行 wait；stop 返回错误会记录为 `ShutdownFailure` 并继续后续 stop。stop panic 会被转为 `ShutdownPhase::Stop` 失败并继续清理。wait future panic 仍按 Rust 机制传播。取消 wait 后保留句柄并再次调用 `wait()`，会继续同一个 future。
+托管资源只能由托管工厂在依赖图验证通过后创建，再通过 `Managed<T>` 注册 stop 和可选的异步 wait。已有外部资源应作为普通实例注册，并由应用自行负责关闭。应用显式调用 `context.begin_shutdown()`，再对返回句柄调用 `wait().await`。关闭会先按逆构建顺序执行全部 stop，再按该顺序执行 wait；stop 返回错误或 unwind panic 会记录为 `ShutdownFailure` 并继续后续动作。wait 回调创建和 wait future 轮询中的 unwind panic 也会记录为 `ShutdownPhase::Wait` 失败，并继续等待其他组件。`panic = "abort"` 和清理 future 析构时的 panic 无法由此机制捕获。取消 wait 后保留句柄并再次调用 `wait()`，会继续同一个 future。
 
 同步构建失败会 stop 已创建资源但不能 wait；异步构建失败会 stop、wait，并将清理错误与原构建错误一起返回。取消异步构建会 stop 已构造资源但不 wait。工厂在返回 `Managed<T>` 之前已产生的副作用由工厂负责回收。普通 context drop 不会自动关闭资源，外部 `Arc` 克隆可以在关闭后继续持有对象。
 
