@@ -20,7 +20,7 @@
 qubit-ioc = { version = "0.1", path = "../rs-ioc" }
 ```
 
-默认启用 `macros`、`inventory` 和 `config`；只使用手动注册时可关闭默认 feature：
+默认启用 `macros` 和 `config`；只使用手动注册时可关闭默认 feature：
 
 ```toml
 qubit-ioc = { version = "0.1", path = "../rs-ioc", default-features = false }
@@ -29,7 +29,6 @@ qubit-ioc = { version = "0.1", path = "../rs-ioc", default-features = false }
 | feature | 默认 | 用途 |
 | --- | --- | --- |
 | `macros` | 开 | 提供 `#[Component]`、`#[Service]`、`#[Repository]`、`#[Configuration]`、`#[ConfigurationProperties]` 和 `#[bean]`。 |
-| `inventory` | 开 | 通过 `discover()` 发现已链接 crate 的定义。 |
 | `config` | 开 | 注册 `qubit-config` 快照，并使用 `#[value]`、`#[ConfigurationProperties]`。 |
 
 ## 快速开始：组装问候服务
@@ -60,7 +59,9 @@ struct Greeter {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut builder = ApplicationContext::builder().discover()?;
+    let mut builder = ApplicationContext::builder();
+    builder.install::<English>()?;
+    builder.install::<Greeter>()?;
     builder.root::<Greeter>();
     let context = builder.build()?;
     assert_eq!(context.get::<Greeter>()?.greeting.text(), "hello");
@@ -110,7 +111,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 以点分隔的 ASCII 段；每段以字母开头，后续可包含字母、数字或下划线。未指定 ID 的
 请求会选择唯一候选，或多个候选中唯一标记为 `primary` 的绑定。
 
-不适合用宏或静态发现时，可手动注册。构建根节点、profile、候选选择、错误处理和
+应用通过显式清单组装定义。构建根节点、profile、候选选择、错误处理和
 关闭责任详见[用户手册](doc/user_guide.zh_CN.md)。下游应用装配示例见
 [`rs-execution-services` 消费者夹具](https://github.com/qubit-ltd/rs-execution-services/blob/main/tests/fixtures/ioc_application_consumer/README.md)。
 在 `rs-execution-services` 仓库根目录运行
@@ -121,7 +122,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 当前只提供应用级共享实例，不提供原型或请求作用域、热更新、未托管组件的自动关闭、
 循环代理和动态库发现。托管工厂可通过 `Managed<T>` 和
-`ApplicationContext::shutdown_async` 显式注册 stop/wait 动作。结构体宏支持具名字段和单元结构体，其他形状可使用手动工厂。
+`ApplicationContext::begin_shutdown` 与 `ShutdownHandle::wait` 执行 stop/wait 关闭动作。结构体宏支持具名字段和单元结构体，其他形状可使用手动工厂。
 组件构造不依赖运行时反射。`qubit-spi` 继续负责 provider 的选择和回退；其注册表或
 选中的服务可作为普通 IoC 组件注册。完整 API 与诊断规则见
 [完整设计文档](doc/complete-design.zh_CN.md)。

@@ -76,9 +76,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 ## 选择定义与构建范围
 
 启用默认 feature 时，可以用 `#[Component]`、`#[Service]`、`#[Repository]` 声明
-组件，用 `#[bean]` 声明工厂。调用 `ApplicationContext::builder().discover()?`
-导入最终二进制已链接的定义；也可以用 `builder.install::<T>()?` 显式安装宏生成的
-定义。要把具体组件作为 trait 注入，需写 `bind = dyn Trait`；独立的 `impl` 不会
+组件，用 `#[bean]` 声明工厂。调用 `builder.install::<T>()?` 显式安装定义，也可调用
+提供者 crate 的 `register_ioc(&mut builder)` 组装入口。要把具体组件作为 trait 注入，
+需写 `bind = dyn Trait`；独立的 `impl` 不会
 自动生成绑定。
 
 `root::<T>()` 选择未指定 ID 的根节点；`root_by_id::<T>("some.id")?` 精确
@@ -98,7 +98,7 @@ ASCII 字母，后续只能使用 ASCII 字母、数字或下划线。构建后�
 `qubit-config` 的配置快照。其余选项可用 `cargo doc --no-deps --open` 查看
 公开 API，或阅读[完整设计](complete-design.zh_CN.md)。
 
-### 替换一个精确绑定
+### 替换一个完整定义
 
 覆盖测试或替换运行时实现时，回调可以捕获应用状态：
 
@@ -112,7 +112,7 @@ fn replace_for_test() -> Result<(), Box<dyn Error>> {
     builder.register_instance(Arc::new(1_u64))?;
     let fake = Arc::new(7_u64);
     let key = BindingKey::of::<u64>(None);
-    builder.replace_binding(key, move |draft| draft.register_instance(fake))?;
+    builder.replace_definition(key, move |draft| draft.register_instance(fake))?;
     builder.root::<u64>();
     let context = builder.build()?;
     assert_eq!(*context.get::<u64>()?, 7);
@@ -121,7 +121,7 @@ fn replace_for_test() -> Result<(), Box<dyn Error>> {
 ```
 
 回调会先在临时 builder 上执行。若回调返回错误，或没有为目标键恰好注册一个定义，
-原 builder 不会改变。替换成功后只影响这个精确键；原定义声明的其他键仍保留。
+原 builder 不会改变。替换成功后原定义的全部键（包括 alias）都会移除；新定义需要重新声明仍需保留的 alias。
 
 ## 错误与排障
 
@@ -160,14 +160,16 @@ async fn managed_lifecycle() -> Result<(), Box<dyn std::error::Error>> {
     })?;
     builder.root::<Worker>();
     let context = builder.build_async().await?;
-    context.shutdown_async().await?;
+    let mut shutdown = context.begin_shutdown();
+    shutdown.wait().await?;
     Ok(())
 }
 ```
 
 `Managed::new` 接收同步 stop 请求，`.with_wait` 可添加异步终止等待。
-`shutdown_async(self)` 按实际构建顺序的逆序调用所有 stop，再按同一顺序等待，
-并返回所有清理错误。同步 `build()` 失败时只停止已完成的托管资源，不会等待；
+`begin_shutdown(self)` 在返回前按实际构建顺序的逆序调用所有 stop。返回的
+`ShutdownHandle::wait(&mut self)` 按同一顺序等待并返回所有清理错误。若 wait future
+被取消，保留句柄并再次调用 `wait()` 可继续同一个 future。同步 `build()` 失败时只停止已完成的托管资源，不会等待；
 异步 `build_async()` 失败时先 stop 再 wait，并把清理错误与原始构建错误一起保留。
 若构建失败时也必须等已有资源终止，即使所有工厂同步，也使用 `build_async()`。
 异步构建 future 被取消时只调用 stop，
@@ -175,7 +177,7 @@ async fn managed_lifecycle() -> Result<(), Box<dyn std::error::Error>> {
 由工厂自身负责收尾。
 
 普通释放上下文不会自动停止资源。外部持有的 `Arc` 可使对象在
-`shutdown_async` 后继续存活；关闭动作不能撤销这些克隆。工厂 panic 按 Rust 机制传播。
+关闭后继续存活；关闭动作不能撤销这些克隆。工厂 panic 按 Rust 机制传播。
 
 当前不提供原型或请求作用域、热更新、未托管组件的自动生命周期管理、循环代理和动态库发现。
 结构体宏支持具名字段和单元结构体；其他形状可使用手动工厂。组件构造不使用运行时

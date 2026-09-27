@@ -4,6 +4,12 @@
 > [容器内核草案](design.zh_CN.md)与[注解草案](annotation-design.zh_CN.md)保留设计背景，
 > 与本文不一致时以本文为准。以下 API 是当前首版的公共契约。
 
+> **更新**：本文下方部分早期契约已被显式装配、可恢复关闭和完整定义替换取代。
+> 当前应用必须通过 `install::<D>()` 或提供者 crate 的 `register_ioc(&mut builder)`
+> 显式登记定义。正常关闭使用 `let mut shutdown = context.begin_shutdown();`
+> 后调用 `shutdown.wait().await?`；取消等待后应保留句柄并继续调用 `wait()`。
+> `replace_definition(anchor, callback)` 替换完整定义及其全部 alias。
+
 ## 1. 目标、边界与术语
 
 `qubit-ioc` 在应用启动时把已注册的组件组成有向依赖图，先验证再构造，成功后

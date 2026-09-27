@@ -2,6 +2,8 @@
 
 > 此文为早期草案；完整且优先的实现契约见[完整设计](complete-design.zh_CN.md)。本文提及的反射可选集成与 `reflect` feature 尚未实现；当前 Cargo feature 不包含 `reflect`。
 
+> 当前运行时要求应用显式调用 `install::<D>()` 或提供者 crate 的 `register_ioc(&mut builder)`；宏不再提交链接器级全局注册项。
+
 > 状态：拟实现的应用层设计，当前仓库尚未提供这些宏和 API。
 > [容器内核设计](design.zh_CN.md)定义显式注册、依赖图和共享实例语义；本文定义
 > 面向应用开发者的主要入口。示例是目标语法，实施时须以编译测试固定最终签名。

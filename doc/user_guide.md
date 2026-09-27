@@ -83,11 +83,10 @@ For a repository example with explicit startup and shutdown calls, run
 ## Choosing definitions and build scope
 
 With default features, `#[Component]`, `#[Service]`, and `#[Repository]`
-generate definitions. `#[bean]` generates a factory definition. Call
-`ApplicationContext::builder().discover()?` to import definitions linked into
-the final binary, or `builder.install::<T>()?` to install a generated definition
-explicitly. Declare a trait alias with `bind = dyn Trait`; a separate `impl`
-block alone does not create that binding.
+generate definitions. `#[bean]` generates a factory definition. Install each
+definition with `builder.install::<T>()?`, or call a provider crate's
+`register_ioc(&mut builder)` assembly function. Declare a trait alias with
+`bind = dyn Trait`; a separate `impl` block alone does not create that binding.
 
 Call `root::<T>()` for an unnamed request or `root_by_id::<T>("some.id")?` for
 an exact binding. `build()` needs at least one root and constructs only its
@@ -104,7 +103,7 @@ start with a letter and contain only letters, digits, or underscores.
 optional, and collection queries after construction. `get_all()` orders
 results by `order`, ID, and source location.
 
-### Replace one exact binding
+### Replace one complete definition
 
 Applications can replace one binding while capturing runtime state in the
 registration callback:
@@ -119,7 +118,7 @@ fn replace_for_test() -> Result<(), Box<dyn Error>> {
     builder.register_instance(Arc::new(1_u64))?;
     let fake = Arc::new(7_u64);
     let key = BindingKey::of::<u64>(None);
-    builder.replace_binding(key, move |draft| draft.register_instance(fake))?;
+    builder.replace_definition(key, move |draft| draft.register_instance(fake))?;
     builder.root::<u64>();
     let context = builder.build()?;
     assert_eq!(*context.get::<u64>()?, 7);
@@ -127,10 +126,10 @@ fn replace_for_test() -> Result<(), Box<dyn Error>> {
 }
 ```
 
-The callback runs against a temporary builder. If it returns an error, or does
-not register exactly one definition for the requested key, the original builder
-is unchanged. A successful replacement affects only that exact key; other keys
-declared by the original definition remain registered.
+The callback runs against a temporary builder. It must register exactly one
+definition that declares the anchor key. An error leaves the original builder
+unchanged. The complete original definition is replaced, including all aliases;
+the replacement must declare any aliases that remain needed.
 
 Definitions can use an activation `profile`. The default profile is active
 when none is chosen; `active_profiles(&["name"])?` selects another set before
@@ -178,15 +177,18 @@ async fn managed_lifecycle() -> Result<(), Box<dyn std::error::Error>> {
     })?;
     builder.root::<Worker>();
     let context = builder.build_async().await?;
-    context.shutdown_async().await?;
+    let mut shutdown = context.begin_shutdown();
+    shutdown.wait().await?;
     Ok(())
 }
 ```
 
 `Managed::new` provides a synchronous stop request; `.with_wait` can add an
-asynchronous termination wait. `shutdown_async(self)` calls all stop actions
-in reverse construction order, then awaits all waits in that same order, and
-returns every failure. A synchronous `build()` failure stops completed
+asynchronous termination wait. `begin_shutdown(self)` calls all stop actions
+in reverse construction order before returning a `ShutdownHandle`.
+`wait(&mut self)` awaits waits in that same order and returns every failure.
+If a wait future is cancelled, keep the handle and call `wait()` again to
+resume that same future. A synchronous `build()` failure stops completed
 managed resources but cannot await them. An asynchronous `build_async()`
 failure calls stop and then waits, preserving cleanup failures alongside the
 original build error. If failed construction must wait for already-created
@@ -197,7 +199,7 @@ errors from. Effects created inside a factory before it returns `Managed<T>`
 remain the factory's responsibility.
 
 Dropping the context does not stop resources. External `Arc` clones can keep a
-value alive after `shutdown_async`; shutdown requests termination but cannot
+value alive after shutdown; shutdown requests termination but cannot
 revoke those clones. Factory panics propagate as Rust panics.
 
 There are no prototype or request scopes, hot reload, automatic lifecycle

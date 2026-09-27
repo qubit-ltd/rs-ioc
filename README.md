@@ -22,7 +22,7 @@ This source checkout builds version `0.1.0`. Add it as a path dependency:
 qubit-ioc = { version = "0.1", path = "../rs-ioc" }
 ```
 
-The default features are `macros`, `inventory`, and `config`. To use only the
+The default features are `macros` and `config`. To use only the
 manual runtime, set `default-features = false`:
 
 ```toml
@@ -32,7 +32,6 @@ qubit-ioc = { version = "0.1", path = "../rs-ioc", default-features = false }
 | Feature | Default | Purpose |
 | --- | --- | --- |
 | `macros` | Yes | `#[Component]`, `#[Service]`, `#[Repository]`, `#[Configuration]`, `#[ConfigurationProperties]`, and `#[bean]`. |
-| `inventory` | Yes | Discover definitions linked from other crates with `discover()`. |
 | `config` | Yes | Register a `qubit-config` snapshot and use `#[value]` or `#[ConfigurationProperties]`. |
 
 ## Quick start: assemble a greeting service
@@ -63,7 +62,9 @@ struct Greeter {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut builder = ApplicationContext::builder().discover()?;
+    let mut builder = ApplicationContext::builder();
+    builder.install::<English>()?;
+    builder.install::<Greeter>()?;
     builder.root::<Greeter>();
     let context = builder.build()?;
     assert_eq!(context.get::<Greeter>()?.greeting.text(), "hello");
@@ -114,8 +115,7 @@ dot-separated ASCII segments such as `example.greeting.english`; each segment
 starts with a letter and continues with letters, digits, or underscores. An
 unnamed request selects a sole candidate or a unique `primary` binding.
 
-Use explicit registration when macros or linked discovery do not fit the
-application. See the [user guide](doc/user_guide.md) for roots, profiles,
+Use explicit registration to assemble an application. See the [user guide](doc/user_guide.md) for roots, profiles,
 selection rules, error handling, and shutdown responsibilities.
 An independent downstream assembly example is maintained in the
 [`rs-execution-services` consumer fixture](https://github.com/qubit-ltd/rs-execution-services/blob/main/tests/fixtures/ioc_application_consumer/README.md).
@@ -129,7 +129,7 @@ The container provides application-wide shared instances. It does not provide
 prototype or request scopes, hot reload, automatic lifecycle management for
 unmanaged components, circular proxies, or dynamic-library discovery. Managed
 factories can opt into explicit stop and wait actions through `Managed<T>` and
-`ApplicationContext::shutdown_async`. Struct macros support named-field and unit structs;
+`ApplicationContext::begin_shutdown` and `ShutdownHandle::wait`. Struct macros support named-field and unit structs;
 other shapes can use manual factories. Runtime reflection is not used to
 construct components. `qubit-spi` remains responsible for provider selection
 and fallback; its registry or a selected service can be registered as a normal
