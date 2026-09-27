@@ -12,7 +12,10 @@ use std::sync::Arc;
 
 use qubit_ioc::__private::codegen_v1::DefinitionDraft;
 use qubit_ioc::BindingKey;
+use qubit_ioc::BindingOptions;
+use qubit_ioc::BuildError;
 use qubit_ioc::ContainerBuilder;
+use qubit_ioc::Dependency;
 use qubit_ioc::RegistrationError;
 use qubit_ioc::options::DefinitionSource;
 
@@ -122,7 +125,7 @@ fn inactive_replacement_keeps_the_original_definition() {
         .replace_definition(BindingKey::of::<Service>(None), |draft| {
             draft.register_instance_with(
                 Arc::new(Service(2)),
-                qubit_ioc::BindingOptions {
+                BindingOptions {
                     profile: Some("preview".to_owned()),
                     ..Default::default()
                 },
@@ -152,7 +155,7 @@ fn replacement_reports_ambiguous_active_originals_before_factories() {
         .unwrap();
     assert!(matches!(
         builder.build_all(),
-        Err(qubit_ioc::BuildError::ReplacementOriginalAmbiguous { .. })
+        Err(BuildError::ReplacementOriginalAmbiguous { .. })
     ));
     assert_eq!(calls.load(Ordering::SeqCst), 0);
 }
@@ -195,11 +198,8 @@ fn replacement_removes_old_aliases_and_dependencies_report_missing_alias() {
         .replace_definition(BindingKey::of::<Service>(None), new_definition)
         .unwrap();
     builder
-        .register_factory::<u32, _>(&[qubit_ioc::Dependency::of::<dyn LegacyApi>()], |_| Ok(Arc::new(1)))
+        .register_factory::<u32, _>(&[Dependency::of::<dyn LegacyApi>()], |_| Ok(Arc::new(1)))
         .unwrap();
     builder.root::<u32>();
-    assert!(matches!(
-        builder.build(),
-        Err(qubit_ioc::BuildError::MissingDependency { .. })
-    ));
+    assert!(matches!(builder.build(), Err(BuildError::MissingDependency { .. })));
 }
