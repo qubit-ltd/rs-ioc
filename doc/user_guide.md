@@ -176,7 +176,7 @@ builder.register_managed_factory::<Worker, _>(&[], |_| {
     }))
 })?;
 builder.root::<Worker>();
-let context = builder.build()?;
+let context = builder.build_async().await?;
 context.shutdown_async().await?;
 # Ok::<(), Box<dyn std::error::Error>>(())
 ```
@@ -184,9 +184,12 @@ context.shutdown_async().await?;
 `Managed::new` provides a synchronous stop request; `.with_wait` can add an
 asynchronous termination wait. `shutdown_async(self)` calls all stop actions
 in reverse construction order, then awaits all waits in that same order, and
-returns every failure. A failed build also stops completed managed resources;
-an asynchronous factory error awaits their waits and preserves cleanup errors
-alongside the original build error. Cancelling an asynchronous build calls
+returns every failure. A synchronous `build()` failure stops completed
+managed resources but cannot await them. An asynchronous `build_async()`
+failure calls stop and then waits, preserving cleanup failures alongside the
+original build error. If failed construction must wait for already-created
+resources before returning, use `build_async()` even when every factory is
+synchronous. Cancelling an asynchronous build calls
 stop without waiting, because the caller no longer has a future to receive
 errors from. Effects created inside a factory before it returns `Managed<T>`
 remain the factory's responsibility.

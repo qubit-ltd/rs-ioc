@@ -78,7 +78,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 字段和 bean 参数可使用 `#[inject(id = "...")]` 精确选择绑定；
 `Option<Arc<T>>` 表示可缺省，`Vec<Arc<T>>` 注入全部候选。`#[bean]` 可标注同步或
-异步自由函数；图中含异步工厂时须调用 `build_async()`。
+异步自由函数，也支持返回 `Managed<T>` 或 `Result<Managed<T>, E>` 的托管工厂；
+图中含异步工厂时须调用 `build_async()`。
 
 ### 手动组装
 

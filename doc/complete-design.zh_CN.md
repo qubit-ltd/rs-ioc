@@ -13,9 +13,10 @@
 
 首版只提供应用级共享单例、实例注册、同步/异步工厂、构造函数式字段注入、
 接口绑定、可选/集合依赖、配置值、profile、确定性诊断和显式覆盖。暂不提供
-原型/请求作用域、运行时增删绑定、生命周期钩子、循环代理、动态库发现、
+原型/请求作用域、运行时增删绑定、自动生命周期钩子、循环代理、动态库发现、
 条件表达式或配置热更新。`qubit-spi` 继续负责同一服务族的 provider 选择及回退；
-IoC 只管理已选组件的共享生命周期。应用可独立使用 `qubit-reflect` 的诊断元数据；
+`Managed<T>` 可为单个定义显式提供 stop 和可选 wait 动作，普通定义仍由应用管理。
+应用可独立使用 `qubit-reflect` 的诊断元数据；
 IoC 当前没有反射集成功能，反射也不承担组件构造或发现。
 
 术语：**定义**是一次注册声明；**绑定**是 `(Rust TypeId, 可选 BindingId)` 对应的
@@ -130,7 +131,8 @@ let service = context.get::<UserService>()?;
 ### 3.3 工厂与模块
 
 `#[bean]` 支持模块级自由函数，参数使用上述注入形状；返回 `T`、`Arc<T>`、
-`Result<T,E>` 或 `Result<Arc<T>,E>`，以及对应 `async fn`。`T: Send + Sync + 'static`，
+`Managed<T>`、`Result<T,E>`、`Result<Arc<T>,E>` 或 `Result<Managed<T>,E>`，以及对应
+`async fn`。托管输出中的 `Managed` 必须以导入后的单段类型路径书写。`T: Send + Sync + 'static`，
 `E: Error + Send + Sync + 'static`。直接返回值包入 `Arc`，已经返回 `Arc` 的工厂
 不再包一层；错误保留为 source。`#[bean(type = T)]` 只用于返回值的类型别名，
 仍须让宏识别外层 `Result`。不支持 `impl Trait`、泛型函数、方法、接收器、
@@ -212,8 +214,11 @@ impl ApplicationContext {
 定义不会留下部分别名。不同定义的键冲突须在 profile 过滤后统一检查，
 因此 active 重复绑定是构建错误。`replace_binding<F>(key, definition)` 的签名约束为
 `F: FnOnce(&mut ContainerBuilder) -> Result<(), RegistrationError>`。该一次性闭包
-可捕获应用状态并向临时 builder 注册定义；闭包失败、目标键缺失/重复或目标定义不唯一时，
-原 builder 保持不变。成功后只替换指定精确键，并记录覆盖来源；若要替换一个定义的所有别名，
+可捕获应用状态并向临时 builder 注册定义；闭包失败、替代定义未声明目标键或声明多次时，
+原 builder 保持不变。构建时，按活动 profile 和注册位置检查替代项之前必须恰有一个原绑定；
+缺失或多个原绑定分别返回 `BuildError::ReplacementOriginalMissing` 或
+`BuildError::ReplacementOriginalAmbiguous`，不运行工厂。后续同键定义仍报 `DuplicateBinding`。
+成功后只替换指定精确键，并记录覆盖来源；若要替换一个定义的所有别名，
 应先 `exclude_definition::<D>()` 再注册
 替代定义。排除在 `discover()` 前声明，按定义身份跳过该定义全部键；不级联移除
 依赖它的其他定义，缺失依赖在图验证时报告。
@@ -274,7 +279,9 @@ flowchart LR
 `build()` 仅接受实例与同步工厂；若图合法但含 active 异步工厂，在任何工厂
 执行前报 `AsyncRequired`。`build_async()` 可混合两类工厂，返回的 future 必须
 `Send`，由调用方选择执行器。取消 future 时未启动的工厂不执行，已发生外部
-副作用不回滚。panic 按 Rust 默认机制传播，不捕获为普通错误。构造失败不发布
+副作用不回滚。`build()` 工厂失败时只 stop 已完成的托管组件，不等待；
+`build_async()` 失败时先 stop 再 wait。需要失败回收也等待终止时，即使所有工厂同步，
+也应使用 `build_async()`。panic 按 Rust 默认机制传播，不捕获为普通错误。构造失败不发布
 部分 context；局部 `Arc` 正常释放。成功后 context 可跨线程共享，组件自身负责
 内部可变状态。容器丢弃不承诺资源关闭顺序。
 
@@ -283,7 +290,7 @@ flowchart LR
 | 阶段 | 错误变体 | 至少保留 |
 | --- | --- | --- |
 | 注册 | `InvalidBindingId`, `InvalidProfile`, `DuplicateDependency` | 原值/键、定义来源。 |
-| 构建验证 | `DuplicateBinding`, `MissingDependency`, `AmbiguousBinding`, `MultiplePrimaryBindings`, `DependencyCycle`, `AsyncRequired` | 请求类型、ID、候选、完整路径和冲突来源。 |
+| 构建验证 | `DuplicateBinding`, `ReplacementOriginalMissing`, `ReplacementOriginalAmbiguous`, `MissingDependency`, `AmbiguousBinding`, `MultiplePrimaryBindings`, `DependencyCycle`, `AsyncRequired` | 请求类型、ID、候选、完整路径和冲突来源。 |
 | 构造 | `FactoryFailed`, `ConfigReadFailed` | 定义来源、字段/参数、依赖路径、原始 source。 |
 | 工厂访问 | `UndeclaredDependency` | 工厂来源和请求键。 |
 | context 查询 | `MissingComponent`, `AmbiguousBinding`, `InvalidBindingId` | 请求类型、ID、可用候选。 |

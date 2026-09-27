@@ -158,15 +158,17 @@ builder.register_managed_factory::<Worker, _>(&[], |_| {
     }))
 })?;
 builder.root::<Worker>();
-let context = builder.build()?;
+let context = builder.build_async().await?;
 context.shutdown_async().await?;
 # Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
 `Managed::new` 接收同步 stop 请求，`.with_wait` 可添加异步终止等待。
 `shutdown_async(self)` 按实际构建顺序的逆序调用所有 stop，再按同一顺序等待，
-并返回所有清理错误。构建失败会停止已经完成的托管资源；异步构建错误还会等待，
-并把清理错误与原始构建错误一起保留。异步构建 future 被取消时只调用 stop，
+并返回所有清理错误。同步 `build()` 失败时只停止已完成的托管资源，不会等待；
+异步 `build_async()` 失败时先 stop 再 wait，并把清理错误与原始构建错误一起保留。
+若构建失败时也必须等已有资源终止，即使所有工厂同步，也使用 `build_async()`。
+异步构建 future 被取消时只调用 stop，
 不等待；此时调用方已无法接收清理错误。工厂在返回 `Managed<T>` 前产生的副作用
 由工厂自身负责收尾。
 

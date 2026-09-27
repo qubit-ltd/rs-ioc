@@ -1,20 +1,44 @@
 # 应用组件生命周期
 
-`rs-ioc` 负责创建共享组件和解析依赖。生命周期管理是显式 opt-in：托管定义在构建成功后由上下文持有关闭动作，普通定义仍由应用自行关闭。
+`qubit-ioc` 只对显式标记为 `Managed<T>` 的组件保存 stop 和可选 wait 动作。
+普通组件仍由应用自行管理。托管组件在成功构建后由 `ApplicationContext` 持有关闭动作；
+应用应在退出时消费上下文并调用 `shutdown_async()`。
 
 ```rust
-let mut builder = ApplicationContext::builder().discover()?;
-builder.root::<ApplicationService>();
-let context = builder.build_async().await?;
-let service = context.get::<ApplicationService>()?;
-service.start().await?;
+use std::sync::Arc;
+use qubit_ioc::{ApplicationContext, CleanupError, ContainerBuilder, Managed};
 
-// 应用退出时执行；关闭 API 与等待终止是两个独立步骤。
-service.shutdown().await?;
+struct Worker;
+impl Worker {
+    fn request_stop(&self) -> Result<(), std::io::Error> { Ok(()) }
+}
+
+async fn run() -> Result<(), Box<dyn std::error::Error>> {
+    let mut builder = ContainerBuilder::new();
+    builder.register_managed_factory::<Worker, _>(&[], |_| {
+        let worker = Arc::new(Worker);
+        Ok(Managed::new(Arc::clone(&worker), |worker| {
+            worker.request_stop().map_err(CleanupError::new)
+        }))
+    })?;
+    builder.root::<Worker>();
+    let context: ApplicationContext = builder.build_async().await?;
+    let _worker = context.get::<Worker>()?;
+
+    context.shutdown_async().await?;
+    Ok(())
+}
 ```
 
-托管组件先同步请求 stop，再按逆构建顺序异步 wait；所有 stop 先完成后才开始 wait。错误会按执行顺序聚合，异步构建失败保留原始构建错误与清理错误。Tokio runtime 必须保持运行直到执行服务终止。`shutdown_async(self)` 消费上下文；外部 `Arc` 克隆仍可能延长值的存活时间。下游消费者夹具位于 `rs-execution-services/tests/fixtures/ioc_application_consumer`，展示 EventBus 与 ExecutionServices 的托管关闭调用，不表示已有生产应用采用。
+`Managed::new` 提供同步 stop；`.with_wait` 可添加异步终止等待。正常关闭会先按逆构建顺序
+调用全部 stop，再按同一顺序执行 wait，并聚合错误。`build()` 的工厂失败会 stop 已创建
+资源，但不会等待；若构建失败前也必须等待资源终止，应使用 `build_async()`，即使工厂
+本身都是同步的。异步构建失败会 stop 后 wait，并保留原始构建错误及清理错误。
 
-异步构建被取消时，已成功构造的托管组件会收到 stop 请求，但不会等待；stop 错误无法交还给已取消的调用方。工厂在返回 `Managed<T>` 前产生的副作用仍由工厂负责清理。普通上下文 drop 不自动停止托管资源，应用需显式调用 `shutdown_async`。
+异步构建 future 被取消时，已构造资源会收到 stop，但不会 wait；stop 错误无法返回给已
+取消的调用方。工厂在返回 `Managed<T>` 前产生的副作用由工厂自己清理。普通上下文 drop
+不会自动停止资源；外部 `Arc` 克隆也可能在 `shutdown_async()` 后继续持有对象。
 
-可运行的最小示例见 `cargo run --example app_lifecycle`；跨库装配和关闭流程见上述消费者夹具。
+下游消费者夹具位于 `rs-execution-services/tests/fixtures/ioc_application_consumer`，展示
+`EventBus` 和 `ExecutionServices` 的托管关闭调用，不表示已有生产应用采用。最小示例见
+`cargo run --example app_lifecycle`。

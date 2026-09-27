@@ -83,7 +83,8 @@ selected service's dependency graph before constructing either component.
 
 For exact selection, use `#[inject(id = "...")]` on an `Arc<T>` field or bean
 parameter. `Option<Arc<T>>` and `Vec<Arc<T>>` express optional and all-candidate
-requests. `#[bean]` supports synchronous and asynchronous free functions;
+requests. `#[bean]` supports synchronous and asynchronous free functions,
+including factories returning `Managed<T>` or `Result<Managed<T>, E>`;
 asynchronous definitions require `build_async()`.
 
 ### Manual assembly
