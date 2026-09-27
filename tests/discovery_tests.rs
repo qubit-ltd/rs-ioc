@@ -444,6 +444,8 @@ fn test_replace_binding_rejects_ambiguous_originals_for_all_build_apis() {
 }
 
 #[allow(clippy::result_large_err)]
+/// Creates a builder with the requested number of original bindings and one
+/// replacement.
 fn replacement_builder(originals: usize, factory_calls: Arc<std::sync::atomic::AtomicUsize>) -> ContainerBuilder {
     let mut builder = ContainerBuilder::new();
     for value in 0..originals {
@@ -463,6 +465,8 @@ fn replacement_builder(originals: usize, factory_calls: Arc<std::sync::atomic::A
     builder
 }
 
+/// Verifies missing or ambiguous replacement originals without running the
+/// factory.
 fn assert_replacement_original_error(result: Result<(), BuildError>, expected_originals: usize) {
     match (result, expected_originals) {
         (Err(BuildError::ReplacementOriginalMissing { key, .. }), 0) => {
@@ -476,6 +480,8 @@ fn assert_replacement_original_error(result: Result<(), BuildError>, expected_or
     }
 }
 
+/// Polls a build future once and fails if the test future unexpectedly
+/// suspends.
 fn ready<F: Future>(future: F) -> F::Output {
     let mut future = pin!(future);
     match future.as_mut().poll(&mut Context::from_waker(Waker::noop())) {
