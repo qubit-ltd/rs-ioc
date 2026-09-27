@@ -166,6 +166,9 @@ pub(crate) enum OutputShape {
 pub(crate) struct OutputIr {
     /// Whether the function returns a value, `Arc`, or fallible form.
     pub(crate) shape: OutputShape,
+    /// Whether the factory also returns explicit stop and optional wait
+    /// actions.
+    pub(crate) managed: bool,
     /// Concrete component type registered with the runtime.
     pub(crate) component_type: Type,
     /// Error type returned by a fallible factory, if present.

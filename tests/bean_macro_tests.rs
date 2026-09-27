@@ -24,6 +24,8 @@ use qubit_ioc::BuildError;
 use qubit_ioc::ComponentDefinition;
 use qubit_ioc::Configuration;
 use qubit_ioc::ContainerBuilder;
+use qubit_ioc::FactoryError;
+use qubit_ioc::Managed;
 use qubit_ioc::bean;
 
 #[derive(Debug, PartialEq)]
@@ -191,6 +193,121 @@ fn test_bean_keeps_plain_functions_callable_and_supports_all_output_shapes() {
             .expect("async fallible shared value"),
         AsyncFallibleSharedValue(18)
     );
+}
+
+trait ManagedGreeting: Send + Sync {
+    fn message(&self) -> &'static str;
+}
+
+struct ManagedGreetingWorker;
+
+impl ManagedGreeting for ManagedGreetingWorker {
+    fn message(&self) -> &'static str {
+        "managed hello"
+    }
+}
+
+static MANAGED_GREETING_STOPS: AtomicUsize = AtomicUsize::new(0);
+
+#[bean(marker = ManagedGreetingBean, bind = dyn ManagedGreeting, profile = "managed_test")]
+fn managed_greeting() -> Managed<ManagedGreetingWorker> {
+    Managed::new(Arc::new(ManagedGreetingWorker), |_| {
+        MANAGED_GREETING_STOPS.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    })
+}
+
+struct AsyncManagedValue;
+
+static ASYNC_MANAGED_STOPS: AtomicUsize = AtomicUsize::new(0);
+static ASYNC_MANAGED_WAITS: AtomicUsize = AtomicUsize::new(0);
+
+#[bean(marker = AsyncManagedValueBean, profile = "managed_test")]
+async fn async_managed_value() -> Result<Managed<AsyncManagedValue>, BeanFailure> {
+    Ok(Managed::new(Arc::new(AsyncManagedValue), |_| {
+        ASYNC_MANAGED_STOPS.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    })
+    .with_wait(|_| {
+        Box::pin(async {
+            ASYNC_MANAGED_WAITS.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        })
+    }))
+}
+
+struct FailedManagedValue;
+
+#[bean(marker = FailedManagedValueBean, profile = "managed_failure")]
+fn failed_managed_value() -> Result<Managed<FailedManagedValue>, BeanFailure> {
+    Err(BeanFailure)
+}
+
+#[test]
+fn test_sync_managed_bean_projects_one_instance_and_stops_once() {
+    MANAGED_GREETING_STOPS.store(0, Ordering::SeqCst);
+    let mut builder = ContainerBuilder::new()
+        .active_profiles(&["managed_test"])
+        .expect("active managed test profile");
+    builder.install::<ManagedGreetingBean>().expect("install managed bean");
+    let context = builder.build_all().expect("sync managed bean builds");
+    let concrete = context.get::<ManagedGreetingWorker>().expect("concrete worker");
+    let alias = context.get::<dyn ManagedGreeting>().expect("trait alias");
+    assert_eq!(alias.message(), "managed hello");
+    assert_eq!(Arc::as_ptr(&concrete) as *const (), Arc::as_ptr(&alias) as *const ());
+    ready(context.shutdown_async()).expect("managed shutdown succeeds");
+    assert_eq!(MANAGED_GREETING_STOPS.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn test_async_managed_bean_waits_and_build_failure_runs_cleanup() {
+    ASYNC_MANAGED_STOPS.store(0, Ordering::SeqCst);
+    ASYNC_MANAGED_WAITS.store(0, Ordering::SeqCst);
+    let mut builder = ContainerBuilder::new()
+        .active_profiles(&["managed_test"])
+        .expect("active managed test profile");
+    builder
+        .install::<AsyncManagedValueBean>()
+        .expect("install async managed bean");
+    let context = ready(builder.build_all_async()).expect("async managed bean builds");
+    assert!(context.get::<AsyncManagedValue>().is_ok());
+    ready(context.shutdown_async()).expect("async managed shutdown succeeds");
+    assert_eq!(ASYNC_MANAGED_STOPS.load(Ordering::SeqCst), 1);
+    assert_eq!(ASYNC_MANAGED_WAITS.load(Ordering::SeqCst), 1);
+
+    ASYNC_MANAGED_STOPS.store(0, Ordering::SeqCst);
+    ASYNC_MANAGED_WAITS.store(0, Ordering::SeqCst);
+    let mut builder = ContainerBuilder::new()
+        .active_profiles(&["managed_test"])
+        .expect("active managed test profile");
+    builder
+        .install::<AsyncManagedValueBean>()
+        .expect("install async managed bean");
+    builder
+        .register_async_factory::<u64, _>(&[], |_| Box::pin(async { Err(FactoryError::new(BeanFailure)) }))
+        .expect("install failing async factory");
+    assert!(matches!(
+        ready(builder.build_all_async()),
+        Err(BuildError::FactoryFailed { .. })
+    ));
+    assert_eq!(ASYNC_MANAGED_STOPS.load(Ordering::SeqCst), 1);
+    assert_eq!(ASYNC_MANAGED_WAITS.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn test_fallible_managed_bean_preserves_error_source() {
+    let mut builder = ContainerBuilder::new()
+        .active_profiles(&["managed_failure"])
+        .expect("active managed failure profile");
+    builder
+        .install::<FailedManagedValueBean>()
+        .expect("install fallible managed bean");
+    let error = match builder.build_all() {
+        Ok(_) => panic!("fallible managed bean must fail"),
+        Err(error) => error,
+    };
+    let factory_error = error.source().expect("build error source");
+    assert!(factory_error.source().expect("bean error source").is::<BeanFailure>());
 }
 
 #[derive(Debug)]

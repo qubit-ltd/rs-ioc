@@ -64,13 +64,34 @@ pub(crate) fn expand(value: BeanIr, context: &ExpansionContext) -> syn::Result<T
     };
     let wrap = match output.shape {
         OutputShape::Bare => quote!(::std::sync::Arc::new(#invocation)),
-        OutputShape::Arc => invocation,
+        OutputShape::Arc => invocation.clone(),
         OutputShape::ResultBare => {
             quote!(::std::sync::Arc::new(#invocation.map_err(#runtime::FactoryError::new)?))
         }
         OutputShape::ResultArc => quote!(#invocation.map_err(#runtime::FactoryError::new)?),
     };
-    let factory = if item.sig.asyncness.is_some() {
+    let factory = if output.managed {
+        let managed_wrap = match output.shape {
+            OutputShape::Bare => invocation.clone(),
+            OutputShape::ResultBare => quote!(#invocation.map_err(#runtime::FactoryError::new)?),
+            OutputShape::Arc | OutputShape::ResultArc => unreachable!("managed bean cannot also be an Arc output"),
+        };
+        if item.sig.asyncness.is_some() {
+            quote!(|__qubit_context| -> #runtime::ManagedFactoryFuture<#component_type> {
+                ::std::boxed::Box::pin(async move {
+                    #(#accesses)*
+                    let value: #runtime::Managed<#component_type> = #managed_wrap;
+                    Ok(value)
+                })
+            })
+        } else {
+            quote!(|__qubit_context| -> Result<#runtime::Managed<#component_type>, #runtime::FactoryError> {
+                #(#accesses)*
+                let value: #runtime::Managed<#component_type> = #managed_wrap;
+                Ok(value)
+            })
+        }
+    } else if item.sig.asyncness.is_some() {
         quote!(|__qubit_context| -> #runtime::FactoryFuture<#component_type> {
             ::std::boxed::Box::pin(async move {
                 #(#accesses)*
@@ -85,7 +106,13 @@ pub(crate) fn expand(value: BeanIr, context: &ExpansionContext) -> syn::Result<T
             Ok(value)
         })
     };
-    let draft_constructor = if item.sig.asyncness.is_some() {
+    let draft_constructor = if output.managed {
+        if item.sig.asyncness.is_some() {
+            quote!(new_managed_async)
+        } else {
+            quote!(new_managed_sync)
+        }
+    } else if item.sig.asyncness.is_some() {
         quote!(new_async)
     } else {
         quote!(new_sync)

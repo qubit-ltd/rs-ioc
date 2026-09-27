@@ -305,6 +305,7 @@ fn single_generic<'a>(ty: &'a Type, name: &str) -> Option<&'a Type> {
         .collect::<Vec<_>>();
     let supported_paths: &[&[&str]] = match name {
         "Arc" => &[&["Arc"], &["std", "sync", "Arc"], &["alloc", "sync", "Arc"]],
+        "Managed" => &[&["Managed"]],
         "Option" => &[&["Option"], &["std", "option", "Option"], &["core", "option", "Option"]],
         "Vec" => &[&["Vec"], &["std", "vec", "Vec"], &["alloc", "vec", "Vec"]],
         _ => &[],
@@ -377,8 +378,7 @@ fn bean(mut item: ItemFn, options: ValidatedOptions) -> syn::Result<BeanIr> {
     })
 }
 
-/// Decomposes the four supported bean output forms and an optional explicit
-/// type.
+/// Decomposes the supported bean output forms and an optional explicit type.
 fn output(return_type: &ReturnType, explicit_type: Option<&Type>) -> syn::Result<OutputIr> {
     let ReturnType::Type(_, ty) = return_type else {
         return Err(syn::Error::new(return_type.span(), "#[bean] requires a return type"));
@@ -400,7 +400,12 @@ fn output(return_type: &ReturnType, explicit_type: Option<&Type>) -> syn::Result
             "#[bean] does not support `impl Trait` or borrowed outputs",
         ));
     }
-    let (component_type, arc) = if let Some(inner) = single_generic(inner, "Arc") {
+    let (inner, managed) = if let Some(inner) = single_generic(inner, "Managed") {
+        (inner, true)
+    } else {
+        (inner, false)
+    };
+    let (component_type, arc) = if !managed && let Some(inner) = single_generic(inner, "Arc") {
         (inner.clone(), true)
     } else {
         (inner.clone(), false)
@@ -420,6 +425,7 @@ fn output(return_type: &ReturnType, explicit_type: Option<&Type>) -> syn::Result
     };
     Ok(OutputIr {
         shape,
+        managed,
         component_type,
         error_type,
         span: return_type.span(),

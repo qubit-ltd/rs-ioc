@@ -18,6 +18,7 @@ use ir::DependencyKind;
 use ir::MacroKind;
 use ir::OutputShape;
 use proc_macro2::TokenStream;
+use quote::ToTokens;
 use quote::quote;
 
 /// Parses an attribute declaration through the same validation boundary as a
@@ -155,6 +156,60 @@ fn test_bean_recognizes_standard_qualified_result_output() {
         assert_eq!(bean.output.shape, OutputShape::ResultArc);
         assert!(bean.output.error_type.is_some());
     }
+}
+
+#[test]
+fn test_bean_recognizes_managed_outputs_without_guessing_qualified_types() {
+    for (item, expected_shape) in [
+        (
+            quote!(
+                fn create() -> Managed<Repository> {
+                    todo!()
+                }
+            ),
+            OutputShape::Bare,
+        ),
+        (
+            quote!(
+                fn create() -> Result<Managed<Repository>, std::io::Error> {
+                    todo!()
+                }
+            ),
+            OutputShape::ResultBare,
+        ),
+        (
+            quote!(
+                async fn create() -> core::result::Result<Managed<Repository>, std::io::Error> {
+                    todo!()
+                }
+            ),
+            OutputShape::ResultBare,
+        ),
+    ] {
+        let parsed = declaration(MacroKind::Bean, quote!(), item).expect("managed output should parse");
+        let Declaration::Bean(bean) = parsed else {
+            panic!("bean IR was expected");
+        };
+        assert_eq!(bean.output.shape, expected_shape);
+        assert!(bean.output.managed);
+        assert_eq!(bean.output.component_type.to_token_stream().to_string(), "Repository");
+    }
+
+    let parsed = declaration(
+        MacroKind::Bean,
+        quote!(),
+        quote!(
+            fn create() -> application::Managed<Repository> {
+                todo!()
+            }
+        ),
+    )
+    .expect("qualified managed type remains opaque");
+    let Declaration::Bean(bean) = parsed else {
+        panic!("bean IR was expected");
+    };
+    assert!(!bean.output.managed);
+    assert_eq!(bean.output.shape, OutputShape::Bare);
 }
 
 #[test]
