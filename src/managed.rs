@@ -410,15 +410,29 @@ impl CleanupJournal {
     pub(crate) fn stop_reverse(&mut self) -> Vec<ShutdownFailure> {
         let mut failures = Vec::new();
         for entry in self.entries.iter_mut().rev() {
-            if let Some(stop) = entry.action.stop.take()
-                && let Err(error) = stop()
-            {
-                failures.push(ShutdownFailure {
-                    key: entry.key.clone(),
-                    definition: entry.definition,
-                    phase: ShutdownPhase::Stop,
-                    error,
-                });
+            if let Some(stop) = entry.action.stop.take() {
+                let error = match catch_unwind(AssertUnwindSafe(stop)) {
+                    Ok(Ok(())) => None,
+                    Ok(Err(error)) => Some(error),
+                    Err(payload) => {
+                        let message = payload
+                            .downcast_ref::<String>()
+                            .map(String::as_str)
+                            .or_else(|| payload.downcast_ref::<&str>().copied())
+                            .unwrap_or("non-string panic payload");
+                        Some(CleanupError::new(std::io::Error::other(format!(
+                            "stop callback panicked: {message}"
+                        ))))
+                    }
+                };
+                if let Some(error) = error {
+                    failures.push(ShutdownFailure {
+                        key: entry.key.clone(),
+                        definition: entry.definition,
+                        phase: ShutdownPhase::Stop,
+                        error,
+                    });
+                }
             }
         }
         failures

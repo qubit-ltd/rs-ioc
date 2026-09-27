@@ -219,6 +219,144 @@ fn test_shutdown_continues_after_multiple_stop_and_wait_failures() {
 }
 
 #[test]
+fn test_shutdown_continues_after_stop_panic() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let mut builder = ContainerBuilder::new();
+
+    let captured = Arc::clone(&events);
+    builder
+        .register_managed_factory::<First, _>(&[], move |_| {
+            let stop_events = Arc::clone(&captured);
+            let wait_events = Arc::clone(&captured);
+            Ok(Managed::new(Arc::new(First), move |_| {
+                stop_events.lock().unwrap().push("stop A");
+                Ok(())
+            })
+            .with_wait(move |_| {
+                Box::pin(async move {
+                    wait_events.lock().unwrap().push("wait A");
+                    Ok(())
+                })
+            }))
+        })
+        .unwrap();
+
+    let captured = Arc::clone(&events);
+    builder
+        .register_managed_factory::<Second, _>(&[Dependency::of::<First>()], move |context| {
+            let _first = context.get::<First>().unwrap();
+            let stop_events = Arc::clone(&captured);
+            let wait_events = Arc::clone(&captured);
+            Ok(Managed::new(Arc::new(Second), move |_| {
+                stop_events.lock().unwrap().push("stop B");
+                panic!("stop B panicked");
+            })
+            .with_wait(move |_| {
+                Box::pin(async move {
+                    wait_events.lock().unwrap().push("wait B");
+                    Ok(())
+                })
+            }))
+        })
+        .unwrap();
+
+    let captured = Arc::clone(&events);
+    builder
+        .register_managed_factory::<Third, _>(&[Dependency::of::<Second>()], move |context| {
+            let _second = context.get::<Second>().unwrap();
+            let stop_events = Arc::clone(&captured);
+            let wait_events = Arc::clone(&captured);
+            Ok(Managed::new(Arc::new(Third), move |_| {
+                stop_events.lock().unwrap().push("stop C");
+                Ok(())
+            })
+            .with_wait(move |_| {
+                Box::pin(async move {
+                    wait_events.lock().unwrap().push("wait C");
+                    Ok(())
+                })
+            }))
+        })
+        .unwrap();
+
+    let context = builder.build_all().unwrap();
+    let mut shutdown = context.begin_shutdown();
+    let error = run_ready(shutdown.wait()).expect_err("stop panic is reported");
+
+    assert_eq!(error.failures().len(), 1);
+    assert_eq!(error.failures()[0].phase, ShutdownPhase::Stop);
+    assert_eq!(error.failures()[0].key.type_name(), std::any::type_name::<Second>());
+    let message = error.failures()[0].to_string();
+    assert!(message.contains("stop B panicked"));
+    assert!(message.contains("managed_lifecycle_tests.rs"));
+    assert_eq!(
+        *events.lock().unwrap(),
+        ["stop C", "stop B", "stop A", "wait C", "wait B", "wait A"]
+    );
+}
+
+#[test]
+fn test_async_build_failure_continues_after_stop_panic() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let mut builder = ContainerBuilder::new();
+
+    let captured = Arc::clone(&events);
+    builder
+        .register_managed_factory::<First, _>(&[], move |_| {
+            let stop_events = Arc::clone(&captured);
+            let wait_events = Arc::clone(&captured);
+            Ok(Managed::new(Arc::new(First), move |_| {
+                stop_events.lock().unwrap().push("stop A");
+                Ok(())
+            })
+            .with_wait(move |_| {
+                Box::pin(async move {
+                    wait_events.lock().unwrap().push("wait A");
+                    Ok(())
+                })
+            }))
+        })
+        .unwrap();
+
+    let captured = Arc::clone(&events);
+    builder
+        .register_managed_factory::<Second, _>(&[], move |_| {
+            let stop_events = Arc::clone(&captured);
+            let wait_events = Arc::clone(&captured);
+            Ok(Managed::new(Arc::new(Second), move |_| {
+                stop_events.lock().unwrap().push("stop B");
+                panic!("stop B panicked during build cleanup");
+            })
+            .with_wait(move |_| {
+                Box::pin(async move {
+                    wait_events.lock().unwrap().push("wait B");
+                    Ok(())
+                })
+            }))
+        })
+        .unwrap();
+
+    builder
+        .register_factory::<Third, _>(&[Dependency::of::<First>(), Dependency::of::<Second>()], |_| {
+            Err(FactoryError::new(std::io::Error::other("factory failure")))
+        })
+        .unwrap();
+
+    let error = match run_ready(builder.build_all_async()) {
+        Ok(_) => panic!("the factory failure should abort the build"),
+        Err(error) => error,
+    };
+    let BuildError::CleanupFailed { cause, failures } = error else {
+        panic!("stop panic must be retained alongside the factory failure");
+    };
+    assert!(matches!(*cause, BuildError::FactoryFailed { .. }));
+    assert_eq!(failures.len(), 1);
+    assert_eq!(failures[0].phase, ShutdownPhase::Stop);
+    assert!(failures[0].to_string().contains("stop B panicked during build cleanup"));
+    assert_eq!(*events.lock().unwrap(), ["stop B", "stop A", "wait B", "wait A"]);
+}
+
+#[test]
 fn test_cancelled_shutdown_wait_resumes_the_same_future() {
     let callback_calls = Arc::new(AtomicUsize::new(0));
     let future_polls = Arc::new(AtomicUsize::new(0));
