@@ -22,6 +22,22 @@ the graph, and then runs factories in dependency order. `build_all()` constructs
 all active definitions instead of selecting a root closure. Neither method
 publishes a partial context after failure.
 
+## Cross-crate application assembly
+
+A provider crate owns component definitions, while the application chooses which providers to install and which services to build. The repository fixture at `tests/fixtures/ioc_cross_crate/` demonstrates this boundary; it is an executable contract test, not a claim about a production deployment.
+
+The provider crate exports `register_ioc(&mut builder)`. The app fixture's `app/src/discovery.rs` defines `assemble(config, profiles)`: it creates a builder, stages the configuration snapshot and active profiles, then calls the provider registration function. Registration only stages definitions; factories still wait for `build()` or `build_all()`.
+
+For a consuming application, the dependency roles are visible in `tests/fixtures/ioc_cross_crate/app/Cargo.toml`: `qubit-ioc`, `qubit-config`, the provider crate and the contracts crate. The fixture test creates a `Config`, sets `fixture.label`, and then calls `assemble(config, &[])`. It builds the graph and queries `AppService`, a concrete repository by ID, and the primary `dyn Repository` binding. The test verifies that concrete and trait queries share the same allocation, and that a bean in the provider crate reads the staged configuration. Run the contract with:
+
+```bash
+cargo test --manifest-path tests/fixtures/ioc_cross_crate/Cargo.toml
+```
+
+If the configuration subtree is absent, construction returns `BuildError::ConfigReadFailed`; its source chain retains the original `ConfigError`. To activate the optional preview provider, call `assemble(config, &["default", "preview"])`; an inactive provider is absent from the built context. The fixture's integration tests assert both outcomes.
+
+A separate downstream fixture, `rs-execution-services/tests/fixtures/ioc_application_consumer/src/main.rs`, demonstrates the resource lifecycle boundary: it installs managed `ExecutionServices` and `EventBus`, obtains shared services after build, requests stop through `begin_shutdown()`, then awaits `ShutdownHandle::wait()`. These snippets come from different fixtures with different purposes; use them as contract references and keep application-specific configuration and external side effects in the consuming application.
+
 ## Scenario: start a service with a shared setting
 
 An application has a greeting text and a service that needs it. The goal is to
@@ -88,6 +104,11 @@ definition with `builder.install::<T>()?`, or call a provider crate's
 `register_ioc(&mut builder)` assembly function. Declare a trait alias with
 `bind = dyn Trait`; a separate `impl` block alone does not create that binding.
 
+The `macros` and `config` features can be enabled independently. Component and
+bean declarations need `macros`. `#[value]` and `#[ConfigurationProperties]`
+need both `macros` and `config`; enabling `config` alone does not export those
+macros. With `default-features = false`, manual registration needs neither.
+
 Call `root::<T>()` for an unnamed request or `root_by_id::<T>("some.id")?` for
 an exact binding. `build()` needs at least one root and constructs only its
 dependency closure. `build_all()` constructs every active definition and can
@@ -137,6 +158,16 @@ building. Configuration reads through `#[value]` or
 `#[ConfigurationProperties]` require the `config` feature and a staged
 `qubit-config` snapshot. Generate the public API with `cargo doc --no-deps` and see the
 [design document](complete-design.zh_CN.md) for the full option set.
+
+## Configuration and request choices
+
+Use `Option<Arc<T>>` when a profile may omit a dependency; it resolves to `None` when no candidate is registered. Use `Vec<Arc<T>>` when every candidate is relevant; an empty candidate set resolves to an empty vector. Both declarations remain part of graph validation when they match active definitions. For an exact implementation, attach an ID with `#[inject(id = "storage.primary")]`; missing IDs fail during build and never fall back to `primary`.
+
+With both `macros` and `config` enabled, a field can read one value with `#[value("service.port")]`. Stage the snapshot using `builder.with_config(config)?` before installing the definition. A missing key or a value of the wrong type becomes `BuildError::ConfigReadFailed`, retaining the configuration source and field path.
+
+For a structured subtree, derive `Deserialize` and use `#[ConfigurationProperties(prefix = "service")]` on a named-field struct. Install that definition and stage the same config snapshot. A missing or invalid property fails construction; the error retains the original deserialization detail. The config macro tests in `tests/config_macro_tests.rs` show the exact setup and successful result.
+
+Use an async factory when construction itself must await I/O. `#[bean] async fn` and `register_async_factory` both create async definitions; choose `build_async()` or `build_all_async()` and drive the returned future with the application's executor. Calling synchronous `build()` on a selected async definition returns `BuildError::AsyncRequired` before any factory runs. The app owns executor choice and cancellation policy.
 
 ## Errors and diagnostics
 
@@ -200,7 +231,9 @@ remain the factory's responsibility.
 
 Dropping the context does not stop resources. External `Arc` clones can keep a
 value alive after shutdown; shutdown requests termination but cannot
-revoke those clones. Factory panics propagate as Rust panics.
+revoke those clones. A stop callback panic is collected as a Stop failure and
+later stop callbacks still run. A wait future panic propagates as a Rust panic.
+Factory panics during construction also propagate.
 
 There are no prototype or request scopes, hot reload, automatic lifecycle
 management for unmanaged components, circular proxies, or dynamic-library discovery. Struct macros support named

@@ -18,6 +18,22 @@
 构建器先筛选生效的 profile，再解析根节点和依赖、验证依赖图，最后按依赖顺序执行
 工厂。`build_all()` 则构建所有生效的定义。构建失败时不会发布部分上下文。
 
+## 跨 crate 装配：应用选择 provider
+
+provider crate 负责组件定义；应用负责决定安装哪些 provider、构建哪些服务。仓库的 `tests/fixtures/ioc_cross_crate/` 展示了这个边界。这是可运行的契约测试，不代表已有生产部署采用该方案。
+
+provider crate 导出 `register_ioc(&mut builder)`。应用夹具的 `app/src/discovery.rs` 提供 `assemble(config, profiles)`：创建 builder，登记配置快照并选择 profile，再调用 provider 的注册入口。登记只暂存定义；工厂要等到 `build()` 或 `build_all()` 才会运行。
+
+消费方依赖关系见 `tests/fixtures/ioc_cross_crate/app/Cargo.toml`：应用直接依赖 `qubit-ioc`、`qubit-config`、provider crate 和 contracts crate。集成测试先创建 `Config` 并设置 `fixture.label`，再调用 `assemble(config, &[])` 构图，查询 `AppService`、按 ID 查询具体 repository，并查询 primary 的 `dyn Repository`。测试验证具体类型和 trait alias 指向同一份实例，也验证 provider crate 中的 bean 能读取应用登记的配置。运行这组契约测试：
+
+```bash
+cargo test --manifest-path tests/fixtures/ioc_cross_crate/Cargo.toml
+```
+
+若配置子树缺失，构造返回 `BuildError::ConfigReadFailed`，source 链保留原始 `ConfigError`。需要启用可选 preview provider 时，调用 `assemble(config, &["default", "preview"])`；未激活的定义不会出现在 context 中。夹具集成测试覆盖了这两种结果。
+
+另一个下游夹具 `rs-execution-services/tests/fixtures/ioc_application_consumer/src/main.rs` 展示托管资源生命周期：安装托管的 `ExecutionServices` 与 `EventBus`，构建后取得共享服务，在退出时调用 `begin_shutdown()` 请求停止，再等待 `ShutdownHandle::wait()` 完成。这些片段来自不同夹具、承担不同验证目标；应用仍需自行处理配置来源和外部副作用。
+
 ## 场景：用共享配置启动服务
 
 一个应用有问候文本，服务启动时需要读取它。目标是在启动阶段构建服务，看到输出，
@@ -79,7 +95,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 组件，用 `#[bean]` 声明工厂。调用 `builder.install::<T>()?` 显式安装定义，也可调用
 提供者 crate 的 `register_ioc(&mut builder)` 组装入口。要把具体组件作为 trait 注入，
 需写 `bind = dyn Trait`；独立的 `impl` 不会
-自动生成绑定。
+自动生成绑定。`macros` 与 `config` 可独立启用：组件和 bean 声明需要 `macros`；
+`#[value]`、`#[ConfigurationProperties]` 同时需要 `macros` 和 `config`，只开
+`config` 不会导出这些宏。关闭默认 feature 后，手动注册不需要这两个 feature。
 
 `root::<T>()` 选择未指定 ID 的根节点；`root_by_id::<T>("some.id")?` 精确
 选择绑定。`build()` 至少需要一个根节点，只构建它的传递依赖；`build_all()` 会
@@ -122,6 +140,16 @@ fn replace_for_test() -> Result<(), Box<dyn Error>> {
 
 回调会先在临时 builder 上执行。若回调返回错误，或没有为目标键恰好注册一个定义，
 原 builder 不会改变。替换成功后原定义的全部键（包括 alias）都会移除；新定义需要重新声明仍需保留的 alias。
+
+## 配置和依赖请求怎么选
+
+某个 profile 可能不提供依赖时，用 `Option<Arc<T>>`；没有候选会得到 `None`。需要所有实现时，用 `Vec<Arc<T>>`；没有候选会得到空集合。只要这些请求命中生效定义，它们仍参与依赖图验证。需要固定使用某个实现时，在字段上写 `#[inject(id = "storage.primary")]`。指定 ID 不存在会在构建阶段报错，不会退回 `primary`。
+
+同时启用 `macros` 和 `config` 后，可用 `#[value("service.port")]` 读取单个配置值。安装定义前通过 `builder.with_config(config)?` 登记配置快照。键缺失或类型不匹配会转成 `BuildError::ConfigReadFailed`，错误保留原始配置来源和字段路径。
+
+读取一组结构化配置时，给具名字段结构体派生 `Deserialize`，并标注 `#[ConfigurationProperties(prefix = "service")]`。安装该定义，并让 builder 使用同一份配置快照。属性缺失或反序列化失败会中止构建，错误保留原始反序列化细节。`tests/config_macro_tests.rs` 展示了完整设置方式和成功结果。
+
+只有构造过程需要等待 I/O 时才使用异步工厂。可以声明 `#[bean] async fn`，也可调用 `register_async_factory`；之后用 `build_async()` 或 `build_all_async()`，并由应用执行器驱动 future。若选中图里有异步定义却调用同步 `build()`，会在工厂运行前返回 `BuildError::AsyncRequired`。执行器选择和取消策略由应用负责。
 
 ## 错误与排障
 
@@ -177,7 +205,9 @@ async fn managed_lifecycle() -> Result<(), Box<dyn std::error::Error>> {
 由工厂自身负责收尾。
 
 普通释放上下文不会自动停止资源。外部持有的 `Arc` 可使对象在
-关闭后继续存活；关闭动作不能撤销这些克隆。工厂 panic 按 Rust 机制传播。
+关闭后继续存活；关闭动作不能撤销这些克隆。stop 回调 panic 会作为 Stop 阶段失败
+记录，后续 stop 仍会执行；wait future panic 会按 Rust 机制传播。构造工厂 panic
+也会传播。
 
 当前不提供原型或请求作用域、热更新、未托管组件的自动生命周期管理、循环代理和动态库发现。
 结构体宏支持具名字段和单元结构体；其他形状可使用手动工厂。组件构造不使用运行时
