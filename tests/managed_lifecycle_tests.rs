@@ -87,7 +87,8 @@ fn test_shutdown_stops_then_waits_in_reverse_construction_order() {
 
     let context = builder.build_all().unwrap();
     assert!(events.lock().unwrap().is_empty());
-    run_ready(context.shutdown_async()).unwrap();
+    let mut shutdown = context.begin_shutdown();
+    run_ready(shutdown.wait()).unwrap();
     assert_eq!(
         *events.lock().unwrap(),
         ["stop C", "stop B", "stop A", "wait C", "wait B", "wait A"]
@@ -206,9 +207,68 @@ fn test_shutdown_continues_after_multiple_stop_and_wait_failures() {
         .unwrap();
 
     let context = builder.build_all().unwrap();
-    let error = run_ready(context.shutdown_async()).expect_err("cleanup failures are returned");
-    assert_eq!(error.failures.len(), 4);
+    let mut shutdown = context.begin_shutdown();
+    let error = run_ready(shutdown.wait()).expect_err("cleanup failures are returned");
+    assert_eq!(error.failures().len(), 4);
+    let source = std::error::Error::source(&error.failures()[0]).expect("cleanup error source");
+    assert!(std::error::Error::source(source).is_some());
+    let repeated = run_ready(shutdown.wait()).expect_err("completed errors are repeatable");
+    assert_eq!(repeated.failures().len(), 4);
+    assert!(std::ptr::eq(error.failures().as_ptr(), repeated.failures().as_ptr()));
     assert_eq!(*events.lock().unwrap(), ["stop B", "stop A", "wait B", "wait A"]);
+}
+
+#[test]
+fn test_cancelled_shutdown_wait_resumes_the_same_future() {
+    let callback_calls = Arc::new(AtomicUsize::new(0));
+    let future_polls = Arc::new(AtomicUsize::new(0));
+    let stops = Arc::new(AtomicUsize::new(0));
+    let mut builder = ContainerBuilder::new();
+    let captured_calls = Arc::clone(&callback_calls);
+    let captured_polls = Arc::clone(&future_polls);
+    let captured_stops = Arc::clone(&stops);
+    builder
+        .register_managed_factory::<First, _>(&[], move |_| {
+            Ok(Managed::new(Arc::new(First), move |_| {
+                captured_stops.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            })
+            .with_wait(move |_| {
+                captured_calls.fetch_add(1, Ordering::SeqCst);
+                Box::pin(std::future::poll_fn(move |_| {
+                    if captured_polls.fetch_add(1, Ordering::SeqCst) == 0 {
+                        Poll::Pending
+                    } else {
+                        Poll::Ready(Ok(()))
+                    }
+                }))
+            }))
+        })
+        .expect("register managed component");
+
+    let context = builder.build_all().expect("build managed component");
+    let mut shutdown = context.begin_shutdown();
+    assert_eq!(stops.load(Ordering::SeqCst), 1);
+
+    let mut first_wait = Box::pin(shutdown.wait());
+    assert!(
+        first_wait
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()))
+            .is_pending()
+    );
+    drop(first_wait);
+
+    let mut resumed_wait = Box::pin(shutdown.wait());
+    assert!(matches!(
+        resumed_wait.as_mut().poll(&mut Context::from_waker(Waker::noop())),
+        Poll::Ready(Ok(()))
+    ));
+    drop(resumed_wait);
+    assert!(run_ready(shutdown.wait()).is_ok());
+    assert_eq!(stops.load(Ordering::SeqCst), 1);
+    assert_eq!(callback_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(future_polls.load(Ordering::SeqCst), 2);
 }
 
 #[test]
@@ -324,7 +384,8 @@ fn test_managed_concrete_definition_with_alias_stops_once() {
     builder.root::<dyn Service>();
 
     let context = builder.build().unwrap();
-    run_ready(context.shutdown_async()).unwrap();
+    let mut shutdown = context.begin_shutdown();
+    run_ready(shutdown.wait()).unwrap();
     assert_eq!(stops.load(Ordering::SeqCst), 1);
 }
 
@@ -333,7 +394,8 @@ fn test_shutdown_of_unmanaged_context_succeeds_without_actions() {
     let mut builder = ContainerBuilder::new();
     builder.register_instance(Arc::new(First)).unwrap();
     let context = builder.build_all().unwrap();
-    assert!(run_ready(context.shutdown_async()).is_ok());
+    let mut shutdown = context.begin_shutdown();
+    assert!(run_ready(shutdown.wait()).is_ok());
 }
 
 #[test]
@@ -362,7 +424,8 @@ fn test_managed_instance_registration_with_options_stops_on_explicit_shutdown() 
         .unwrap();
     let context = builder.build_all().unwrap();
 
-    run_ready(context.shutdown_async()).unwrap();
+    let mut shutdown = context.begin_shutdown();
+    run_ready(shutdown.wait()).unwrap();
     assert_eq!(stops.load(Ordering::SeqCst), 2);
 }
 
@@ -410,7 +473,8 @@ fn test_managed_async_factory_and_managed_instance_definition_are_supported() {
     builder.root::<dyn Service>();
 
     let context = run_ready(builder.build_all_async()).unwrap();
-    run_ready(context.shutdown_async()).unwrap();
+    let mut shutdown = context.begin_shutdown();
+    run_ready(shutdown.wait()).unwrap();
     assert_eq!(stops.load(Ordering::SeqCst), 2);
 }
 
@@ -448,7 +512,8 @@ fn test_managed_async_definition_draft_constructs_and_shuts_down() {
     builder.root::<dyn Service>();
 
     let context = run_ready(builder.build_async()).unwrap();
-    run_ready(context.shutdown_async()).unwrap();
+    let mut shutdown = context.begin_shutdown();
+    run_ready(shutdown.wait()).unwrap();
     assert_eq!(stops.load(Ordering::SeqCst), 1);
 }
 

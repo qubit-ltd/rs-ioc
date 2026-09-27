@@ -38,11 +38,6 @@ pub(crate) fn expand(value: ComponentIr, context: &ExpansionContext) -> syn::Res
             stringify!(#item_name),
         )
     };
-    let definition_id = quote! {
-        concat!(env!("CARGO_PKG_NAME"), "@", env!("CARGO_PKG_VERSION"), "::",
-            module_path!(), "::", stringify!(#item_name))
-    };
-
     let mut dependencies = Vec::with_capacity(fields.len());
     let mut initializers = Vec::with_capacity(fields.len());
     let requires_config = fields
@@ -79,10 +74,6 @@ pub(crate) fn expand(value: ComponentIr, context: &ExpansionContext) -> syn::Res
 
     let generated = quote! {
         impl #runtime::ComponentDefinition for #ident {
-            fn definition_id() -> &'static str {
-                #definition_id
-            }
-
             fn source() -> #runtime::DefinitionSource {
                 #source_expr
             }
@@ -110,13 +101,6 @@ pub(crate) fn expand(value: ComponentIr, context: &ExpansionContext) -> syn::Res
             }
         }
 
-        #runtime::__private::submit_component!(
-            #runtime::discovery::RegistrationEntry::new(
-                <#ident as #runtime::ComponentDefinition>::register,
-                #source_expr,
-                #definition_id,
-            )
-        );
     };
     let generated = if requires_config {
         quote!(#runtime::__private::require_config! { #generated })

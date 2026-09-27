@@ -10,7 +10,7 @@ use std::sync::Arc;
 // Attribute expansion treats this same-package example as the runtime crate.
 pub use qubit_ioc::{
     __private, ApplicationContext, BindingOptions, Component, ComponentDefinition, ContainerBuilder, DefinitionSource,
-    Dependency, FactoryError, RegistrationError, Service, discovery,
+    Dependency, FactoryError, RegistrationError, Service,
 };
 
 trait Greeting: Send + Sync {
@@ -32,7 +32,9 @@ struct Greeter {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut builder = ApplicationContext::builder().discover()?;
+    let mut builder = ApplicationContext::builder();
+    builder.install::<English>()?;
+    builder.install::<Greeter>()?;
     builder.root::<Greeter>();
     let context = builder.build()?;
     assert_eq!(context.get::<Greeter>()?.greeting.text(), "hello");

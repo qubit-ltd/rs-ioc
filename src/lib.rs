@@ -14,8 +14,6 @@ pub mod builder;
 #[cfg(feature = "config")]
 pub mod config;
 pub mod dependency;
-#[cfg(feature = "inventory")]
-pub mod discovery;
 pub mod error;
 mod graph;
 pub mod key;
@@ -49,6 +47,7 @@ pub use managed::Managed;
 pub use managed::ManagedFactoryFuture;
 pub use managed::ShutdownError;
 pub use managed::ShutdownFailure;
+pub use managed::ShutdownHandle;
 pub use managed::ShutdownPhase;
 pub use options::BindingOptions;
 pub use options::DefinitionSource;

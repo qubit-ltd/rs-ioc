@@ -31,18 +31,16 @@ name = "qubit_ioc"
 
 [[example]]
 name = "readme_declarative"
-required-features = ["macros", "inventory"]
+required-features = ["macros"]
 
 [features]
-default = ["macros", "inventory", "config"]
+default = ["macros", "config"]
 macros = ["dep:qubit-ioc-macros"]
-inventory = ["dep:inventory"]
 config = ["dep:qubit-config", "dep:serde"]
 
 [dependencies]
 thiserror = "2.0"
 qubit-ioc-macros = { path = "macros", version = "0.1.0", optional = true }
-inventory = { version = "0.3", optional = true }
 qubit-config = { version = "0.14.3", optional = true }
 serde = { version = "1.0", optional = true }
 

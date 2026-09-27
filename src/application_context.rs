@@ -16,7 +16,7 @@ use crate::error::ResolveError;
 use crate::key::BindingId;
 use crate::key::BindingKey;
 use crate::managed::CleanupJournal;
-use crate::managed::ShutdownError;
+use crate::managed::ShutdownHandle;
 use crate::options::DefinitionSource;
 use crate::store::InstanceStore;
 
@@ -103,30 +103,25 @@ impl ApplicationContext {
         }
     }
 
-    /// Stops managed components and waits for them in reverse construction
-    /// order.
+    /// Sends every managed stop request and returns a handle for waiting.
     ///
-    /// Stop actions are all attempted before any wait action. Every failure is
-    /// retained in the returned [`ShutdownError`]. Dropping the context without
-    /// calling this method does not stop components. Cloned component `Arc`s
-    /// may remain alive after shutdown completes.
+    /// Stop actions are attempted in reverse construction order before any wait
+    /// begins. Dropping the context without calling this method does not stop
+    /// components. The returned handle keeps managed values alive while waits
+    /// remain. Cloned component `Arc`s may remain alive after shutdown.
     ///
     /// # Returns
     ///
-    /// Returns `Ok(())` when all cleanup actions succeed.
+    /// Returns a handle that can resume an interrupted wait.
     ///
     /// # Errors
     ///
-    /// Returns [`ShutdownError`] containing every failed stop or wait action.
-    pub async fn shutdown_async(mut self) -> Result<(), ShutdownError> {
+    /// This method does not return cleanup errors; [`ShutdownHandle::wait`]
+    /// returns all stop and wait failures after waiting completes.
+    pub fn begin_shutdown(mut self) -> ShutdownHandle {
         let mut cleanup = std::mem::take(&mut self.cleanup);
-        let mut failures = cleanup.stop_reverse();
-        failures.extend(cleanup.wait_reverse().await);
-        if failures.is_empty() {
-            Ok(())
-        } else {
-            Err(ShutdownError { failures })
-        }
+        let failures = cleanup.stop_reverse();
+        ShutdownHandle::new(self.store, cleanup, failures)
     }
 
     /// Returns the only `T`, or the unique primary when several exist.

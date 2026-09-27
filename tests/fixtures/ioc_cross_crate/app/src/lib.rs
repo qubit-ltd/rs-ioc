@@ -5,7 +5,7 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-//! Application fixture that links providers and performs discovery.
+//! Application fixture that explicitly assembles provider definitions.
 
 pub use qubit_ioc_fixture_contracts::Repository;
 pub use qubit_ioc_fixture_providers::AppService;
@@ -16,4 +16,4 @@ pub use qubit_ioc_fixture_providers::PreviewMarker;
 pub use qubit_ioc_fixture_providers::Settings;
 
 mod discovery;
-pub use discovery::discover;
+pub use discovery::assemble;

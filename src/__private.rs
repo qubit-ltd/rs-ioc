@@ -7,34 +7,6 @@
 // =============================================================================
 //! Versioned implementation protocol for generated code.
 
-#[cfg(feature = "inventory")]
-#[doc(hidden)]
-pub use inventory;
-
-/// Submits a generated registration entry when linked discovery is enabled.
-///
-/// The runtime owns the feature gate because consumer crates can enable
-/// `inventory` on this dependency without defining that feature themselves.
-#[cfg(feature = "inventory")]
-#[doc(hidden)]
-#[macro_export]
-macro_rules! submit_component {
-    ($entry:expr) => {
-        $crate::__private::inventory::submit! { $entry }
-    };
-}
-
-/// Expands to nothing when linked discovery is disabled.
-#[cfg(not(feature = "inventory"))]
-#[doc(hidden)]
-#[macro_export]
-macro_rules! submit_component {
-    ($entry:expr) => {};
-}
-
-#[doc(hidden)]
-pub use crate::submit_component;
-
 /// Gives generated config consumers an explicit diagnostic when the runtime
 /// dependency was compiled without its `config` feature.
 #[cfg(feature = "config")]

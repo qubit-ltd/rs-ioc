@@ -133,16 +133,10 @@ pub(crate) fn expand(value: BeanIr, context: &ExpansionContext) -> syn::Result<T
             const __IOC_SOURCE: #runtime::DefinitionSource = #runtime::DefinitionSource::new(
                 env!("CARGO_PKG_NAME"), module_path!(), file!(), line!(), column!(), stringify!(#item_name),
             );
-            const __IOC_ID: &'static str = concat!(
-                env!("CARGO_PKG_NAME"), "@", env!("CARGO_PKG_VERSION"),
-                "::", module_path!(), "::", stringify!(#marker),
-            );
         }
 
         impl #runtime::ComponentDefinition for #marker {
             fn source() -> #runtime::DefinitionSource { Self::__IOC_SOURCE }
-
-            fn definition_id() -> &'static str { Self::__IOC_ID }
 
             fn register(builder: &mut #runtime::ContainerBuilder) -> Result<(), #runtime::RegistrationError> {
                 let mut dependencies: ::std::vec::Vec<#runtime::Dependency> = ::std::vec::Vec::new();
@@ -161,14 +155,6 @@ pub(crate) fn expand(value: BeanIr, context: &ExpansionContext) -> syn::Result<T
                 draft.register(builder)
             }
         }
-
-        #runtime::__private::submit_component!(
-            #runtime::discovery::RegistrationEntry::new(
-                <#marker as #runtime::ComponentDefinition>::register,
-                #marker::__IOC_SOURCE,
-                #marker::__IOC_ID,
-            )
-        );
     };
     let generated = if requires_config {
         quote!(#runtime::__private::require_config! { #generated })

@@ -21,6 +21,7 @@ use thiserror::Error;
 use crate::key::BindingKey;
 use crate::options::DefinitionSource;
 use crate::store::ErasedInstance;
+use crate::store::InstanceStore;
 
 /// A future used to wait for a managed component to finish shutting down.
 ///
@@ -130,14 +131,137 @@ pub struct ShutdownFailure {
 /// ```
 /// use qubit_ioc::ShutdownError;
 ///
-/// let error = ShutdownError { failures: Vec::new() };
-/// assert!(error.failures.is_empty());
+/// let error = ShutdownError::new(Vec::new());
+/// assert!(error.failures().is_empty());
 /// ```
-#[derive(Debug, Error)]
+#[derive(Clone, Debug, Error)]
 #[error("{} component cleanup action(s) failed", failures.len())]
 pub struct ShutdownError {
     /// Cleanup failures in the order their actions were attempted.
-    pub failures: Vec<ShutdownFailure>,
+    failures: Arc<[ShutdownFailure]>,
+}
+
+impl ShutdownError {
+    /// Creates a shutdown error from all observed stop and wait failures.
+    ///
+    /// # Parameters
+    ///
+    /// `failures` contains cleanup failures in the order their actions ran.
+    ///
+    /// # Returns
+    ///
+    /// An error that can be cloned without cloning its original error sources.
+    pub fn new(failures: Vec<ShutdownFailure>) -> Self {
+        Self {
+            failures: Arc::from(failures),
+        }
+    }
+
+    /// Returns every recorded cleanup failure in action order.
+    #[must_use]
+    pub fn failures(&self) -> &[ShutdownFailure] {
+        &self.failures
+    }
+}
+
+/// Owns cleanup after stop requests have been sent and resumes waits safely.
+///
+/// The handle retains a currently polled wait future. If a caller cancels the
+/// future returned by [`Self::wait`], calling `wait` again resumes that same
+/// future. Dropping the handle drops unfinished waits; stop actions have
+/// already run.
+pub struct ShutdownHandle {
+    /// Keeps managed values alive until shutdown waiting finishes or is
+    /// dropped.
+    _store: InstanceStore,
+    /// Cleanup actions retained until their waits complete.
+    cleanup: CleanupJournal,
+    /// Number of entries whose wait callback has not started.
+    next_wait: usize,
+    /// Wait future retained across cancellation of a `wait` call.
+    active_wait: Option<CleanupFuture>,
+    /// Binding metadata corresponding to `active_wait`.
+    active_binding: Option<(BindingKey, DefinitionSource)>,
+    /// Stop and wait failures accumulated so far.
+    failures: Vec<ShutdownFailure>,
+    /// Final result, set once every wait has completed.
+    result: Option<ShutdownError>,
+}
+
+impl ShutdownHandle {
+    /// Takes ownership of cleanup after all stop callbacks were attempted.
+    pub(crate) fn new(store: InstanceStore, mut cleanup: CleanupJournal, failures: Vec<ShutdownFailure>) -> Self {
+        cleanup.disarm_abort();
+        let next_wait = cleanup.entries.len();
+        Self {
+            _store: store,
+            cleanup,
+            next_wait,
+            active_wait: None,
+            active_binding: None,
+            failures,
+            result: None,
+        }
+    }
+
+    /// Waits for managed components in reverse construction order.
+    ///
+    /// The future borrows this handle, which must remain available if the
+    /// caller cancels the wait. Repeated calls resume pending work and return
+    /// the same completed result without rerunning callbacks.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` when every stop and wait action succeeded.
+    ///
+    /// # Errors
+    ///
+    /// Returns a cloneable [`ShutdownError`] containing all stop and wait
+    /// failures observed after the final wait completes.
+    pub async fn wait(&mut self) -> Result<(), ShutdownError> {
+        if let Some(result) = &self.result {
+            return Self::clone_result(result);
+        }
+        loop {
+            if self.active_wait.is_none() {
+                while self.next_wait > 0 {
+                    self.next_wait -= 1;
+                    let entry = &mut self.cleanup.entries[self.next_wait];
+                    if let Some(wait) = entry.action.wait.take() {
+                        self.active_binding = Some((entry.key.clone(), entry.definition));
+                        self.active_wait = Some(wait());
+                        break;
+                    }
+                }
+                if self.active_wait.is_none() {
+                    let result = ShutdownError::new(std::mem::take(&mut self.failures));
+                    self.result = Some(result);
+                    return Self::clone_result(self.result.as_ref().expect("shutdown result was set"));
+                }
+            }
+
+            let result = self.active_wait.as_mut().expect("active wait was initialized").await;
+            self.active_wait = None;
+            let (key, definition) = self.active_binding.take().expect("active binding was set");
+            if let Err(error) = result {
+                self.failures.push(ShutdownFailure {
+                    key,
+                    definition,
+                    phase: ShutdownPhase::Wait,
+                    error,
+                });
+            }
+        }
+    }
+
+    /// Clones the final result while sharing its retained source errors.
+    fn clone_result(result: &ShutdownError) -> Result<(), ShutdownError> {
+        if result.failures().is_empty() {
+            Ok(())
+        } else {
+            Err(result.clone())
+        }
+    }
 }
 
 /// A component value paired with explicit application shutdown actions.

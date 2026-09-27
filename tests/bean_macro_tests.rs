@@ -20,7 +20,6 @@ use std::task::Waker;
 #[cfg(feature = "config")]
 use qubit_config::Config;
 use qubit_ioc::BuildError;
-#[cfg(feature = "inventory")]
 use qubit_ioc::ComponentDefinition;
 use qubit_ioc::Configuration;
 use qubit_ioc::ContainerBuilder;
@@ -255,7 +254,8 @@ fn test_sync_managed_bean_projects_one_instance_and_stops_once() {
     let alias = context.get::<dyn ManagedGreeting>().expect("trait alias");
     assert_eq!(alias.message(), "managed hello");
     assert_eq!(Arc::as_ptr(&concrete) as *const (), Arc::as_ptr(&alias) as *const ());
-    ready(context.shutdown_async()).expect("managed shutdown succeeds");
+    let mut shutdown = context.begin_shutdown();
+    ready(shutdown.wait()).expect("managed shutdown succeeds");
     assert_eq!(MANAGED_GREETING_STOPS.load(Ordering::SeqCst), 1);
 }
 
@@ -271,7 +271,8 @@ fn test_async_managed_bean_waits_and_build_failure_runs_cleanup() {
         .expect("install async managed bean");
     let context = ready(builder.build_all_async()).expect("async managed bean builds");
     assert!(context.get::<AsyncManagedValue>().is_ok());
-    ready(context.shutdown_async()).expect("async managed shutdown succeeds");
+    let mut shutdown = context.begin_shutdown();
+    ready(shutdown.wait()).expect("async managed shutdown succeeds");
     assert_eq!(ASYNC_MANAGED_STOPS.load(Ordering::SeqCst), 1);
     assert_eq!(ASYNC_MANAGED_WAITS.load(Ordering::SeqCst), 1);
 
@@ -518,14 +519,12 @@ fn test_configuration_applies_default_profile_and_installs_in_source_order() {
     assert!(context.get::<grouped::DefaultOnly>().is_ok());
 }
 
-#[cfg(feature = "inventory")]
 #[test]
-fn test_configuration_beans_discover_without_module_duplicate_and_source_matches_marker() {
+fn test_configuration_group_installs_beans_and_source_matches_marker() {
     let mut builder = ContainerBuilder::new().active_profiles(&["prod"]).expect("active prod");
-    builder.exclude_definition::<grouped::FirstBean>();
-    let context = ready(builder.discover().expect("discover linked beans").build_all_async())
-        .expect("discovery builds unique bean definitions");
-    assert!(context.try_get::<grouped::First>().expect("excluded first").is_none());
+    grouped::register_ioc(&mut builder).expect("install configuration beans");
+    let context = ready(builder.build_all_async()).expect("configuration group builds");
+    assert!(context.get::<grouped::First>().is_ok());
     assert!(context.get::<grouped::Second>().is_ok());
     assert!(
         context
@@ -537,17 +536,12 @@ fn test_configuration_beans_discover_without_module_duplicate_and_source_matches
     assert_eq!(source.item, "first");
 }
 
-#[cfg(feature = "inventory")]
 #[test]
-fn test_configuration_group_and_discovery_report_duplicate_manual_install() {
+fn test_configuration_group_and_explicit_install_report_duplicate() {
     let mut builder = ContainerBuilder::new().active_profiles(&["prod"]).expect("active prod");
     grouped::register_ioc(&mut builder).expect("manual group install");
-    let error = match ready(
-        builder
-            .discover()
-            .expect("linked definitions register")
-            .build_all_async(),
-    ) {
+    builder.install::<grouped::FirstBean>().expect("duplicate is staged");
+    let error = match ready(builder.build_all_async()) {
         Ok(_) => panic!("manual plus linked bean must be duplicate"),
         Err(error) => error,
     };

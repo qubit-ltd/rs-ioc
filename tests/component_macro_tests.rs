@@ -11,12 +11,10 @@ use std::sync::Arc;
 
 #[cfg(feature = "config")]
 use qubit_config::Config;
-#[cfg(feature = "inventory")]
 use qubit_ioc::BuildError;
 #[cfg(feature = "config")]
 use qubit_ioc::BuildError as ConfigBuildError;
 use qubit_ioc::Component;
-#[cfg(feature = "inventory")]
 use qubit_ioc::ComponentDefinition;
 use qubit_ioc::ContainerBuilder;
 #[cfg(feature = "config")]
@@ -201,39 +199,38 @@ fn test_component_macro_reuses_one_declared_dependency_for_two_fields() {
     assert!(Arc::ptr_eq(&consumer.first, &consumer.second));
 }
 
-#[cfg(feature = "inventory")]
 #[test]
-fn test_component_macro_discovery_and_manual_install_share_registration() {
+fn test_component_macro_requires_explicit_installation() {
     let source = <Alpha as ComponentDefinition>::source();
     assert_eq!(source.item, "Alpha");
     assert_eq!(source.package, env!("CARGO_PKG_NAME"));
     assert_eq!(source.module_path, module_path!());
 
-    let mut builder = ContainerBuilder::new();
-    builder.exclude_definition::<Missing>();
-    let context = builder
-        .discover()
-        .expect("discover component definitions")
-        .build_all()
-        .expect("build discovered components");
+    let builder = install_consumer_graph();
+    let context = builder.build_all().expect("build explicitly installed components");
     assert!(
         context
             .try_get::<Missing>()
-            .expect("excluded component lookup")
+            .expect("uninstalled component lookup")
             .is_none()
     );
     assert_eq!(
         context
             .get::<Consumer>()
-            .expect("discovered consumer")
+            .expect("explicitly installed consumer")
             .selected
             .greeting(),
         "beta"
     );
 
-    let mut builder = install_consumer_graph();
-    builder.install::<Alpha>().expect("staging duplicate is deferred");
-    assert!(matches!(builder.build_all(), Err(BuildError::DuplicateBinding { .. })));
+    let mut duplicate_builder = install_consumer_graph();
+    duplicate_builder
+        .install::<Alpha>()
+        .expect("staging duplicate is deferred");
+    assert!(matches!(
+        duplicate_builder.build_all(),
+        Err(BuildError::DuplicateBinding { .. })
+    ));
 }
 
 #[cfg(feature = "config")]

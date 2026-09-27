@@ -18,7 +18,7 @@ use qubit_ioc_fixture_app::Greeting;
 use qubit_ioc_fixture_app::MemoryRepository;
 use qubit_ioc_fixture_app::PreviewMarker;
 use qubit_ioc_fixture_app::Repository;
-use qubit_ioc_fixture_app::discover;
+use qubit_ioc_fixture_app::assemble;
 
 /// Creates the configuration snapshot used by linked providers.
 fn fixture_config() -> Config {
@@ -28,9 +28,9 @@ fn fixture_config() -> Config {
 }
 
 #[test]
-fn test_linked_crates_discover_aliases_and_share_component_identity() {
-    let context = discover(fixture_config(), &[])
-        .expect("discover linked provider crate")
+fn test_explicit_provider_list_registers_aliases_and_shares_identity() {
+    let context = assemble(fixture_config(), &[])
+        .expect("assemble explicit provider list")
         .build_all()
         .expect("build cross-crate graph");
     let service = context.get::<AppService>().expect("service from linked provider");
@@ -59,9 +59,9 @@ fn test_linked_crates_discover_aliases_and_share_component_identity() {
 }
 
 #[test]
-fn test_linked_crates_respect_explicit_profiles() {
-    let context = discover(fixture_config(), &["default", "preview"])
-        .expect("discover with both profiles")
+fn test_explicit_provider_list_respects_profiles() {
+    let context = assemble(fixture_config(), &["default", "preview"])
+        .expect("assemble with both profiles")
         .build_all()
         .expect("build both profiles");
     assert!(context.get::<PreviewMarker>().is_ok());
@@ -70,8 +70,8 @@ fn test_linked_crates_respect_explicit_profiles() {
 
 #[test]
 fn test_linked_properties_keep_original_config_error() {
-    let error = discover(Config::new(), &[])
-        .expect("discover linked definitions")
+    let error = assemble(Config::new(), &[])
+        .expect("assemble provider definitions")
         .build_all()
         .err()
         .expect("missing settings must fail");
@@ -79,4 +79,14 @@ fn test_linked_properties_keep_original_config_error() {
         if path_key == "fixture" && target == "Settings"));
     let source = error.source().expect("factory error").source().expect("config error");
     assert!(source.is::<ConfigError>());
+}
+
+#[test]
+fn test_uninstalled_cross_crate_root_is_reported() {
+    use qubit_ioc::ContainerBuilder;
+    use qubit_ioc::BuildError;
+
+    let mut builder = ContainerBuilder::new();
+    builder.root::<AppService>();
+    assert!(matches!(builder.build(), Err(BuildError::MissingRoot { .. })));
 }

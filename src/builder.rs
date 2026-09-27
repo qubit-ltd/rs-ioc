@@ -54,7 +54,6 @@ type PreparedDefinitions = (Vec<PendingDefinition>, Vec<String>, Vec<Dependency>
 ///     fn source() -> DefinitionSource {
 ///         DefinitionSource::new("app", "app", "src/main.rs", 1, 1, "Message")
 ///     }
-///     fn definition_id() -> &'static str { "app::Message" }
 ///     fn register(builder: &mut ContainerBuilder) -> Result<(), RegistrationError> {
 ///         builder.register_instance(Arc::new(Message))
 ///     }
@@ -67,16 +66,7 @@ type PreparedDefinitions = (Vec<PendingDefinition>, Vec<String>, Vec<Dependency>
 /// ```
 pub trait ComponentDefinition {
     /// Returns this definition's diagnostic source location.
-    ///
-    /// Generated definitions use the same value in their discovery entry.
     fn source() -> DefinitionSource;
-
-    /// Returns a stable, unique identity for this definition.
-    ///
-    /// Generated definitions use the same ID in their discovery entry. The ID
-    /// must distinguish different definitions even if their source locations
-    /// coincide; a package, module and item name combination is recommended.
-    fn definition_id() -> &'static str;
 
     /// Registers this definition into `builder`.
     ///
@@ -111,16 +101,14 @@ pub struct ContainerBuilder {
     active_profiles: Vec<String>,
     /// Required requests that select the subgraph for a root-scoped build.
     roots: Vec<Dependency>,
-    /// Generated definitions excluded from later linked discovery.
-    pub(crate) excluded_definitions: Vec<&'static str>,
-    /// Exact-key replacements applied after profile filtering.
+    /// Whole-definition replacements applied after profile filtering.
     replacements: Vec<Replacement>,
 }
 
-/// One explicit exact-key override and the definition that supplied it.
+/// One explicit definition override and the definition that supplied it.
 struct Replacement {
-    /// Exact typed key whose earlier active binding is removed.
-    key: BindingKey,
+    /// Exact typed key identifying the earlier definition to remove.
+    anchor: BindingKey,
     /// Index of the staged definition that supplies the replacement.
     definition_index: usize,
 }
@@ -402,54 +390,43 @@ impl ContainerBuilder {
         D::register(self)
     }
 
-    /// Skips the linked registration entry for `D` during later discovery.
-    ///
-    /// Every binding declared by that entry, including interface aliases, is
-    /// skipped. Explicit registrations already staged in this builder remain.
-    ///
-    /// # Type Parameters
-    ///
-    /// `D` is the definition whose generated discovery entry is excluded.
-    pub fn exclude_definition<D: ComponentDefinition>(&mut self) {
-        self.excluded_definitions.push(D::definition_id());
-    }
-
-    /// Stages `definition` as an explicit replacement for exactly `key`.
+    /// Replaces the complete active definition identified by `anchor`.
     ///
     /// The callback registers into a temporary builder, so errors leave this
-    /// builder unchanged. It must declare `key` exactly once. At build time,
-    /// the matching active binding from earlier definitions is removed after
-    /// profile filtering; their other keys remain. Later duplicates still fail.
-    pub fn replace_binding<F>(&mut self, key: BindingKey, definition: F) -> Result<(), RegistrationError>
+    /// builder unchanged. It must stage exactly one definition containing
+    /// `anchor` exactly once. At build time, the complete matching active
+    /// definition is removed after profile filtering. Later duplicates still
+    /// fail.
+    pub fn replace_definition<F>(&mut self, anchor: BindingKey, definition: F) -> Result<(), RegistrationError>
     where
         F: FnOnce(&mut Self) -> Result<(), RegistrationError>,
     {
         let mut draft = Self::new();
         definition(&mut draft)?;
-        let matches: Vec<_> = draft
-            .definitions
+        if draft.definitions.len() != 1 {
+            return Err(RegistrationError::ReplacementDefinitionCount {
+                count: draft.definitions.len(),
+            });
+        }
+        let definition = &draft.definitions[0];
+        let anchor_count = definition
+            .bindings
             .iter()
-            .enumerate()
-            .filter_map(|(index, item)| {
-                item.bindings
-                    .iter()
-                    .any(|binding| binding.key == key)
-                    .then_some((index, item.source))
-            })
-            .collect();
-        let relative_index = match matches.as_slice() {
-            [(index, _)] => *index,
-            [] => return Err(RegistrationError::ReplacementTargetMissing { key }),
-            _ => {
-                return Err(RegistrationError::ReplacementTargetAmbiguous {
-                    key,
-                    sources: matches.into_iter().map(|(_, source)| source).collect(),
-                });
-            }
-        };
+            .filter(|binding| binding.key == anchor)
+            .count();
+        if anchor_count != 1 {
+            return Err(RegistrationError::ReplacementAnchorCount {
+                anchor,
+                count: anchor_count,
+            });
+        }
+        let relative_index = 0;
         let definition_index = self.definitions.len() + relative_index;
         self.definitions.extend(draft.definitions);
-        self.replacements.push(Replacement { key, definition_index });
+        self.replacements.push(Replacement {
+            anchor,
+            definition_index,
+        });
         Ok(())
     }
 
@@ -574,7 +551,10 @@ impl ContainerBuilder {
             // An inactive replacement does not affect bindings in active profiles.
             let Some((_, replacement_definition)) = active.iter().find(|(index, definition)| {
                 *index == replacement.definition_index
-                    && definition.bindings.iter().any(|binding| binding.key == replacement.key)
+                    && definition
+                        .bindings
+                        .iter()
+                        .any(|binding| binding.key == replacement.anchor)
             }) else {
                 continue;
             };
@@ -586,49 +566,59 @@ impl ContainerBuilder {
                     definition
                         .bindings
                         .iter()
-                        .filter(|binding| binding.key == replacement.key)
+                        .filter(|binding| binding.key == replacement.anchor)
                         .map(|_| definition.source)
                 })
                 .collect();
             match originals.as_slice() {
                 [] => {
                     return Err(BuildError::ReplacementOriginalMissing {
-                        key: replacement.key,
+                        key: replacement.anchor,
                         replacement: replacement_source,
                     });
                 }
                 [_] => {}
                 _ => {
                     return Err(BuildError::ReplacementOriginalAmbiguous {
-                        key: replacement.key,
+                        key: replacement.anchor,
                         originals,
                         replacement: replacement_source,
                     });
                 }
             }
-            let mut replaced_sources = Vec::new();
-            for (index, definition) in &mut active {
-                if *index < replacement.definition_index {
-                    definition.bindings.retain(|binding| {
-                        if binding.key == replacement.key {
-                            replaced_sources.extend(&binding.replaced_sources);
-                            replaced_sources.push(definition.source);
-                            false
-                        } else {
-                            true
-                        }
-                    });
-                }
-            }
+            let original_index = active.iter().find_map(|(index, definition)| {
+                (*index < replacement.definition_index
+                    && definition
+                        .bindings
+                        .iter()
+                        .any(|binding| binding.key == replacement.anchor))
+                .then_some(*index)
+            });
+            let Some(original_index) = original_index else { continue };
+            let original_sources = active
+                .iter()
+                .find(|(index, _)| *index == original_index)
+                .and_then(|(_, item)| {
+                    item.bindings
+                        .iter()
+                        .find(|binding| binding.key == replacement.anchor)
+                        .map(|binding| {
+                            let mut sources = binding.replaced_sources.clone();
+                            sources.push(item.source);
+                            sources
+                        })
+                })
+                .unwrap_or_default();
+            active.retain(|(index, _)| *index != original_index);
             if let Some((_, definition)) = active
                 .iter_mut()
                 .find(|(index, _)| *index == replacement.definition_index)
                 && let Some(binding) = definition
                     .bindings
                     .iter_mut()
-                    .find(|binding| binding.key == replacement.key)
+                    .find(|binding| binding.key == replacement.anchor)
             {
-                binding.replaced_sources.extend(replaced_sources);
+                binding.replaced_sources.extend(original_sources);
             }
         }
         Ok((

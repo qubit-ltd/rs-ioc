@@ -145,19 +145,19 @@ pub enum RegistrationError {
         /// Alias binding profile.
         alias: Option<String>,
     },
-    /// A replacement registration did not declare its requested exact key.
-    #[error("replacement does not declare exact key {key:?}")]
-    ReplacementTargetMissing {
-        /// The requested replacement key.
-        key: BindingKey,
+    /// A replacement callback staged zero or multiple definitions.
+    #[error("replacement callback must stage exactly one definition; got {count}")]
+    ReplacementDefinitionCount {
+        /// Number of staged definitions.
+        count: usize,
     },
-    /// A replacement registration declared its requested key more than once.
-    #[error("replacement declares exact key {key:?} at multiple sources: {sources:?}")]
-    ReplacementTargetAmbiguous {
-        /// The requested replacement key.
-        key: BindingKey,
-        /// Definitions that declared it.
-        sources: Vec<DefinitionSource>,
+    /// A replacement definition declared its anchor zero or multiple times.
+    #[error("replacement definition must declare anchor {anchor:?} exactly once; got {count}")]
+    ReplacementAnchorCount {
+        /// Exact key identifying the original definition.
+        anchor: BindingKey,
+        /// Number of matching bindings in the replacement definition.
+        count: usize,
     },
     /// A pending definition has no concrete binding.
     #[error("{definition}: definition has no concrete binding")]
@@ -264,18 +264,6 @@ pub enum BuildError {
         request: Dependency,
         /// Active bindings of the requested type.
         available: Vec<BindingKey>,
-    },
-    /// An alias still points to a concrete key replaced by another definition.
-    #[error("alias {alias:?} targets replaced key {target:?}: {original} was replaced by {replacement}")]
-    AliasTargetReplaced {
-        /// Alias whose projection was invalidated.
-        alias: BindingKey,
-        /// Replaced concrete key.
-        target: BindingKey,
-        /// Source definition that originally owned the key.
-        original: DefinitionSource,
-        /// Replacement definition now owning the key.
-        replacement: DefinitionSource,
     },
     /// Several active bindings satisfy a root request without a unique primary.
     #[error("ambiguous root {request:?}; candidates: {candidates:?}")]

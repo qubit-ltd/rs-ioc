@@ -79,8 +79,6 @@ enum Edge {
     AmbiguousDependency(Dependency, Vec<BindingKey>),
     /// An alias refers to a key absent from active definitions.
     MissingAliasTarget(BindingKey),
-    /// An alias target was replaced by another definition.
-    AliasTargetReplaced(BindingKey, DefinitionSource, DefinitionSource),
 }
 
 // BuildError carries public candidate sets and complete dependency paths.
@@ -285,14 +283,6 @@ fn close_definitions(nodes: &[Node], edges: &[Vec<Edge>], mut reachable: Vec<boo
                             path: node_path,
                         });
                     }
-                    Edge::AliasTargetReplaced(target, original, replacement) => {
-                        return Err(BuildError::AliasTargetReplaced {
-                            alias: node.key.clone(),
-                            target: target.clone(),
-                            original: *original,
-                            replacement: *replacement,
-                        });
-                    }
                 }
             }
         }
@@ -393,15 +383,6 @@ fn resolve_edges(
         let binding = &definitions[node.location.definition].bindings[node.location.binding];
         if let PendingBindingKind::Alias { target, .. } = &binding.kind {
             edges.push(vec![match by_key.get(target) {
-                Some(&target_index)
-                    if nodes[target_index].location.definition != node.location.definition
-                        && !definitions[nodes[target_index].location.definition].bindings
-                            [nodes[target_index].location.binding]
-                            .replaced_sources
-                            .is_empty() =>
-                {
-                    Edge::AliasTargetReplaced(target.clone(), node.source, nodes[target_index].source)
-                }
                 Some(&target_index) => Edge::Target(target_index),
                 None => Edge::MissingAliasTarget(target.clone()),
             }]);
@@ -532,14 +513,6 @@ fn detect_errors_and_cycles(nodes: &[Node], edges: &[Vec<Edge>], reachable: &[bo
                             target: target.clone(),
                             definition: nodes[*index].source,
                             path: stack.iter().map(|(entry, _)| nodes[*entry].key.clone()).collect(),
-                        });
-                    }
-                    Edge::AliasTargetReplaced(target, original, replacement) => {
-                        return Err(BuildError::AliasTargetReplaced {
-                            alias: nodes[*index].key.clone(),
-                            target: target.clone(),
-                            original: *original,
-                            replacement: *replacement,
                         });
                     }
                 }

@@ -31,10 +31,6 @@ pub(crate) fn expand(value: ConfigurationPropertiesIr, context: &ExpansionContex
             stringify!(#item_name),
         )
     };
-    let definition_id = quote! {
-        concat!(env!("CARGO_PKG_NAME"), "@", env!("CARGO_PKG_VERSION"), "::",
-            module_path!(), "::", stringify!(#item_name))
-    };
     let id = options.id.as_ref().map_or_else(
         || quote!(::std::option::Option::None),
         |id| quote!(::std::option::Option::Some(#id.to_owned())),
@@ -48,10 +44,6 @@ pub(crate) fn expand(value: ConfigurationPropertiesIr, context: &ExpansionContex
 
     let generated = quote! {
         impl #runtime::ComponentDefinition for #ident {
-            fn definition_id() -> &'static str {
-                #definition_id
-            }
-
             fn source() -> #runtime::DefinitionSource {
                 #source_expr
             }
@@ -84,14 +76,6 @@ pub(crate) fn expand(value: ConfigurationPropertiesIr, context: &ExpansionContex
                 )?.register(builder)
             }
         }
-
-        #runtime::__private::submit_component!(
-            #runtime::discovery::RegistrationEntry::new(
-                <#ident as #runtime::ComponentDefinition>::register,
-                #source_expr,
-                #definition_id,
-            )
-        );
     };
     Ok(quote! {
         #item

@@ -10,6 +10,8 @@
 use std::sync::Arc;
 
 use qubit_ioc::bean;
+use qubit_ioc::ContainerBuilder;
+use qubit_ioc::RegistrationError;
 
 use crate::AppService;
 
@@ -22,4 +24,9 @@ pub struct Greeting(
 #[bean]
 fn greeting(service: Arc<AppService>) -> Greeting {
     Greeting(format!("{}:{}", service.settings.label, service.primary.find(7)))
+}
+
+/// Installs the private marker generated for this module's greeting bean.
+pub(crate) fn register_ioc(builder: &mut ContainerBuilder) -> Result<(), RegistrationError> {
+    builder.install::<GreetingBean>()
 }
