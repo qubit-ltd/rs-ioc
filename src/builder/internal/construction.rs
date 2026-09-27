@@ -103,7 +103,6 @@ impl Construction {
             let (key, source, kind) = self.take_binding(location);
             let product = match kind {
                 PendingBindingKind::Instance(value) => Ok((value, None)),
-                PendingBindingKind::ManagedInstance(value, cleanup) => Ok((value, Some(cleanup))),
                 PendingBindingKind::SyncFactory(factory) => factory(self.build_context(location.definition))
                     .map(|value| (value, None))
                     .map_err(|error| self.factory_error(&key, source, error)),
@@ -145,7 +144,6 @@ impl Construction {
             let (key, source, kind) = self.take_binding(location);
             let product = match kind {
                 PendingBindingKind::Instance(value) => Ok((value, None)),
-                PendingBindingKind::ManagedInstance(value, cleanup) => Ok((value, Some(cleanup))),
                 PendingBindingKind::SyncFactory(factory) => factory(self.build_context(location.definition))
                     .map(|value| (value, None))
                     .map_err(|error| self.factory_error(&key, source, error)),

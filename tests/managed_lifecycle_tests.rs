@@ -537,26 +537,89 @@ fn test_shutdown_of_unmanaged_context_succeeds_without_actions() {
 }
 
 #[test]
-fn test_managed_instance_registration_with_options_stops_on_explicit_shutdown() {
+fn test_unselected_managed_factory_is_not_invoked() {
+    let constructions = Arc::new(AtomicUsize::new(0));
+    let stops = Arc::new(AtomicUsize::new(0));
+    let mut builder = ContainerBuilder::new();
+    let factory_constructions = Arc::clone(&constructions);
+    let factory_stops = Arc::clone(&stops);
+    builder
+        .register_managed_factory::<First, _>(&[], move |_| {
+            factory_constructions.fetch_add(1, Ordering::SeqCst);
+            Ok(Managed::new(Arc::new(First), move |_| {
+                factory_stops.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            }))
+        })
+        .expect("register managed factory");
+    builder
+        .register_instance(Arc::new(Second))
+        .expect("register root instance");
+    builder.root::<Second>();
+
+    let context = builder.build().expect("build selected root");
+    let mut shutdown = context.begin_shutdown();
+    run_ready(shutdown.wait()).expect("shutdown succeeds");
+    assert_eq!(constructions.load(Ordering::SeqCst), 0);
+    assert_eq!(stops.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn test_graph_failure_does_not_create_managed_resource() {
+    let constructions = Arc::new(AtomicUsize::new(0));
+    let stops = Arc::new(AtomicUsize::new(0));
+    let mut builder = ContainerBuilder::new();
+    let factory_constructions = Arc::clone(&constructions);
+    let factory_stops = Arc::clone(&stops);
+    builder
+        .register_managed_factory::<First, _>(&[], move |_| {
+            factory_constructions.fetch_add(1, Ordering::SeqCst);
+            Ok(Managed::new(Arc::new(First), move |_| {
+                factory_stops.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            }))
+        })
+        .expect("register managed factory");
+    builder
+        .register_factory::<Second, _>(&[Dependency::of::<Third>()], |_| Ok(Arc::new(Second)))
+        .expect("register invalid root factory");
+    builder.root::<Second>();
+
+    let error = match builder.build() {
+        Ok(_) => panic!("missing dependency prevents construction"),
+        Err(error) => error,
+    };
+    assert!(matches!(error, BuildError::MissingDependency { .. }));
+    assert_eq!(constructions.load(Ordering::SeqCst), 0);
+    assert_eq!(stops.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn test_managed_factory_registration_with_options_stops_on_explicit_shutdown() {
     let stops = Arc::new(AtomicUsize::new(0));
     let mut builder = ContainerBuilder::new();
     let captured = Arc::clone(&stops);
     builder
-        .register_managed_instance(Managed::new(Arc::new(First), move |_| {
-            captured.fetch_add(1, Ordering::SeqCst);
-            Ok(())
-        }))
+        .register_managed_factory::<First, _>(&[], move |_| {
+            Ok(Managed::new(Arc::new(First), move |_| {
+                captured.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            }))
+        })
         .unwrap();
     let captured = Arc::clone(&stops);
     builder
-        .register_managed_instance_with(
-            Managed::new(Arc::new(Second), move |_| {
-                captured.fetch_add(1, Ordering::SeqCst);
-                Ok(())
-            }),
+        .register_managed_factory_with::<Second, _>(
+            &[],
             BindingOptions {
                 id: Some("managed.second".to_owned()),
                 ..Default::default()
+            },
+            move |_| {
+                Ok(Managed::new(Arc::new(Second), move |_| {
+                    captured.fetch_add(1, Ordering::SeqCst);
+                    Ok(())
+                }))
             },
         )
         .unwrap();
@@ -568,7 +631,7 @@ fn test_managed_instance_registration_with_options_stops_on_explicit_shutdown() 
 }
 
 #[test]
-fn test_managed_async_factory_and_managed_instance_definition_are_supported() {
+fn test_managed_async_and_sync_definition_drafts_are_supported() {
     let stops = Arc::new(AtomicUsize::new(0));
     let captured = Arc::clone(&stops);
     let mut builder = ContainerBuilder::new();
@@ -591,17 +654,13 @@ fn test_managed_async_factory_and_managed_instance_definition_are_supported() {
         1,
         "ConcreteService",
     );
-    let mut draft = DefinitionDraft::<ConcreteService>::from_managed_instance(
-        source,
-        Default::default(),
-        Managed::new(Arc::new(ConcreteService), {
-            let captured = Arc::clone(&stops);
-            move |_| {
-                captured.fetch_add(1, Ordering::SeqCst);
-                Ok(())
-            }
-        }),
-    )
+    let captured = Arc::clone(&stops);
+    let mut draft = DefinitionDraft::<ConcreteService>::new_managed_sync(source, &[], Default::default(), move |_| {
+        Ok(Managed::new(Arc::new(ConcreteService), move |_| {
+            captured.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }))
+    })
     .unwrap();
     draft
         .bind::<dyn Service, _>(Default::default(), |concrete| -> Arc<dyn Service> { concrete })

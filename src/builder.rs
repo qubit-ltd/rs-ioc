@@ -195,28 +195,6 @@ impl ContainerBuilder {
         self.stage_definition(PendingDefinition::new(source, profile, Vec::new(), binding))
     }
 
-    /// Stages a complete managed instance with default binding options.
-    #[track_caller]
-    pub fn register_managed_instance<T: ?Sized + Send + Sync + 'static>(
-        &mut self,
-        value: Managed<T>,
-    ) -> Result<(), RegistrationError> {
-        self.register_managed_instance_with(value, BindingOptions::default())
-    }
-
-    /// Stages a complete managed instance with binding options.
-    #[track_caller]
-    pub fn register_managed_instance_with<T: ?Sized + Send + Sync + 'static>(
-        &mut self,
-        value: Managed<T>,
-        options: BindingOptions,
-    ) -> Result<(), RegistrationError> {
-        let source = source::<T>();
-        let (key, profile) = validate_options::<T>(&options, source)?;
-        let binding = PendingBinding::managed_instance(key, value, options.primary, options.order);
-        self.stage_definition(PendingDefinition::new(source, profile, Vec::new(), binding))
-    }
-
     /// Stages a one-shot synchronous factory with default binding options.
     ///
     /// The factory receives only its declared requests during construction.

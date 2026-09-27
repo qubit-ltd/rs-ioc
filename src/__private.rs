@@ -109,20 +109,6 @@ pub mod codegen_v1 {
             })
         }
 
-        /// Stages an already constructed managed concrete instance.
-        pub fn from_managed_instance(
-            source: DefinitionSource,
-            options: BindingOptions,
-            value: Managed<T>,
-        ) -> Result<Self, RegistrationError> {
-            let (key, profile) = validate_options::<T>(&options, source)?;
-            let concrete = PendingBinding::managed_instance(key, value, options.primary, options.order);
-            Ok(Self {
-                definition: PendingDefinition::new(source, profile, Vec::new(), concrete),
-                marker: PhantomData,
-            })
-        }
-
         /// Stages a synchronous concrete factory and its declared requests.
         ///
         /// IDs, profile and dependencies are checked before the factory is

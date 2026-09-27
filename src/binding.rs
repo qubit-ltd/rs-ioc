@@ -91,8 +91,6 @@ pub(crate) enum PendingBindingKind {
     SyncFactory(SyncFactory),
     /// A one-shot asynchronous factory.
     AsyncFactory(AsyncFactory),
-    /// A complete shared instance with a cleanup action.
-    ManagedInstance(ErasedInstance, CleanupAction),
     /// A one-shot synchronous factory returning a managed component.
     ManagedSyncFactory(ManagedSyncFactory),
     /// A one-shot asynchronous factory returning a managed component.
@@ -163,23 +161,6 @@ impl PendingBinding {
             order,
             replaced_sources: Vec::new(),
             kind: PendingBindingKind::AsyncFactory(Box::new(erased)),
-        }
-    }
-
-    /// Erases a managed complete instance of `T`.
-    pub(crate) fn managed_instance<T: ?Sized + Send + Sync + 'static>(
-        key: BindingKey,
-        value: Managed<T>,
-        primary: bool,
-        order: i32,
-    ) -> Self {
-        let (value, cleanup) = value.into_parts();
-        Self {
-            key,
-            primary,
-            order,
-            replaced_sources: Vec::new(),
-            kind: PendingBindingKind::ManagedInstance(value, cleanup),
         }
     }
 
