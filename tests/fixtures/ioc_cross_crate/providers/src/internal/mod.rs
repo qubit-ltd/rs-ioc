@@ -5,7 +5,8 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-//! Shared service contract used by the cross-crate acceptance fixture.
+//! Private support for provider fixture linkage.
 
-mod repository;
-pub use repository::Repository;
+mod linked_marker;
+
+pub use linked_marker::linked_marker;

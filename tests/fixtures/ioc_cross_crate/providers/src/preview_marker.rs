@@ -5,7 +5,10 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-//! Shared service contract used by the cross-crate acceptance fixture.
+//! Profile-gated marker component for the provider fixture.
 
-mod repository;
-pub use repository::Repository;
+use qubit_ioc::Component;
+
+/// A component active only when the `preview` profile is selected.
+#[Component(profile = "preview")]
+pub struct PreviewMarker;
