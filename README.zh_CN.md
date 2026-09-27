@@ -31,6 +31,9 @@ qubit-ioc = { version = "0.1", path = "../rs-ioc", default-features = false }
 | `macros` | 开 | 提供 `#[Component]`、`#[Service]`、`#[Repository]`、`#[Configuration]`、`#[ConfigurationProperties]` 和 `#[bean]`。 |
 | `config` | 开 | 注册 `qubit-config` 快照，并使用 `#[value]`、`#[ConfigurationProperties]`。 |
 
+`macros` 与 `config` 可独立启用。`#[value]` 和 `#[ConfigurationProperties]`
+需要同时启用这两个 feature；只启用 `config` 不会导出这些宏。
+
 ## 快速开始：组装问候服务
 
 假设应用需要跨 crate 注入问候服务。先声明具体组件及其 trait 绑定，再让服务通过
@@ -124,8 +127,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 循环代理和动态库发现。托管工厂可通过 `Managed<T>` 和
 `ApplicationContext::begin_shutdown` 与 `ShutdownHandle::wait` 执行 stop/wait 关闭动作。结构体宏支持具名字段和单元结构体，其他形状可使用手动工厂。
 组件构造不依赖运行时反射。`qubit-spi` 继续负责 provider 的选择和回退；其注册表或
-选中的服务可作为普通 IoC 组件注册。完整 API 与诊断规则见
-[完整设计文档](doc/complete-design.zh_CN.md)。
+选中的服务可作为普通 IoC 组件注册。当前设计边界与诊断说明见
+[当前设计文档](doc/complete-design.zh_CN.md)。
 
 ## 延伸阅读
 
@@ -159,7 +162,7 @@ Copyright (c) 2025 - 2026. Haixing Hu. All rights reserved.
 ## 贡献
 
 欢迎贡献。请遵循 Rust API 指南，及时更新公共 API 文档与测试，并在提交
-Pull Request 前运行 `./align-ci.sh`格式化代码，运行`./ci-check.sh`对齐CI要求。
+Pull Request 前运行 `./align-ci.sh` 格式化代码，运行 `./ci-check.sh` 对齐 CI 要求。
 
 ## 作者
 

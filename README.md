@@ -34,6 +34,10 @@ qubit-ioc = { version = "0.1", path = "../rs-ioc", default-features = false }
 | `macros` | Yes | `#[Component]`, `#[Service]`, `#[Repository]`, `#[Configuration]`, `#[ConfigurationProperties]`, and `#[bean]`. |
 | `config` | Yes | Register a `qubit-config` snapshot and use `#[value]` or `#[ConfigurationProperties]`. |
 
+The `macros` and `config` features are independent. Configuration attributes
+such as `#[value]` and `#[ConfigurationProperties]` require both features;
+enabling `config` alone does not enable the macros.
+
 ## Quick start: assemble a greeting service
 
 Suppose a service needs a greeting implementation from another crate. Declare
@@ -110,6 +114,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
+Run `cargo run --example readme_manual --no-default-features` to execute this
+manual path. Its source is in [`examples/readme_manual.rs`](examples/readme_manual.rs).
+
 Each binding is identified by its Rust type and optional ID. IDs use
 dot-separated ASCII segments such as `example.greeting.english`; each segment
 starts with a letter and continues with letters, digits, or underscores. An
@@ -133,8 +140,8 @@ factories can opt into explicit stop and wait actions through `Managed<T>` and
 other shapes can use manual factories. Runtime reflection is not used to
 construct components. `qubit-spi` remains responsible for provider selection
 and fallback; its registry or a selected service can be registered as a normal
-IoC component. See [the complete design](doc/complete-design.zh_CN.md) for the
-full API and diagnostic rules.
+IoC component. See [the current design](doc/complete-design.zh_CN.md) for the
+design boundary and diagnostics.
 
 ## Learn more
 
