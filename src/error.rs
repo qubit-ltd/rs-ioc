@@ -295,6 +295,24 @@ pub enum BuildError {
         /// Second definition.
         second: DefinitionSource,
     },
+    /// A replacement has no earlier active binding for its exact key.
+    #[error("replacement {replacement} has no active original for {key:?}")]
+    ReplacementOriginalMissing {
+        /// Exact key requested by the replacement.
+        key: BindingKey,
+        /// Definition that supplies the replacement binding.
+        replacement: DefinitionSource,
+    },
+    /// A replacement has multiple earlier active bindings for its exact key.
+    #[error("replacement {replacement} has multiple active originals for {key:?}: {originals:?}")]
+    ReplacementOriginalAmbiguous {
+        /// Exact key requested by the replacement.
+        key: BindingKey,
+        /// Earlier active definitions in registration order.
+        originals: Vec<DefinitionSource>,
+        /// Definition that supplies the replacement binding.
+        replacement: DefinitionSource,
+    },
     /// An alias's concrete target was removed or is otherwise absent after
     /// filtering.
     #[error("alias {alias:?} from {definition} has missing target {target:?}; path: {path:?}")]

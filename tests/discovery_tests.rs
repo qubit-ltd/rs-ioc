@@ -393,3 +393,159 @@ fn test_definition_draft_rejects_duplicate_alias_without_partial_registration() 
             .is_none()
     );
 }
+
+#[test]
+#[allow(clippy::result_large_err)]
+fn test_replace_binding_rejects_missing_active_original_before_factory() {
+    let factory_calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let captured_calls = Arc::clone(&factory_calls);
+    let mut builder = ContainerBuilder::new();
+    builder
+        .replace_binding(BindingKey::of::<u64>(None), move |draft| {
+            draft.register_factory::<u64, _>(&[], move |_| {
+                captured_calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Ok(Arc::new(7))
+            })
+        })
+        .expect("replacement definition declares its key");
+
+    assert!(matches!(
+        builder.build_all(),
+        Err(BuildError::ReplacementOriginalMissing { key, .. }) if key == BindingKey::of::<u64>(None)
+    ));
+    assert_eq!(factory_calls.load(std::sync::atomic::Ordering::SeqCst), 0);
+}
+
+#[test]
+#[allow(clippy::result_large_err)]
+fn test_replace_binding_rejects_ambiguous_active_originals() {
+    let mut builder = ContainerBuilder::new();
+    builder.register_instance(Arc::new(1_u64)).expect("first original");
+    builder.register_instance(Arc::new(2_u64)).expect("second original");
+    builder
+        .replace_binding(BindingKey::of::<u64>(None), |draft| {
+            draft.register_instance(Arc::new(3_u64))
+        })
+        .expect("replacement definition declares its key");
+
+    let error = match builder.build_all() {
+        Ok(_) => panic!("ambiguous originals must fail"),
+        Err(error) => error,
+    };
+    let BuildError::ReplacementOriginalAmbiguous {
+        key,
+        originals,
+        replacement: _,
+    } = error
+    else {
+        panic!("expected replacement source ambiguity");
+    };
+    assert_eq!(key, BindingKey::of::<u64>(None));
+    assert_eq!(originals.len(), 2);
+    assert_ne!(originals[0], originals[1]);
+    assert!(originals[0].line < originals[1].line);
+}
+
+#[test]
+#[allow(clippy::result_large_err)]
+fn test_replace_binding_counts_originals_after_profile_filtering() {
+    let mut builder = ContainerBuilder::new();
+    builder
+        .register_instance_with(
+            Arc::new(1_u64),
+            BindingOptions {
+                profile: Some("prod".into()),
+                ..BindingOptions::default()
+            },
+        )
+        .expect("profiled original");
+    builder
+        .replace_binding(BindingKey::of::<u64>(None), |draft| {
+            draft.register_instance(Arc::new(2_u64))
+        })
+        .expect("default-profile replacement");
+    assert!(matches!(
+        builder.build_all(),
+        Err(BuildError::ReplacementOriginalMissing { .. })
+    ));
+
+    let mut builder = ContainerBuilder::new();
+    builder
+        .replace_binding(BindingKey::of::<u64>(None), |draft| {
+            draft.register_instance_with(
+                Arc::new(2_u64),
+                BindingOptions {
+                    profile: Some("prod".into()),
+                    ..BindingOptions::default()
+                },
+            )
+        })
+        .expect("inactive replacement");
+    assert!(builder.build_all().unwrap().get_all::<u64>().is_empty());
+
+    let mut builder = ContainerBuilder::new();
+    builder
+        .register_instance_with(
+            Arc::new(1_u64),
+            BindingOptions {
+                profile: Some("prod".into()),
+                ..BindingOptions::default()
+            },
+        )
+        .expect("profiled original");
+    builder
+        .replace_binding(BindingKey::of::<u64>(None), |draft| {
+            draft.register_instance_with(
+                Arc::new(2_u64),
+                BindingOptions {
+                    profile: Some("prod".into()),
+                    ..BindingOptions::default()
+                },
+            )
+        })
+        .expect("profiled replacement");
+    let context = builder.active_profiles(&["prod"]).unwrap().build_all().unwrap();
+    assert_eq!(*context.get::<u64>().unwrap(), 2);
+    let (_, replaced_sources) = context.binding_sources(&BindingKey::of::<u64>(None)).unwrap();
+    assert_eq!(replaced_sources.len(), 1);
+}
+
+#[test]
+#[allow(clippy::result_large_err)]
+fn test_consecutive_replacements_preserve_the_full_source_chain() {
+    let mut builder = ContainerBuilder::new();
+    builder.register_instance(Arc::new(1_u64)).expect("original");
+    builder
+        .replace_binding(BindingKey::of::<u64>(None), |draft| {
+            draft.register_instance(Arc::new(2_u64))
+        })
+        .expect("first replacement");
+    builder
+        .replace_binding(BindingKey::of::<u64>(None), |draft| {
+            draft.register_instance(Arc::new(3_u64))
+        })
+        .expect("second replacement");
+
+    let context = builder.build_all().unwrap();
+    assert_eq!(*context.get::<u64>().unwrap(), 3);
+    let (_, replaced_sources) = context.binding_sources(&BindingKey::of::<u64>(None)).unwrap();
+    assert_eq!(replaced_sources.len(), 2);
+}
+
+#[test]
+#[allow(clippy::result_large_err)]
+fn test_replace_binding_rejects_later_duplicate_original_as_duplicate_binding() {
+    let mut builder = ContainerBuilder::new();
+    builder.register_instance(Arc::new(1_u64)).expect("original");
+    builder
+        .replace_binding(BindingKey::of::<u64>(None), |draft| {
+            draft.register_instance(Arc::new(2_u64))
+        })
+        .expect("replacement");
+    builder.register_instance(Arc::new(4_u64)).expect("later duplicate");
+
+    assert!(matches!(
+        builder.build_all(),
+        Err(BuildError::DuplicateBinding { key, .. }) if key == BindingKey::of::<u64>(None)
+    ));
+}

@@ -36,6 +36,8 @@ use crate::options::BindingOptions;
 use crate::options::DefinitionSource;
 use crate::store::InstanceStore;
 
+type PreparedDefinitions = (Vec<PendingDefinition>, Vec<String>, Vec<Dependency>);
+
 /// A declaration that can install itself into a container builder.
 ///
 /// # Examples
@@ -480,7 +482,7 @@ impl ContainerBuilder {
         if self.roots.is_empty() {
             return Err(BuildError::NoRootsSelected);
         }
-        let (definitions, profiles, roots) = self.prepare_definitions();
+        let (definitions, profiles, roots) = self.prepare_definitions()?;
         let graph = ValidatedGraph::validate_roots(definitions, &profiles, Some(&roots))?;
         for location in &graph.order {
             let definition = &graph.definitions[location.definition];
@@ -504,7 +506,7 @@ impl ContainerBuilder {
     /// Prefer [`Self::build`] when the application only needs a subset of
     /// discovered definitions.
     pub fn build_all(self) -> Result<ApplicationContext, BuildError> {
-        let (definitions, profiles, _) = self.prepare_definitions();
+        let (definitions, profiles, _) = self.prepare_definitions()?;
         let graph = ValidatedGraph::validate_roots(definitions, &profiles, None)?;
         for location in &graph.order {
             let definition = &graph.definitions[location.definition];
@@ -532,7 +534,7 @@ impl ContainerBuilder {
         if self.roots.is_empty() {
             return Err(BuildError::NoRootsSelected);
         }
-        let (definitions, profiles, roots) = self.prepare_definitions();
+        let (definitions, profiles, roots) = self.prepare_definitions()?;
         let graph = ValidatedGraph::validate_roots(definitions, &profiles, Some(&roots))?;
         Construction::new(graph).run_async().await
     }
@@ -540,14 +542,14 @@ impl ContainerBuilder {
     /// Validates and asynchronously constructs every definition active under
     /// the configured profiles, whether or not a root was registered.
     pub async fn build_all_async(self) -> Result<ApplicationContext, BuildError> {
-        let (definitions, profiles, _) = self.prepare_definitions();
+        let (definitions, profiles, _) = self.prepare_definitions()?;
         let graph = ValidatedGraph::validate_roots(definitions, &profiles, None)?;
         Construction::new(graph).run_async().await
     }
 
     /// Filters profiles, then applies each exact-key override before graph
     /// validation.
-    fn prepare_definitions(self) -> (Vec<PendingDefinition>, Vec<String>, Vec<Dependency>) {
+    fn prepare_definitions(self) -> Result<PreparedDefinitions, BuildError> {
         let Self {
             definitions,
             active_profiles,
@@ -570,8 +572,39 @@ impl ContainerBuilder {
             .collect();
         for replacement in replacements {
             // An inactive replacement does not affect bindings in active profiles.
-            if !active.iter().any(|(index, _)| *index == replacement.definition_index) {
+            let Some((_, replacement_definition)) = active.iter().find(|(index, definition)| {
+                *index == replacement.definition_index
+                    && definition.bindings.iter().any(|binding| binding.key == replacement.key)
+            }) else {
                 continue;
+            };
+            let replacement_source = replacement_definition.source;
+            let originals: Vec<_> = active
+                .iter()
+                .filter(|(index, _)| *index < replacement.definition_index)
+                .flat_map(|(_, definition)| {
+                    definition
+                        .bindings
+                        .iter()
+                        .filter(|binding| binding.key == replacement.key)
+                        .map(|_| definition.source)
+                })
+                .collect();
+            match originals.as_slice() {
+                [] => {
+                    return Err(BuildError::ReplacementOriginalMissing {
+                        key: replacement.key,
+                        replacement: replacement_source,
+                    });
+                }
+                [_] => {}
+                _ => {
+                    return Err(BuildError::ReplacementOriginalAmbiguous {
+                        key: replacement.key,
+                        originals,
+                        replacement: replacement_source,
+                    });
+                }
             }
             let mut replaced_sources = Vec::new();
             for (index, definition) in &mut active {
@@ -598,14 +631,14 @@ impl ContainerBuilder {
                 binding.replaced_sources.extend(replaced_sources);
             }
         }
-        (
+        Ok((
             active
                 .into_iter()
                 .filter_map(|(_, definition)| (!definition.bindings.is_empty()).then_some(definition))
                 .collect(),
             active_profiles,
             roots,
-        )
+        ))
     }
 
     /// Atomically adds an already validated complete definition to the staging
