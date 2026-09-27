@@ -12,6 +12,18 @@
       "commands": ["check", "test", "doc"],
       "defaultFeatures": false,
       "features": []
+    },
+    {
+      "name": "macros-only",
+      "commands": ["check", "test", "doc"],
+      "defaultFeatures": false,
+      "features": ["macros"]
+    },
+    {
+      "name": "config-only",
+      "commands": ["check", "test", "doc"],
+      "defaultFeatures": false,
+      "features": ["config"]
     }
   ]
 }
