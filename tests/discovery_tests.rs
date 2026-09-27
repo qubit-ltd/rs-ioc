@@ -7,8 +7,13 @@
 // =============================================================================
 #![cfg(feature = "inventory")]
 
+use std::future::Future;
+use std::pin::pin;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::task::Context;
+use std::task::Poll;
+use std::task::Waker;
 
 use qubit_ioc::__private::codegen_v1::DefinitionDraft;
 use qubit_ioc::__private::submit_component;
@@ -398,8 +403,55 @@ fn test_definition_draft_rejects_duplicate_alias_without_partial_registration() 
 #[allow(clippy::result_large_err)]
 fn test_replace_binding_rejects_missing_active_original_before_factory() {
     let factory_calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    let captured_calls = Arc::clone(&factory_calls);
+    let make_builder = || replacement_builder(0, Arc::clone(&factory_calls));
+
+    let mut builder = make_builder();
+    builder.register_instance(Arc::new(true)).expect("register root");
+    builder.root::<bool>();
+    assert_replacement_original_error(builder.build().map(|_| ()), 0);
+
+    assert_replacement_original_error(make_builder().build_all().map(|_| ()), 0);
+
+    let mut builder = make_builder();
+    builder.register_instance(Arc::new(true)).expect("register root");
+    builder.root::<bool>();
+    assert_replacement_original_error(ready(builder.build_async()).map(|_| ()), 0);
+
+    assert_replacement_original_error(ready(make_builder().build_all_async()).map(|_| ()), 0);
+    assert_eq!(factory_calls.load(std::sync::atomic::Ordering::SeqCst), 0);
+}
+
+#[test]
+#[allow(clippy::result_large_err)]
+fn test_replace_binding_rejects_ambiguous_originals_for_all_build_apis() {
+    let factory_calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let make_builder = || replacement_builder(2, Arc::clone(&factory_calls));
+
+    let mut builder = make_builder();
+    builder.register_instance(Arc::new(true)).expect("register root");
+    builder.root::<bool>();
+    assert_replacement_original_error(builder.build().map(|_| ()), 2);
+
+    assert_replacement_original_error(make_builder().build_all().map(|_| ()), 2);
+
+    let mut builder = make_builder();
+    builder.register_instance(Arc::new(true)).expect("register root");
+    builder.root::<bool>();
+    assert_replacement_original_error(ready(builder.build_async()).map(|_| ()), 2);
+
+    assert_replacement_original_error(ready(make_builder().build_all_async()).map(|_| ()), 2);
+    assert_eq!(factory_calls.load(std::sync::atomic::Ordering::SeqCst), 0);
+}
+
+#[allow(clippy::result_large_err)]
+fn replacement_builder(originals: usize, factory_calls: Arc<std::sync::atomic::AtomicUsize>) -> ContainerBuilder {
     let mut builder = ContainerBuilder::new();
+    for value in 0..originals {
+        builder
+            .register_instance(Arc::new(value as u64))
+            .expect("register original");
+    }
+    let captured_calls = Arc::clone(&factory_calls);
     builder
         .replace_binding(BindingKey::of::<u64>(None), move |draft| {
             draft.register_factory::<u64, _>(&[], move |_| {
@@ -408,12 +460,28 @@ fn test_replace_binding_rejects_missing_active_original_before_factory() {
             })
         })
         .expect("replacement definition declares its key");
+    builder
+}
 
-    assert!(matches!(
-        builder.build_all(),
-        Err(BuildError::ReplacementOriginalMissing { key, .. }) if key == BindingKey::of::<u64>(None)
-    ));
-    assert_eq!(factory_calls.load(std::sync::atomic::Ordering::SeqCst), 0);
+fn assert_replacement_original_error(result: Result<(), BuildError>, expected_originals: usize) {
+    match (result, expected_originals) {
+        (Err(BuildError::ReplacementOriginalMissing { key, .. }), 0) => {
+            assert_eq!(key, BindingKey::of::<u64>(None));
+        }
+        (Err(BuildError::ReplacementOriginalAmbiguous { key, originals, .. }), 2) => {
+            assert_eq!(key, BindingKey::of::<u64>(None));
+            assert_eq!(originals.len(), 2);
+        }
+        (result, expected) => panic!("expected replacement error for {expected} originals, got {result:?}"),
+    }
+}
+
+fn ready<F: Future>(future: F) -> F::Output {
+    let mut future = pin!(future);
+    match future.as_mut().poll(&mut Context::from_waker(Waker::noop())) {
+        Poll::Ready(output) => output,
+        Poll::Pending => panic!("build future unexpectedly suspended"),
+    }
 }
 
 #[test]
