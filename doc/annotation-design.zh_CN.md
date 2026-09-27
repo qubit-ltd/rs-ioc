@@ -1,12 +1,11 @@
 # qubit-ioc 注解与自动装配设计
 
-> 此文为早期草案；完整且优先的实现契约见[完整设计](complete-design.zh_CN.md)。本文提及的反射可选集成与 `reflect` feature 尚未实现；当前 Cargo feature 不包含 `reflect`。
+> **历史草案，不作为当前 API 指南。** 当前实现契约见[当前设计](complete-design.zh_CN.md)，接入步骤见[中文用户手册](user_guide.zh_CN.md)和[English user guide](user_guide.md)。本文保留早期设计背景；反射集成与 `reflect` feature 未实现。
 
 > 当前运行时要求应用显式调用 `install::<D>()` 或提供者 crate 的 `register_ioc(&mut builder)`；宏不再提交链接器级全局注册项。
 
 > 状态：拟实现的应用层设计，当前仓库尚未提供这些宏和 API。
-> [容器内核设计](design.zh_CN.md)定义显式注册、依赖图和共享实例语义；本文定义
-> 面向应用开发者的主要入口。示例是目标语法，实施时须以编译测试固定最终签名。
+> [容器内核设计](design.zh_CN.md)记录同期底层方案。本文中的 API 和示例属于历史提案，实施时曾发生变化；请以当前设计和用户手册为准。
 
 ## 1. 使用目标
 

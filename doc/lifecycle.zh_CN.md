@@ -36,6 +36,10 @@ async fn run() -> Result<(), Box<dyn std::error::Error>> {
 资源，但不会等待；若构建失败前也必须等待资源终止，应使用 `build_async()`，即使工厂
 本身都是同步的。异步构建失败会 stop 后 wait，并保留原始构建错误及清理错误。
 
+stop 返回错误或发生 panic 时，失败会记录为 `ShutdownPhase::Stop` 并继续调用其他
+stop；panic 文本会放入对应的 `CleanupError`。wait 返回错误会聚合；wait future 的
+panic 仍会传播，不会转换为 `ShutdownError`。
+
 异步构建 future 被取消时，已构造资源会收到 stop，但不会 wait；stop 错误无法返回给已
 取消的调用方。工厂在返回 `Managed<T>` 前产生的副作用由工厂自己清理。普通上下文 drop
 不会自动停止资源；外部 `Arc` 克隆也可能在关闭后继续持有对象。若 wait future 被取消，保留句柄并再次调用 `wait()` 可从原 future 继续等待。

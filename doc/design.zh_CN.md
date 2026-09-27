@@ -1,9 +1,9 @@
 # qubit-ioc 容器内核设计
 
-> 此文为早期草案；完整且优先的实现契约见[完整设计](complete-design.zh_CN.md)。其中反射集成和 `reflect` 模块均为未实现的设想；当前 Cargo feature 不包含 `reflect`。
+> **历史草案，不作为当前 API 指南。** 当前实现契约见[当前设计](complete-design.zh_CN.md)，接入步骤见[中文用户手册](user_guide.zh_CN.md)和[English user guide](user_guide.md)。本文保留早期设计背景，其中反射集成和 `reflect` feature 未实现。
 
 > 状态：设计，尚未实现。本文定义显式注册与容器构建的底层契约；
-> [注解与自动装配设计](annotation-design.zh_CN.md)是面向应用开发者的主要使用方案。
+> 注解草案记录同期应用层设想，不是当前使用入口。
 > 示例展示预期用法，不是当前 `src/lib.rs` 已提供的 API。
 
 ## 1. 目标与定位
