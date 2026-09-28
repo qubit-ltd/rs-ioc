@@ -8,8 +8,11 @@
 // qubit-style: allow multiple-public-types
 //! Read-only queries over a successfully built component graph.
 
+mod query_index;
 use std::any::TypeId;
 use std::sync::Arc;
+
+use query_index::QueryIndex;
 
 use crate::builder::ContainerBuilder;
 use crate::error::ResolveError;
@@ -55,6 +58,8 @@ pub struct ApplicationContext {
     store: InstanceStore,
     /// Active binding metadata used to resolve and order queries.
     bindings: Vec<BuiltBinding>,
+    /// Immutable indexes for exact-key and same-type metadata lookup.
+    query_index: QueryIndex,
     /// Explicit lifecycle actions for managed concrete bindings.
     cleanup: CleanupJournal,
 }
@@ -82,9 +87,9 @@ impl ApplicationContext {
     /// `None` means no active binding has the exact key.
     #[must_use]
     pub fn binding_sources(&self, key: &BindingKey) -> Option<(DefinitionSource, &[DefinitionSource])> {
-        self.bindings
-            .iter()
-            .find(|binding| &binding.key == key)
+        self.query_index
+            .by_key(key)
+            .map(|index| &self.bindings[index])
             .map(|binding| (binding.source, binding.replaced_sources.as_slice()))
     }
 
@@ -94,11 +99,13 @@ impl ApplicationContext {
     /// The caller must publish only bindings whose keys and erased values
     /// agree.
     pub(crate) fn new(store: InstanceStore, bindings: Vec<BuiltBinding>, cleanup: CleanupJournal) -> Self {
+        let query_index = QueryIndex::new(&bindings);
         let mut cleanup = cleanup;
         cleanup.disarm_abort();
         Self {
             store,
             bindings,
+            query_index,
             cleanup,
         }
     }
@@ -170,6 +177,9 @@ impl ApplicationContext {
     #[must_use = "handle the component lookup result"]
     pub fn get_by_id<T: ?Sized + Send + Sync + 'static>(&self, id: &str) -> Result<Arc<T>, ResolveError> {
         let request = BindingKey::of::<T>(Some(BindingId::parse(id)?));
+        if let Some(index) = self.query_index.by_key(&request) {
+            return Ok(self.read::<T>(&self.bindings[index].key));
+        }
         let candidates = self.candidates(TypeId::of::<T>());
         let selected = self.select(&request, &candidates)?;
         Ok(self.read::<T>(&selected.key))
@@ -229,9 +239,10 @@ impl ApplicationContext {
 
     /// Lists active bindings for one Rust type in registration order.
     fn candidates(&self, type_id: TypeId) -> Vec<&BuiltBinding> {
-        self.bindings
+        self.query_index
+            .by_type(type_id)
             .iter()
-            .filter(|binding| binding.key.type_id() == type_id)
+            .map(|&index| &self.bindings[index])
             .collect()
     }
 
