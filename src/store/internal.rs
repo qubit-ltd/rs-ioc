@@ -5,9 +5,9 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-//! Internal storage for constructed component values.
+//! Storage for constructed component values.
 
-mod internal;
+//! Internal storage components used by runtime queries and construction.
 
-pub(crate) use internal::erased_instance::ErasedInstance;
-pub(crate) use internal::instance_store::InstanceStore;
+pub(crate) mod erased_instance;
+pub(crate) mod instance_store;

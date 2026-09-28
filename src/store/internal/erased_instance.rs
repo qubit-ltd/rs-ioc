@@ -5,9 +5,12 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-//! Internal storage for constructed component values.
+//! Storage for constructed component values.
 
-mod internal;
+//! Type-erased shared component values.
 
-pub(crate) use internal::erased_instance::ErasedInstance;
-pub(crate) use internal::instance_store::InstanceStore;
+use std::any::Any;
+use std::sync::Arc;
+
+/// An erased complete `Arc<T>`, including any trait-object vtable metadata.
+pub(crate) type ErasedInstance = Arc<dyn Any + Send + Sync>;
