@@ -99,8 +99,6 @@ pub(crate) struct SourceIr {
 
 /// A validated component, service, or repository struct.
 pub(crate) struct ComponentIr {
-    /// Attribute spelling used in diagnostics.
-    pub(crate) kind: MacroKind,
     /// Original item retained for output.
     pub(crate) item: ItemStruct,
     /// Normalized binding metadata.
@@ -150,8 +148,6 @@ pub(crate) struct DependencyIr {
     pub(crate) requested_type: Type,
     /// Optional exact ID for single-value selection.
     pub(crate) id: Option<LitStr>,
-    /// Attribute or type span used for diagnostics.
-    pub(crate) span: Span,
 }
 
 /// Whether a bean returns a value or an Arc, and whether it returns a Result.
@@ -176,10 +172,6 @@ pub(crate) struct OutputIr {
     pub(crate) managed: bool,
     /// Concrete component type registered with the runtime.
     pub(crate) component_type: Type,
-    /// Error type returned by a fallible factory, if present.
-    pub(crate) error_type: Option<Type>,
-    /// Return-type span used for diagnostics.
-    pub(crate) span: Span,
 }
 
 /// A validated synchronous or asynchronous bean function.

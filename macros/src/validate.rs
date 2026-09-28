@@ -48,18 +48,21 @@ use crate::parse::RawOption;
 use crate::parse::RawValue;
 use crate::parse::missing_option;
 use crate::parse::parse_options;
+use crate::runtime_path::RuntimePath;
 
 mod validated_options;
 
 /// Validates a parsed declaration and normalizes it for its later expander.
-pub(crate) fn validate(raw: RawDeclaration) -> Result<Declaration> {
+pub(crate) fn validate(raw: RawDeclaration, runtime: &RuntimePath) -> Result<Declaration> {
     let kind = raw.kind;
     let options = validate_options(kind, raw.options)?;
     match (kind, raw.item) {
         (MacroKind::Component | MacroKind::Service | MacroKind::Repository, Item::Struct(item)) => {
             component(kind, item, options).map(Declaration::Component)
         }
-        (MacroKind::Bean, Item::Fn(item)) => bean(item, options).map(|value| Declaration::Bean(Box::new(value))),
+        (MacroKind::Bean, Item::Fn(item)) => {
+            bean(item, options, runtime).map(|value| Declaration::Bean(Box::new(value)))
+        }
         (MacroKind::Configuration, Item::Mod(item)) => configuration(item, options).map(Declaration::Configuration),
         (MacroKind::ConfigurationProperties, Item::Struct(item)) => {
             configuration_properties(item, options).map(Declaration::ConfigurationProperties)
@@ -171,7 +174,6 @@ fn component(kind: MacroKind, mut item: ItemStruct, options: ValidatedOptions) -
         }
     }
     Ok(ComponentIr {
-        kind,
         item,
         options: options.binding(),
         fields,
@@ -260,7 +262,6 @@ fn dependency(attributes: &mut Vec<Attribute>, ty: &Type) -> Result<DependencyIr
             kind: DependencyKind::Value { path },
             requested_type: ty.clone(),
             id: None,
-            span: helper_span,
         });
     }
     let (kind, requested_type) = classify_dependency(ty)?;
@@ -274,7 +275,6 @@ fn dependency(attributes: &mut Vec<Attribute>, ty: &Type) -> Result<DependencyIr
         kind,
         requested_type,
         id,
-        span: helper_span,
     })
 }
 
@@ -314,7 +314,6 @@ fn single_generic<'a>(ty: &'a Type, name: &str) -> Option<&'a Type> {
         .collect::<Vec<_>>();
     let supported_paths: &[&[&str]] = match name {
         "Arc" => &[&["Arc"], &["std", "sync", "Arc"], &["alloc", "sync", "Arc"]],
-        "Managed" => &[&["Managed"]],
         "Option" => &[&["Option"], &["std", "option", "Option"], &["core", "option", "Option"]],
         "Vec" => &[&["Vec"], &["std", "vec", "Vec"], &["alloc", "vec", "Vec"]],
         _ => &[],
@@ -339,7 +338,7 @@ fn single_generic<'a>(ty: &'a Type, name: &str) -> Option<&'a Type> {
 }
 
 /// Normalizes a bean function's parameters, output, and marker option.
-fn bean(mut item: ItemFn, options: ValidatedOptions) -> Result<BeanIr> {
+fn bean(mut item: ItemFn, options: ValidatedOptions, runtime: &RuntimePath) -> Result<BeanIr> {
     let signature = &item.sig;
     if signature.constness.is_some()
         || signature.unsafety.is_some()
@@ -357,7 +356,7 @@ fn bean(mut item: ItemFn, options: ValidatedOptions) -> Result<BeanIr> {
         item: signature.ident.clone(),
         span: signature.ident.span(),
     };
-    let output = output(&signature.output, options.explicit_type.as_ref())?;
+    let output = output(&signature.output, options.explicit_type.as_ref(), runtime)?;
     let mut params = Vec::with_capacity(signature.inputs.len());
     for argument in &mut item.sig.inputs {
         let FnArg::Typed(argument) = argument else {
@@ -388,14 +387,14 @@ fn bean(mut item: ItemFn, options: ValidatedOptions) -> Result<BeanIr> {
 }
 
 /// Decomposes the supported bean output forms and an optional explicit type.
-fn output(return_type: &ReturnType, explicit_type: Option<&Type>) -> Result<OutputIr> {
+fn output(return_type: &ReturnType, explicit_type: Option<&Type>, runtime: &RuntimePath) -> Result<OutputIr> {
     let ReturnType::Type(_, ty) = return_type else {
         return Err(Error::new(return_type.span(), "#[bean] requires a return type"));
     };
-    let (inner, error_type, result) = if let Some((success, error)) = result_types(ty) {
-        (success, Some(error.clone()), true)
+    let (inner, result) = if let Some((success, _error)) = result_types(ty) {
+        (success, true)
     } else {
-        (ty.as_ref(), None, false)
+        (ty.as_ref(), false)
     };
     if contains_future_type(inner) {
         return Err(Error::new(
@@ -409,7 +408,7 @@ fn output(return_type: &ReturnType, explicit_type: Option<&Type>) -> Result<Outp
             "#[bean] does not support `impl Trait` or borrowed outputs",
         ));
     }
-    let (inner, managed) = if let Some(inner) = single_generic(inner, "Managed") {
+    let (inner, managed) = if let Some(inner) = runtime.managed_argument(inner) {
         (inner, true)
     } else {
         (inner, false)
@@ -436,8 +435,6 @@ fn output(return_type: &ReturnType, explicit_type: Option<&Type>) -> Result<Outp
         shape,
         managed,
         component_type,
-        error_type,
-        span: return_type.span(),
     })
 }
 

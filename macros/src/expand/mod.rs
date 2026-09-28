@@ -5,15 +5,14 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-//! Dispatches validated declarations to independent expansion domains.
-
-mod component;
-mod context;
-mod dispatch;
+//! Expands validated declarations into runtime registration tokens.
 
 mod bean;
+mod component;
 mod config_properties;
 mod configuration;
+mod context;
+mod dispatch;
 mod symbols;
 mod value;
 

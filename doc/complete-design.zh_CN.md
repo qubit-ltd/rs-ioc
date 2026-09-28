@@ -1,6 +1,6 @@
 # qubit-ioc 当前设计
 
-> 本文描述当前实现（0.1.0）的设计与公开契约。英文版见[Current Design](complete-design.md)。历史设计背景见[容器内核草案](design.zh_CN.md)和[注解草案](annotation-design.zh_CN.md)；接入步骤见[中文用户手册](user_guide.zh_CN.md)与[English user guide](user_guide.md)。实现和测试是事实依据，本文不承诺未在公开 API 中提供的能力。
+> 本文描述当前实现（0.2.0 发布候选）的设计与公开契约。英文版见[Current Design](complete-design.md)。历史设计背景见[容器内核草案](design.zh_CN.md)和[注解草案](annotation-design.zh_CN.md)；接入步骤见[中文用户手册](user_guide.zh_CN.md)与[English user guide](user_guide.md)。实现和测试是事实依据，本文不承诺未在公开 API 中提供的能力。
 
 ## 1. 目标与边界
 
@@ -41,11 +41,16 @@ workspace 包含运行时 `qubit-ioc` 与过程宏 `qubit-ioc-macros`。Edition 
 
 ## 5. 配置与上下游边界
 
+构建后的上下文支持通过 `Arc` 并发执行只读查询。关闭仍由唯一所有者发起：释放共享句柄后用 `Arc::try_unwrap` 取回上下文，再调用 `begin_shutdown(self)`。
+
+
 启用 `config` 后，`with_config(config)` 将配置快照放入 builder；第二个活跃 `Config` 同键冲突在构建时作为 `BuildError::DuplicateBinding` 返回。`#[value]` 读取配置值，`#[ConfigurationProperties]` 读取结构化子树。缺少快照或反序列化失败在验证或构造阶段返回错误，并保留原始配置错误 source 与组件/字段路径。
 
 provider crate 应导出显式 `register_ioc(&mut builder)`，由应用决定纳入哪些 provider。跨 crate fixture `tests/fixtures/ioc_cross_crate/` 验证 provider 注册、trait alias、profile、配置错误来源及无默认 feature 手动装配；它是契约测试，不代表生产应用采用。
 
 `qubit-spi` 可与 IoC 并用：SPI 在服务族内部选择实现，IoC 负责更大范围的应用依赖与启动顺序。IoC 本身不依赖 SPI，也不隐式发现其他 crate 的 provider。
+
+`#[value]` 与结构化反序列化都不执行插值；结构化反序列化默认拒绝未知字段。应用需要插值时，可在手工工厂中调用 `Config::get_interpolated`。
 
 ## 6. 错误与生命周期
 

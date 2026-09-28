@@ -1,0 +1,55 @@
+name: Downstream contracts
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  execution-services-consumer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          path: rs-ioc
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          repository: qubit-ltd/rs-execution-services
+          ref: c04d5d112dbf0717d44bfd9786109f84ae3cc214
+          path: rs-execution-services
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          repository: qubit-ltd/rs-event-bus
+          ref: 2b8e1eb68ea24d785f697575a676798e859c9408
+          path: rs-event-bus
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          repository: qubit-ltd/rs-config
+          ref: 68a331501cdd7911964dd2399e6fc0aee39f8527
+          path: rs-config
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          repository: qubit-ltd/rs-fs-registry
+          ref: d3a6cacbc05bea970175db9cf6211680aa39c87c
+          path: rs-fs-registry
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: 1.94.0
+      - name: Record exact source revisions
+        run: |
+          git -C rs-ioc rev-parse HEAD
+          git -C rs-execution-services rev-parse HEAD
+          git -C rs-event-bus rev-parse HEAD
+          git -C rs-config rev-parse HEAD
+          git -C rs-fs-registry rev-parse HEAD
+          sha256sum rs-ioc/tests/fixtures/application_consumer/Cargo.lock
+      - name: Check downstream consumer against this IoC revision
+        working-directory: rs-ioc
+        run: cargo +1.94.0 check --manifest-path tests/fixtures/application_consumer/Cargo.toml --locked
+      - name: Run downstream consumer against this IoC revision
+        working-directory: rs-ioc
+        run: cargo +1.94.0 run --manifest-path tests/fixtures/application_consumer/Cargo.toml --locked
