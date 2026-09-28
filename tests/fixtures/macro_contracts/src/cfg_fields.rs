@@ -8,43 +8,45 @@
 //! Exercises conditional component fields at an external crate boundary.
 
 use r#type::Component;
+#[cfg(test)]
+use r#type::ContainerBuilder;
 #[cfg(all(test, feature = "extra"))]
 use r#type::BuildError;
 #[cfg(all(test, feature = "extra"))]
 use r#type::Dependency;
 
-#[Component]
 /// Includes a dependency only when the consumer enables `extra`.
+#[Component]
 pub struct Conditional {
     #[cfg(feature = "extra")]
     extra: std::sync::Arc<u8>,
 }
 
-#[Component]
 /// Uses a nested conditional activation attribute.
+#[Component]
 pub struct NestedCondition {
     #[cfg_attr(not(feature = "extra"), cfg(any()))]
     extra: std::sync::Arc<u16>,
 }
 
-#[Component]
 /// Contains an unavailable configuration value behind a false condition.
+#[Component]
 pub struct DisabledValue {
     #[cfg(any())]
     #[value("unused.port")]
     port: u16,
 }
 
-#[Component]
 /// Contains an unsupported field type behind a false condition.
+#[Component]
 pub struct DisabledUnknownType {
     #[cfg(any())]
     missing: std::sync::Arc<MissingType>,
 }
 
 #[cfg(feature = "config")]
-#[Component]
 /// Exercises an active configuration-backed field with the consumer config feature.
+#[Component]
 pub struct EnabledValue {
     #[value("test.enabled")]
     value: String,
@@ -53,7 +55,7 @@ pub struct EnabledValue {
 #[test]
 #[cfg(not(feature = "extra"))]
 fn test_disabled_fields_do_not_register_requests_or_require_config() {
-    let mut builder = r#type::ContainerBuilder::new();
+    let mut builder = ContainerBuilder::new();
     builder.install::<Conditional>().expect("install conditional");
     builder.install::<NestedCondition>().expect("install nested condition");
     builder.install::<DisabledValue>().expect("install disabled value");
@@ -66,7 +68,7 @@ fn test_disabled_fields_do_not_register_requests_or_require_config() {
 fn test_enabled_fields_register_their_dependencies() {
     use std::sync::Arc;
 
-    let mut builder = r#type::ContainerBuilder::new();
+    let mut builder = ContainerBuilder::new();
     builder.register_instance(Arc::new(3_u8)).expect("register u8");
     builder.register_instance(Arc::new(5_u16)).expect("register u16");
     builder.install::<Conditional>().expect("install conditional");

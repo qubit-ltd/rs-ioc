@@ -8,6 +8,7 @@
 //! Normalizes declaration activation conditions for generated code.
 
 use proc_macro2::TokenStream;
+use quote::ToTokens;
 use quote::quote;
 use syn::Attribute;
 use syn::Meta;
@@ -70,5 +71,3 @@ fn append_nested(result: &mut Vec<Attribute>, meta: Meta, condition: TokenStream
     }
     Ok(())
 }
-
-use quote::ToTokens;

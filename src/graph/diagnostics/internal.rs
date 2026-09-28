@@ -5,15 +5,10 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-// qubit-style: allow test-file-name
-// This is a trybuild source fixture, not a test module.
+//! Internal storage and provenance types for graph diagnostics.
 
-use qubit_ioc::Component;
+mod diagnostic_paths;
+mod path_origin;
 
-#[Component]
-struct RequiresConfig {
-    #[value("service.port")]
-    port: u16,
-}
-
-fn main() {}
+pub(crate) use diagnostic_paths::DiagnosticPaths;
+pub(crate) use path_origin::PathOrigin;

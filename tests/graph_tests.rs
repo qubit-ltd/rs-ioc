@@ -5,6 +5,7 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
+use std::any::type_name;
 use std::future::Future;
 use std::pin::pin;
 use std::sync::Arc;
@@ -13,11 +14,15 @@ use std::task::Context;
 use std::task::Poll;
 use std::task::Waker;
 
+use qubit_ioc::__private::codegen_v1::DefinitionDraft;
 use qubit_ioc::BindingOptions;
 use qubit_ioc::BuildError;
+use qubit_ioc::ComponentDefinition;
 use qubit_ioc::ContainerBuilder;
+use qubit_ioc::DefinitionSource;
 use qubit_ioc::Dependency;
 use qubit_ioc::FactoryError;
+use qubit_ioc::RegistrationError;
 
 struct Root;
 struct Good;
@@ -64,12 +69,12 @@ impl Named for Second {
 
 struct Aliases;
 
-impl qubit_ioc::ComponentDefinition for Aliases {
-    fn source() -> qubit_ioc::DefinitionSource {
-        qubit_ioc::DefinitionSource::new("tests", "graph", "tests/graph_tests.rs", 1, 1, "Aliases")
+impl ComponentDefinition for Aliases {
+    fn source() -> DefinitionSource {
+        DefinitionSource::new("tests", "graph", "tests/graph_tests.rs", 1, 1, "Aliases")
     }
 
-    fn register(builder: &mut ContainerBuilder) -> Result<(), qubit_ioc::RegistrationError> {
+    fn register(builder: &mut ContainerBuilder) -> Result<(), RegistrationError> {
         builder.register_instance(Arc::new(First))?;
         builder.register_instance_with::<dyn Named>(
             Arc::new(First),
@@ -118,8 +123,8 @@ fn test_factory_failure_in_second_branch_keeps_root_in_path() {
     match error {
         BuildError::FactoryFailed { path, .. } => {
             assert_eq!(path.len(), 2);
-            assert_eq!(path[0].type_name(), std::any::type_name::<Root>());
-            assert_eq!(path[1].type_name(), std::any::type_name::<Bad>());
+            assert_eq!(path[0].type_name(), type_name::<Root>());
+            assert_eq!(path[1].type_name(), type_name::<Bad>());
         }
         other => panic!("unexpected error: {other}"),
     }
@@ -145,8 +150,8 @@ fn test_async_factory_failure_in_second_branch_keeps_root_in_path() {
     match error {
         BuildError::FactoryFailed { path, .. } => {
             assert_eq!(path.len(), 2);
-            assert_eq!(path[0].type_name(), std::any::type_name::<Root>());
-            assert_eq!(path[1].type_name(), std::any::type_name::<Bad>());
+            assert_eq!(path[0].type_name(), type_name::<Root>());
+            assert_eq!(path[1].type_name(), type_name::<Bad>());
         }
         other => panic!("unexpected error: {other}"),
     }
@@ -171,10 +176,10 @@ fn test_cycle_error_keeps_explicit_root_registered_after_cycle() {
         BuildError::DependencyCycle { path } => assert_eq!(
             path.iter().map(|key| key.type_name()).collect::<Vec<_>>(),
             vec![
-                std::any::type_name::<CycleRoot>(),
-                std::any::type_name::<CycleB>(),
-                std::any::type_name::<CycleC>(),
-                std::any::type_name::<CycleB>(),
+                type_name::<CycleRoot>(),
+                type_name::<CycleB>(),
+                type_name::<CycleC>(),
+                type_name::<CycleB>(),
             ]
         ),
         other => panic!("unexpected error: {other}"),
@@ -443,7 +448,7 @@ fn test_shared_failure_uses_declared_root_order_for_equal_length_paths() {
     match builder.build().err().expect("shared dependency fails") {
         BuildError::FactoryFailed { path, .. } => assert_eq!(
             path.iter().map(|key| key.type_name()).collect::<Vec<_>>(),
-            [std::any::type_name::<FirstRoot>(), std::any::type_name::<SharedBad>()]
+            [type_name::<FirstRoot>(), type_name::<SharedBad>()]
         ),
         other => panic!("unexpected error: {other}"),
     }
@@ -469,7 +474,7 @@ fn test_shared_failure_prefers_shorter_root_path() {
     match builder.build().err().expect("shared dependency fails") {
         BuildError::FactoryFailed { path, .. } => assert_eq!(
             path.iter().map(|key| key.type_name()).collect::<Vec<_>>(),
-            [std::any::type_name::<SecondRoot>(), std::any::type_name::<SharedBad>()]
+            [type_name::<SecondRoot>(), type_name::<SharedBad>()]
         ),
         other => panic!("unexpected error: {other}"),
     }
@@ -518,9 +523,6 @@ fn test_collection_failure_path_identifies_second_ordered_item() {
 
 #[test]
 fn test_trait_alias_root_factory_failure_path_includes_concrete_member() {
-    use qubit_ioc::__private::codegen_v1::DefinitionDraft;
-    use qubit_ioc::DefinitionSource;
-
     let mut builder = ContainerBuilder::new();
     let mut draft = DefinitionDraft::<AliasConcrete>::new_sync(
         DefinitionSource::new("tests", "graph", "tests/graph_tests.rs", 1, 1, "AliasConcrete"),
@@ -537,10 +539,7 @@ fn test_trait_alias_root_factory_failure_path_includes_concrete_member() {
     match builder.build().err().expect("concrete factory fails") {
         BuildError::FactoryFailed { path, .. } => assert_eq!(
             path.iter().map(|key| key.type_name()).collect::<Vec<_>>(),
-            [
-                std::any::type_name::<dyn AliasService>(),
-                std::any::type_name::<AliasConcrete>()
-            ]
+            [type_name::<dyn AliasService>(), type_name::<AliasConcrete>()]
         ),
         other => panic!("unexpected error: {other}"),
     }
@@ -558,7 +557,7 @@ fn test_build_all_isolated_factory_failure_has_single_binding_path() {
     match builder.build_all().err().expect("isolated factory fails") {
         BuildError::FactoryFailed { path, .. } => assert_eq!(
             path.iter().map(|key| key.type_name()).collect::<Vec<_>>(),
-            [std::any::type_name::<IsolatedBad>()]
+            [type_name::<IsolatedBad>()]
         ),
         other => panic!("unexpected error: {other}"),
     }

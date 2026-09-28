@@ -11,7 +11,6 @@ use std::sync::Arc;
 
 use r#type::bean;
 use r#type::Configuration;
-#[cfg(test)]
 use r#type::ContainerBuilder;
 
 type Result<T> = std::result::Result<T, std::io::Error>;
@@ -41,13 +40,13 @@ pub fn collision(__qubit_context: Arc<u8>, __qubit_ioc_argument_0: Arc<u16>) -> 
 mod result_shadow {
     type Result<T> = std::result::Result<T, std::io::Error>;
 
-    #[r#type::bean]
+    #[bean]
     pub(super) fn configured() -> u64 {
         11
     }
 
     #[cfg_attr(not(feature = "extra"), cfg(any()))]
-    #[r#type::bean]
+    #[bean]
     pub(super) fn conditional() -> usize {
         13
     }
