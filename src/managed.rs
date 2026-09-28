@@ -239,6 +239,32 @@ impl ShutdownError {
 /// future returned by [`Self::wait`], calling `wait` again resumes that same
 /// future. Dropping the handle drops unfinished waits; stop actions have
 /// already run.
+///
+/// Dropping an [`ApplicationContext`](crate::ApplicationContext) does not run
+/// managed stop actions. Call [`crate::ApplicationContext::begin_shutdown`] to
+/// request stops explicitly, then keep this handle and await [`Self::wait`].
+/// Dropping the returned handle abandons unfinished waits.
+///
+/// # Examples
+///
+/// ```
+/// use std::sync::Arc;
+/// use qubit_ioc::{ContainerBuilder, Managed};
+///
+/// let mut builder = ContainerBuilder::new();
+/// builder.register_managed_factory::<String, _>(&[], |_| {
+///     Ok(Managed::new(Arc::new(String::from("worker")), |_| Ok(())))
+/// })?;
+/// builder.root::<String>();
+/// let context = builder.build()?;
+/// let shutdown = context.begin_shutdown();
+/// # async fn wait_for_shutdown(mut shutdown: qubit_ioc::ShutdownHandle)
+/// # -> Result<(), qubit_ioc::ShutdownError> {
+/// shutdown.wait().await?;
+/// # Ok(()) }
+/// # let _ = wait_for_shutdown(shutdown);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 pub struct ShutdownHandle {
     /// Keeps managed values alive until shutdown waiting finishes or is
     /// dropped.
@@ -350,6 +376,8 @@ impl ShutdownHandle {
 /// `stop` is synchronous so an in-progress asynchronous build can request
 /// shutdown if its future is cancelled. `wait` is optional and runs during an
 /// explicit asynchronous shutdown or a returned asynchronous build failure.
+/// Dropping a context does not invoke either callback; applications begin
+/// shutdown explicitly through [`crate::ApplicationContext::begin_shutdown`].
 ///
 /// # Type Parameters
 ///
@@ -441,25 +469,34 @@ impl<T: ?Sized + Send + Sync + 'static> Managed<T> {
     }
 }
 
+/// One-shot type-erased stop action, consumed when shutdown starts.
 pub(crate) type ErasedStop = Box<dyn FnOnce() -> Result<(), CleanupError> + Send + 'static>;
+/// One-shot type-erased wait callback, consumed when its future is created.
 pub(crate) type ErasedWait = Box<dyn FnOnce() -> CleanupFuture + Send + 'static>;
 
 /// Type-erased lifecycle actions for one concrete binding.
 pub(crate) struct CleanupAction {
+    /// Stop callback consumed before any wait begins.
     pub(crate) stop: Option<ErasedStop>,
+    /// Optional wait callback consumed after stop has been attempted.
     pub(crate) wait: Option<ErasedWait>,
 }
 
 /// Lifecycle action paired with the public binding metadata used in errors.
 pub(crate) struct CleanupEntry {
+    /// Exact binding key used to identify this component in errors.
     pub(crate) key: BindingKey,
+    /// Definition source retained for shutdown diagnostics.
     pub(crate) definition: DefinitionSource,
+    /// One-shot cleanup callbacks associated with the binding.
     pub(crate) action: CleanupAction,
 }
 
 /// Tracks successfully constructed managed components until publication.
 pub(crate) struct CleanupJournal {
+    /// Successfully constructed managed values in construction order.
     entries: Vec<CleanupEntry>,
+    /// Whether dropping the journal should stop and await during build abort.
     abort_on_drop: bool,
 }
 

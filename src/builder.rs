@@ -29,6 +29,8 @@ use crate::managed::Managed;
 use crate::managed::ManagedFactoryFuture;
 use crate::options::BindingOptions;
 use crate::options::DefinitionSource;
+#[cfg(feature = "config")]
+mod config;
 mod internal;
 
 use internal::Construction;
@@ -240,6 +242,29 @@ impl ContainerBuilder {
     }
 
     /// Stages a one-shot managed synchronous factory with default options.
+    ///
+    /// The factory is invoked only during a successful synchronous build, after
+    /// graph validation. Registering it does not create the managed resource.
+    ///
+    /// # Parameters
+    ///
+    /// * `dependencies` - Requests made available to the factory at build time.
+    /// * `factory` - One-shot closure returning the value and its shutdown
+    ///   actions.
+    ///
+    /// # Type Parameters
+    ///
+    /// `T` is the managed component type. `F` is a sendable one-shot factory
+    /// receiving a [`BuildContext`] and returning [`Managed<T>`].
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` after staging the definition.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RegistrationError`] when a request or binding option is
+    /// invalid.
     #[track_caller]
     pub fn register_managed_factory<T, F>(
         &mut self,
@@ -254,6 +279,30 @@ impl ContainerBuilder {
     }
 
     /// Stages a one-shot managed synchronous factory with binding options.
+    ///
+    /// The factory is invoked only during a successful synchronous build, after
+    /// graph validation. Registering it does not create the managed resource.
+    ///
+    /// # Parameters
+    ///
+    /// * `dependencies` - Requests made available to the factory at build time.
+    /// * `options` - Binding ID, profile, and alias selection metadata.
+    /// * `factory` - One-shot closure returning the value and its shutdown
+    ///   actions.
+    ///
+    /// # Type Parameters
+    ///
+    /// `T` is the managed component type. `F` is a sendable one-shot factory
+    /// receiving a [`BuildContext`] and returning [`Managed<T>`].
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` after staging the definition.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RegistrationError`] when a request or binding option is
+    /// invalid.
     #[track_caller]
     pub fn register_managed_factory_with<T, F>(
         &mut self,
@@ -321,6 +370,29 @@ impl ContainerBuilder {
     }
 
     /// Stages a managed asynchronous factory with default options.
+    ///
+    /// The factory is invoked only by [`Self::build_async`] after graph
+    /// validation. Registration does not create the resource, and this crate
+    /// does not select an async runtime.
+    ///
+    /// # Parameters
+    ///
+    /// * `dependencies` - Requests made available to the factory at build time.
+    /// * `factory` - One-shot closure creating a managed factory future.
+    ///
+    /// # Type Parameters
+    ///
+    /// `T` is the managed component type. `F` creates a sendable future
+    /// yielding [`Managed<T>`].
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` after staging the definition.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RegistrationError`] when a request or binding option is
+    /// invalid.
     #[track_caller]
     pub fn register_managed_async_factory<T, F>(
         &mut self,
@@ -335,6 +407,30 @@ impl ContainerBuilder {
     }
 
     /// Stages a managed asynchronous factory with binding options.
+    ///
+    /// The factory is invoked only by [`Self::build_async`] after graph
+    /// validation. Registration does not create the resource, and this crate
+    /// does not select an async runtime.
+    ///
+    /// # Parameters
+    ///
+    /// * `dependencies` - Requests made available to the factory at build time.
+    /// * `options` - Binding ID, profile, and alias selection metadata.
+    /// * `factory` - One-shot closure creating a managed factory future.
+    ///
+    /// # Type Parameters
+    ///
+    /// `T` is the managed component type. `F` creates a sendable future
+    /// yielding [`Managed<T>`].
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` after staging the definition.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RegistrationError`] when a request or binding option is
+    /// invalid.
     #[track_caller]
     pub fn register_managed_async_factory_with<T, F>(
         &mut self,
