@@ -8,3 +8,5 @@ multiple-public-types | src/graph.rs | Binding positions, resolved requests, gra
 multiple-public-types | src/key.rs | BindingId and BindingKey jointly define the exact identity of a binding.
 multiple-public-types | src/options.rs | BindingOptions and DefinitionSource jointly describe registration metadata and its provenance.
 multiple-public-types | src/managed.rs | Lifecycle errors and managed cleanup actions form one public lifecycle API and share private action state.
+multiple-public-types | macros/src/ir.rs | MacroKind, Declaration, and the declaration IR types form one private cross-expander representation model.
+multiple-public-types | macros/src/parse.rs | RawDeclaration, RawOption, and RawValue form one parser output model for attribute syntax.

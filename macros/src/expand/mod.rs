@@ -12,6 +12,9 @@ use proc_macro_crate::crate_name;
 use proc_macro2::Span;
 use proc_macro2::TokenStream;
 use quote::quote;
+use syn::Error;
+use syn::Ident;
+use syn::Result;
 
 use crate::ir::Declaration;
 
@@ -25,15 +28,15 @@ pub(crate) struct ExpansionContext {
 
 impl ExpansionContext {
     /// Resolves the runtime path as named in the consuming crate's manifest.
-    pub(crate) fn for_runtime() -> syn::Result<Self> {
+    pub(crate) fn for_runtime() -> Result<Self> {
         let runtime = match crate_name("qubit-ioc") {
             Ok(FoundCrate::Itself) => quote!(::qubit_ioc),
             Ok(FoundCrate::Name(name)) => {
-                let ident = syn::Ident::new_raw(&name, Span::call_site());
+                let ident = Ident::new_raw(&name, Span::call_site());
                 quote!(::#ident)
             }
             Err(error) => {
-                return Err(syn::Error::new(
+                return Err(Error::new(
                     Span::call_site(),
                     format!("cannot locate `qubit-ioc` runtime dependency: {error}"),
                 ));
@@ -44,7 +47,7 @@ impl ExpansionContext {
 }
 
 /// Selects an expander only after parsing and validation have succeeded.
-pub(crate) fn dispatch(declaration: Declaration) -> syn::Result<TokenStream> {
+pub(crate) fn dispatch(declaration: Declaration) -> Result<TokenStream> {
     let context = ExpansionContext::for_runtime()?;
     match declaration {
         Declaration::Component(value) => component::expand(value, &context),

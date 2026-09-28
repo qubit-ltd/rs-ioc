@@ -10,23 +10,26 @@
 use std::collections::HashSet;
 
 use syn::Attribute;
+use syn::Error;
 use syn::Fields;
 use syn::FnArg;
 use syn::GenericArgument;
-use syn::Ident;
 use syn::Item;
 use syn::ItemFn;
+use syn::ItemMod;
+use syn::ItemStruct;
 use syn::LitStr;
 use syn::Meta;
 use syn::Pat;
 use syn::PathArguments;
+use syn::Result;
 use syn::ReturnType;
 use syn::Type;
+use syn::TypeParamBound;
 use syn::spanned::Spanned;
 
 use crate::conditions::activation_attributes;
 use crate::ir::BeanIr;
-use crate::ir::BindingOptions;
 use crate::ir::ComponentIr;
 use crate::ir::ConfigurationIr;
 use crate::ir::ConfigurationPropertiesIr;
@@ -44,9 +47,12 @@ use crate::parse::RawOption;
 use crate::parse::RawValue;
 use crate::parse::missing_option;
 use crate::parse::parse_options;
+use validated_options::ValidatedOptions;
+
+mod validated_options;
 
 /// Validates a parsed declaration and normalizes it for its later expander.
-pub(crate) fn validate(raw: RawDeclaration) -> syn::Result<Declaration> {
+pub(crate) fn validate(raw: RawDeclaration) -> Result<Declaration> {
     let kind = raw.kind;
     let options = validate_options(kind, raw.options)?;
     match (kind, raw.item) {
@@ -58,7 +64,7 @@ pub(crate) fn validate(raw: RawDeclaration) -> syn::Result<Declaration> {
         (MacroKind::ConfigurationProperties, Item::Struct(item)) => {
             configuration_properties(item, options).map(Declaration::ConfigurationProperties)
         }
-        (_, item) => Err(syn::Error::new(
+        (_, item) => Err(Error::new(
             item.span(),
             format!("#[{}] cannot be used on this Rust item", kind.name()),
         )),
@@ -66,7 +72,7 @@ pub(crate) fn validate(raw: RawDeclaration) -> syn::Result<Declaration> {
 }
 
 /// Checks option presence, duplicates, type restrictions, and ID literals.
-fn validate_options(kind: MacroKind, options: Vec<RawOption>) -> syn::Result<ValidatedOptions> {
+fn validate_options(kind: MacroKind, options: Vec<RawOption>) -> Result<ValidatedOptions> {
     let mut seen = HashSet::new();
     let mut validated = ValidatedOptions::default();
     for RawOption { key, value } in options {
@@ -85,13 +91,13 @@ fn validate_options(kind: MacroKind, options: Vec<RawOption>) -> syn::Result<Val
             }
         };
         if !allowed {
-            return Err(syn::Error::new(
+            return Err(Error::new(
                 key.span(),
                 format!("unknown #[{}] option `{name}`", kind.name()),
             ));
         }
         if name != "bind" && !seen.insert(name.clone()) {
-            return Err(syn::Error::new(
+            return Err(Error::new(
                 key.span(),
                 format!("duplicate #[{}] option `{name}`", kind.name()),
             ));
@@ -103,29 +109,29 @@ fn validate_options(kind: MacroKind, options: Vec<RawOption>) -> syn::Result<Val
             }
             ("bind", RawValue::Type(Type::TraitObject(value))) => validated.binds.push(value),
             ("bind", _) => {
-                return Err(syn::Error::new(key.span(), "`bind` requires `dyn Trait`"));
+                return Err(Error::new(key.span(), "`bind` requires `dyn Trait`"));
             }
             ("primary", RawValue::Flag) => validated.primary = true,
             ("order", RawValue::Integer { literal, negative }) => {
                 let magnitude = literal
                     .base10_parse::<i64>()
-                    .map_err(|_| syn::Error::new(literal.span(), "`order` must fit in a 32-bit integer"))?;
+                    .map_err(|_| Error::new(literal.span(), "`order` must fit in a 32-bit integer"))?;
                 let signed = if negative { -magnitude } else { magnitude };
                 validated.order = i32::try_from(signed)
-                    .map_err(|_| syn::Error::new(literal.span(), "`order` must fit in a 32-bit integer"))?;
+                    .map_err(|_| Error::new(literal.span(), "`order` must fit in a 32-bit integer"))?;
             }
             ("profile", RawValue::String(value)) => validated.profile = Some(value),
             ("prefix", RawValue::String(value)) => validated.prefix = Some(value),
             ("type", RawValue::Type(value)) => validated.explicit_type = Some(value),
             ("marker", RawValue::Ident(value)) => validated.marker = Some(value),
-            _ => return Err(syn::Error::new(key.span(), "invalid IoC option value")),
+            _ => return Err(Error::new(key.span(), "invalid IoC option value")),
         }
     }
     Ok(validated)
 }
 
 /// Checks the same ASCII segmented ID grammar as the runtime `BindingId`.
-fn validate_id(value: &LitStr) -> syn::Result<()> {
+fn validate_id(value: &LitStr) -> Result<()> {
     let text = value.value();
     let valid = !text.is_empty()
         && text.split('.').all(|segment| {
@@ -136,7 +142,7 @@ fn validate_id(value: &LitStr) -> syn::Result<()> {
     if valid {
         Ok(())
     } else {
-        Err(syn::Error::new(
+        Err(Error::new(
             value.span(),
             "invalid `id`: each dot-separated segment must match [A-Za-z][A-Za-z0-9_]*",
         ))
@@ -144,7 +150,7 @@ fn validate_id(value: &LitStr) -> syn::Result<()> {
 }
 
 /// Normalizes a named-field or unit struct into ordered dependency requests.
-fn component(kind: MacroKind, mut item: syn::ItemStruct, options: ValidatedOptions) -> syn::Result<ComponentIr> {
+fn component(kind: MacroKind, mut item: ItemStruct, options: ValidatedOptions) -> Result<ComponentIr> {
     validate_struct(&item, kind)?;
     let source = SourceIr {
         item: item.ident.clone(),
@@ -174,15 +180,15 @@ fn component(kind: MacroKind, mut item: syn::ItemStruct, options: ValidatedOptio
 }
 
 /// Validates that a struct has a supported shape and no generic parameters.
-fn validate_struct(item: &syn::ItemStruct, kind: MacroKind) -> syn::Result<()> {
+fn validate_struct(item: &ItemStruct, kind: MacroKind) -> Result<()> {
     if !item.generics.params.is_empty() || item.generics.where_clause.is_some() {
-        return Err(syn::Error::new(
+        return Err(Error::new(
             item.generics.span(),
             format!("#[{}] does not support generic structs", kind.name()),
         ));
     }
     if matches!(item.fields, Fields::Unnamed(_)) {
-        return Err(syn::Error::new(
+        return Err(Error::new(
             item.fields.span(),
             format!("#[{}] requires named fields or a unit struct", kind.name()),
         ));
@@ -191,7 +197,7 @@ fn validate_struct(item: &syn::ItemStruct, kind: MacroKind) -> syn::Result<()> {
 }
 
 /// Converts field and parameter helper attributes into a typed dependency.
-fn dependency(attributes: &mut Vec<Attribute>, ty: &Type) -> syn::Result<DependencyIr> {
+fn dependency(attributes: &mut Vec<Attribute>, ty: &Type) -> Result<DependencyIr> {
     let mut id = None;
     let mut value_path = None;
     let mut seen_inject = false;
@@ -201,7 +207,7 @@ fn dependency(attributes: &mut Vec<Attribute>, ty: &Type) -> syn::Result<Depende
     for attribute in attributes.drain(..) {
         if attribute.path().is_ident("inject") {
             if seen_inject || seen_value {
-                return Err(syn::Error::new(
+                return Err(Error::new(
                     attribute.span(),
                     "duplicate or conflicting `inject` attribute",
                 ));
@@ -212,7 +218,7 @@ fn dependency(attributes: &mut Vec<Attribute>, ty: &Type) -> syn::Result<Depende
                 Meta::Path(_) => Vec::new(),
                 Meta::List(_) => parse_options(attribute.parse_args()?)?,
                 Meta::NameValue(_) => {
-                    return Err(syn::Error::new(
+                    return Err(Error::new(
                         attribute.span(),
                         "`inject` accepts a bare marker or `#[inject(id = \"...\")]`",
                     ));
@@ -220,26 +226,23 @@ fn dependency(attributes: &mut Vec<Attribute>, ty: &Type) -> syn::Result<Depende
             };
             for RawOption { key, value } in options {
                 if key != "id" {
-                    return Err(syn::Error::new(
+                    return Err(Error::new(
                         key.span(),
                         "`inject` only accepts `id`, not `name` or other options",
                     ));
                 }
                 if id.is_some() {
-                    return Err(syn::Error::new(key.span(), "duplicate `inject` option `id`"));
+                    return Err(Error::new(key.span(), "duplicate `inject` option `id`"));
                 }
                 let RawValue::String(value) = value else {
-                    return Err(syn::Error::new(
-                        key.span(),
-                        "`inject(id = ...)` requires a string literal",
-                    ));
+                    return Err(Error::new(key.span(), "`inject(id = ...)` requires a string literal"));
                 };
                 validate_id(&value)?;
                 id = Some(value);
             }
         } else if attribute.path().is_ident("value") {
             if seen_inject || seen_value {
-                return Err(syn::Error::new(
+                return Err(Error::new(
                     attribute.span(),
                     "`value` cannot be combined with `inject` or another `value`",
                 ));
@@ -262,7 +265,7 @@ fn dependency(attributes: &mut Vec<Attribute>, ty: &Type) -> syn::Result<Depende
     }
     let (kind, requested_type) = classify_dependency(ty)?;
     if matches!(kind, DependencyKind::All) && id.is_some() {
-        return Err(syn::Error::new(
+        return Err(Error::new(
             helper_span,
             "`#[inject(id = ...)]` is unsupported on `Vec<Arc<T>>`",
         ));
@@ -276,7 +279,7 @@ fn dependency(attributes: &mut Vec<Attribute>, ty: &Type) -> syn::Result<Depende
 }
 
 /// Recognizes exactly `Arc<T>`, `Option<Arc<T>>`, and `Vec<Arc<T>>`.
-fn classify_dependency(ty: &Type) -> syn::Result<(DependencyKind, Type)> {
+fn classify_dependency(ty: &Type) -> Result<(DependencyKind, Type)> {
     if let Some(inner) = single_generic(ty, "Arc") {
         return Ok((DependencyKind::Required, inner.clone()));
     }
@@ -290,7 +293,7 @@ fn classify_dependency(ty: &Type) -> syn::Result<(DependencyKind, Type)> {
     {
         return Ok((DependencyKind::All, target.clone()));
     }
-    Err(syn::Error::new(
+    Err(Error::new(
         ty.span(),
         "unsupported injection type; expected `Arc<T>`, `Option<Arc<T>>`, or `Vec<Arc<T>>`",
     ))
@@ -336,7 +339,7 @@ fn single_generic<'a>(ty: &'a Type, name: &str) -> Option<&'a Type> {
 }
 
 /// Normalizes a bean function's parameters, output, and marker option.
-fn bean(mut item: ItemFn, options: ValidatedOptions) -> syn::Result<BeanIr> {
+fn bean(mut item: ItemFn, options: ValidatedOptions) -> Result<BeanIr> {
     let signature = &item.sig;
     if signature.constness.is_some()
         || signature.unsafety.is_some()
@@ -345,7 +348,7 @@ fn bean(mut item: ItemFn, options: ValidatedOptions) -> syn::Result<BeanIr> {
         || !signature.generics.params.is_empty()
         || signature.generics.where_clause.is_some()
     {
-        return Err(syn::Error::new(
+        return Err(Error::new(
             signature.span(),
             "#[bean] requires a safe, non-generic Rust function",
         ));
@@ -358,13 +361,13 @@ fn bean(mut item: ItemFn, options: ValidatedOptions) -> syn::Result<BeanIr> {
     let mut params = Vec::with_capacity(signature.inputs.len());
     for argument in &mut item.sig.inputs {
         let FnArg::Typed(argument) = argument else {
-            return Err(syn::Error::new(
+            return Err(Error::new(
                 argument.span(),
                 "#[bean] cannot be used on methods or receivers",
             ));
         };
         let Pat::Ident(pattern) = argument.pat.as_ref() else {
-            return Err(syn::Error::new(
+            return Err(Error::new(
                 argument.pat.span(),
                 "#[bean] parameters must be named identifiers",
             ));
@@ -385,9 +388,9 @@ fn bean(mut item: ItemFn, options: ValidatedOptions) -> syn::Result<BeanIr> {
 }
 
 /// Decomposes the supported bean output forms and an optional explicit type.
-fn output(return_type: &ReturnType, explicit_type: Option<&Type>) -> syn::Result<OutputIr> {
+fn output(return_type: &ReturnType, explicit_type: Option<&Type>) -> Result<OutputIr> {
     let ReturnType::Type(_, ty) = return_type else {
-        return Err(syn::Error::new(return_type.span(), "#[bean] requires a return type"));
+        return Err(Error::new(return_type.span(), "#[bean] requires a return type"));
     };
     let (inner, error_type, result) = if let Some((success, error)) = result_types(ty) {
         (success, Some(error.clone()), true)
@@ -395,13 +398,13 @@ fn output(return_type: &ReturnType, explicit_type: Option<&Type>) -> syn::Result
         (ty.as_ref(), None, false)
     };
     if contains_future_type(inner) {
-        return Err(syn::Error::new(
+        return Err(Error::new(
             inner.span(),
             "#[bean] does not support a nested future output; use `async fn` instead",
         ));
     }
     if matches!(inner, Type::ImplTrait(_) | Type::Reference(_)) {
-        return Err(syn::Error::new(
+        return Err(Error::new(
             inner.span(),
             "#[bean] does not support `impl Trait` or borrowed outputs",
         ));
@@ -418,7 +421,7 @@ fn output(return_type: &ReturnType, explicit_type: Option<&Type>) -> syn::Result
     };
     let component_type = explicit_type.cloned().unwrap_or(component_type);
     if matches!(component_type, Type::ImplTrait(_) | Type::Reference(_)) {
-        return Err(syn::Error::new(
+        return Err(Error::new(
             component_type.span(),
             "#[bean] requires an owned concrete output type",
         ));
@@ -486,7 +489,7 @@ fn contains_future_type(ty: &Type) -> bool {
                 }
         }),
         Type::TraitObject(object) => object.bounds.iter().any(|bound| match bound {
-            syn::TypeParamBound::Trait(trait_bound) => trait_bound
+            TypeParamBound::Trait(trait_bound) => trait_bound
                 .path
                 .segments
                 .iter()
@@ -503,18 +506,15 @@ fn contains_future_type(ty: &Type) -> bool {
 }
 
 /// Normalizes an inline module and rejects a conflicting generated function.
-fn configuration(item: syn::ItemMod, options: ValidatedOptions) -> syn::Result<ConfigurationIr> {
+fn configuration(item: ItemMod, options: ValidatedOptions) -> Result<ConfigurationIr> {
     let Some((_, items)) = &item.content else {
-        return Err(syn::Error::new(
-            item.span(),
-            "#[Configuration] requires an inline module",
-        ));
+        return Err(Error::new(item.span(), "#[Configuration] requires an inline module"));
     };
     for child in items {
         if let Item::Fn(function) = child
             && function.sig.ident == "register_ioc"
         {
-            return Err(syn::Error::new(
+            return Err(Error::new(
                 function.sig.ident.span(),
                 "#[Configuration] conflicts with existing `register_ioc`",
             ));
@@ -532,13 +532,10 @@ fn configuration(item: syn::ItemMod, options: ValidatedOptions) -> syn::Result<C
 }
 
 /// Normalizes a deserializable configuration struct with a required prefix.
-fn configuration_properties(
-    item: syn::ItemStruct,
-    mut options: ValidatedOptions,
-) -> syn::Result<ConfigurationPropertiesIr> {
+fn configuration_properties(item: ItemStruct, mut options: ValidatedOptions) -> Result<ConfigurationPropertiesIr> {
     validate_struct(&item, MacroKind::ConfigurationProperties)?;
     if !matches!(item.fields, Fields::Named(_)) {
-        return Err(syn::Error::new(
+        return Err(Error::new(
             item.fields.span(),
             "#[ConfigurationProperties] requires named fields",
         ));
@@ -557,38 +554,4 @@ fn configuration_properties(
         options: options.binding(),
         source,
     })
-}
-
-/// The checked option set before it is split into declaration-specific IR.
-#[derive(Default)]
-struct ValidatedOptions {
-    /// Validated optional component ID.
-    id: Option<LitStr>,
-    /// Interface projections declared by repeated `bind` options.
-    binds: Vec<syn::TypeTraitObject>,
-    /// Whether the binding is preferred by unnamed selection.
-    primary: bool,
-    /// Order value used by collection requests.
-    order: i32,
-    /// Optional activation profile.
-    profile: Option<LitStr>,
-    /// Required configuration subtree prefix.
-    prefix: Option<LitStr>,
-    /// Explicit component type for an opaque bean return alias.
-    explicit_type: Option<Type>,
-    /// Optional generated registration marker name.
-    marker: Option<Ident>,
-}
-
-impl ValidatedOptions {
-    /// Moves common binding values into their stable IR representation.
-    fn binding(self) -> BindingOptions {
-        BindingOptions {
-            id: self.id,
-            binds: self.binds,
-            primary: self.primary,
-            order: self.order,
-            profile: self.profile,
-        }
-    }
 }

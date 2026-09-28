@@ -59,6 +59,7 @@
 //! and IDs that do not match the runtime segmented ASCII grammar.
 
 use proc_macro::TokenStream;
+use syn::Error;
 
 mod conditions;
 mod expand;
@@ -80,7 +81,7 @@ fn expand_entry(kind: MacroKind, attribute: TokenStream, item: TokenStream) -> T
     parse::parse(kind, attribute.into(), item.into())
         .and_then(validate::validate)
         .and_then(expand::dispatch)
-        .unwrap_or_else(syn::Error::into_compile_error)
+        .unwrap_or_else(Error::into_compile_error)
         .into()
 }
 

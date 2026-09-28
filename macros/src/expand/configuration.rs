@@ -11,9 +11,13 @@ use proc_macro2::TokenStream;
 use proc_macro2::TokenTree;
 use quote::quote;
 use syn::Attribute;
+use syn::Error;
 use syn::Ident;
 use syn::Item;
+use syn::LitStr;
 use syn::Meta;
+use syn::Result;
+use syn::parse_quote;
 
 use crate::conditions::activation_attributes;
 use crate::expand::ExpansionContext;
@@ -23,7 +27,7 @@ use crate::parse::RawValue;
 use crate::parse::parse_options;
 
 /// Emits an inline module with one ordered `register_ioc` function.
-pub(crate) fn expand(value: ConfigurationIr, context: &ExpansionContext) -> syn::Result<TokenStream> {
+pub(crate) fn expand(value: ConfigurationIr, context: &ExpansionContext) -> Result<TokenStream> {
     let ConfigurationIr {
         mut item,
         profile,
@@ -32,7 +36,7 @@ pub(crate) fn expand(value: ConfigurationIr, context: &ExpansionContext) -> syn:
     let _ = source;
     let runtime = &context.runtime;
     let Some((_, children)) = &mut item.content else {
-        return Err(syn::Error::new(
+        return Err(Error::new(
             item.ident.span(),
             "#[Configuration] requires an inline module",
         ));
@@ -53,7 +57,7 @@ pub(crate) fn expand(value: ConfigurationIr, context: &ExpansionContext) -> syn:
             add_profile(attribute, default_profile);
         }
     }
-    children.push(syn::parse_quote! {
+    children.push(parse_quote! {
         /// Installs this module's direct bean definitions in source order.
         pub fn register_ioc(
             builder: &mut #runtime::ContainerBuilder,
@@ -75,7 +79,7 @@ fn is_bean(attribute: &Attribute) -> bool {
 }
 
 /// Reads the marker option and whether the child already selected a profile.
-fn bean_options(attribute: &Attribute, function_name: &Ident) -> syn::Result<(Ident, bool)> {
+fn bean_options(attribute: &Attribute, function_name: &Ident) -> Result<(Ident, bool)> {
     let mut marker = None;
     let mut has_profile = false;
     let Meta::List(list) = &attribute.meta else {
@@ -92,7 +96,7 @@ fn bean_options(attribute: &Attribute, function_name: &Ident) -> syn::Result<(Id
 }
 
 /// Adds the module's profile only where the child has no explicit override.
-fn add_profile(attribute: &mut Attribute, profile: &syn::LitStr) {
+fn add_profile(attribute: &mut Attribute, profile: &LitStr) {
     let path = attribute.path().clone();
     let tokens = match &attribute.meta {
         Meta::List(list) if !list.tokens.is_empty() => {
@@ -105,5 +109,5 @@ fn add_profile(attribute: &mut Attribute, profile: &syn::LitStr) {
         }
         _ => quote!(profile = #profile),
     };
-    *attribute = syn::parse_quote!(#[#path(#tokens)]);
+    *attribute = parse_quote!(#[#path(#tokens)]);
 }

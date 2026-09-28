@@ -34,3 +34,13 @@ reason = "Managed, cleanup errors, and shutdown failures form one public opt-in 
 rule = "type-file-name"
 path = "src/builder.rs"
 reason = "The public builder module groups registration with validation and construction lifecycle while preserving its planned module path."
+
+[[exceptions]]
+rule = "multiple-public-types"
+path = "macros/src/ir.rs"
+reason = "MacroKind, Declaration, and the declaration IR types form one private cross-expander representation model."
+
+[[exceptions]]
+rule = "multiple-public-types"
+path = "macros/src/parse.rs"
+reason = "RawDeclaration, RawOption, and RawValue form one parser output model for attribute syntax."

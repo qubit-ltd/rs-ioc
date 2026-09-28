@@ -5,9 +5,12 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
+use proc_macro2::Span;
 use proc_macro2::TokenStream;
 use quote::ToTokens;
 use quote::quote;
+use syn::LitStr;
+use syn::Result;
 
 use crate::ir::Declaration;
 use crate::ir::DependencyKind;
@@ -16,7 +19,7 @@ use crate::ir::OutputShape;
 
 /// Parses an attribute declaration through the same validation boundary as a
 /// macro entry.
-fn declaration(kind: MacroKind, attributes: TokenStream, item: TokenStream) -> syn::Result<Declaration> {
+fn declaration(kind: MacroKind, attributes: TokenStream, item: TokenStream) -> Result<Declaration> {
     crate::validate::validate(crate::parse::parse(kind, attributes, item)?)
 }
 
@@ -250,7 +253,7 @@ fn test_bean_rejects_nested_future_output() {
 #[test]
 fn test_component_rejects_invalid_id() {
     for invalid in ["", "a..b", ".a", "a.", "2abc", "a-b", "a/b", "a b", "中文"] {
-        let id = syn::LitStr::new(invalid, proc_macro2::Span::call_site());
+        let id = LitStr::new(invalid, Span::call_site());
         let error = declaration(
             MacroKind::Component,
             quote!(id = #id),
