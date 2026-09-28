@@ -24,7 +24,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
           repository: qubit-ltd/rs-event-bus
-          ref: 2b8e1eb68ea24d785f697575a676798e859c9408
+          ref: f19afc39f82b402b9793a34b8b0f0f23d2364dfe
           path: rs-event-bus
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
