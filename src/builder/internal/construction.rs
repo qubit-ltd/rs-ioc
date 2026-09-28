@@ -9,7 +9,6 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
 
-use super::paths::paths_to_all;
 use crate::application_context::ApplicationContext;
 use crate::application_context::BuiltBinding;
 use crate::binding::PendingBinding;
@@ -18,6 +17,7 @@ use crate::build_context::BuildContext;
 use crate::error::BuildError;
 use crate::error::FactoryError;
 use crate::graph::BindingLocation;
+use crate::graph::DiagnosticPaths;
 use crate::graph::ResolvedDependency;
 use crate::graph::ValidatedGraph;
 use crate::key::BindingKey;
@@ -35,8 +35,8 @@ pub(crate) struct Construction {
     order: Vec<BindingLocation>,
     /// Exact dependency keys made available to each factory.
     resolved: Vec<Vec<ResolvedDependency>>,
-    /// Stable root-to-binding paths used when wrapping factory failures.
-    paths: HashMap<BindingKey, Vec<BindingKey>>,
+    /// Compact graph provenance used to restore paths for failures.
+    diagnostics: DiagnosticPaths,
     /// Lookup metadata published with the completed context.
     bindings: Vec<BuiltBinding>,
     /// Cleanup actions for managed components constructed so far.
@@ -52,7 +52,7 @@ impl Construction {
     /// bindings.
     pub(crate) fn new(graph: ValidatedGraph) -> Self {
         let selected: HashSet<_> = graph.order.iter().copied().collect();
-        let paths = paths_to_all(&graph.definitions, &graph.resolved, &selected);
+        let diagnostics = graph.diagnostics;
         let bindings = graph
             .definitions
             .iter()
@@ -89,7 +89,7 @@ impl Construction {
             actions,
             order: graph.order,
             resolved: graph.resolved,
-            paths,
+            diagnostics,
             bindings,
             cleanup: CleanupJournal::default(),
             store: InstanceStore::default(),
@@ -105,10 +105,10 @@ impl Construction {
                 PendingBindingKind::Instance(value) => Ok((value, None)),
                 PendingBindingKind::SyncFactory(factory) => factory(self.build_context(location.definition))
                     .map(|value| (value, None))
-                    .map_err(|error| self.factory_error(&key, source, error)),
+                    .map_err(|error| self.factory_error(&key, source, location, error)),
                 PendingBindingKind::ManagedSyncFactory(factory) => factory(self.build_context(location.definition))
                     .map(|(value, cleanup)| (value, Some(cleanup)))
-                    .map_err(|error| self.factory_error(&key, source, error)),
+                    .map_err(|error| self.factory_error(&key, source, location, error)),
                 PendingBindingKind::AsyncFactory(_) => Err(BuildError::AsyncRequired {
                     definition: source,
                     key: key.clone(),
@@ -117,9 +117,9 @@ impl Construction {
                     definition: source,
                     key: key.clone(),
                 }),
-                PendingBindingKind::Alias { target, project } => {
-                    self.project(&key, source, &target, project).map(|value| (value, None))
-                }
+                PendingBindingKind::Alias { target, project } => self
+                    .project(&key, source, location, &target, project)
+                    .map(|value| (value, None)),
             };
             let (value, cleanup) = match product {
                 Ok(product) => product,
@@ -146,21 +146,21 @@ impl Construction {
                 PendingBindingKind::Instance(value) => Ok((value, None)),
                 PendingBindingKind::SyncFactory(factory) => factory(self.build_context(location.definition))
                     .map(|value| (value, None))
-                    .map_err(|error| self.factory_error(&key, source, error)),
+                    .map_err(|error| self.factory_error(&key, source, location, error)),
                 PendingBindingKind::AsyncFactory(factory) => factory(self.build_context(location.definition))
                     .await
                     .map(|value| (value, None))
-                    .map_err(|error| self.factory_error(&key, source, error)),
+                    .map_err(|error| self.factory_error(&key, source, location, error)),
                 PendingBindingKind::ManagedSyncFactory(factory) => factory(self.build_context(location.definition))
                     .map(|(value, cleanup)| (value, Some(cleanup)))
-                    .map_err(|error| self.factory_error(&key, source, error)),
+                    .map_err(|error| self.factory_error(&key, source, location, error)),
                 PendingBindingKind::ManagedAsyncFactory(factory) => factory(self.build_context(location.definition))
                     .await
                     .map(|(value, cleanup)| (value, Some(cleanup)))
-                    .map_err(|error| self.factory_error(&key, source, error)),
-                PendingBindingKind::Alias { target, project } => {
-                    self.project(&key, source, &target, project).map(|value| (value, None))
-                }
+                    .map_err(|error| self.factory_error(&key, source, location, error)),
+                PendingBindingKind::Alias { target, project } => self
+                    .project(&key, source, location, &target, project)
+                    .map(|value| (value, None)),
             };
             let (value, cleanup) = match product {
                 Ok(product) => product,
@@ -238,6 +238,7 @@ impl Construction {
         &self,
         key: &BindingKey,
         source: DefinitionSource,
+        location: BindingLocation,
         target: &BindingKey,
         project: crate::binding::AliasProjector,
     ) -> Result<crate::store::ErasedInstance, BuildError> {
@@ -246,6 +247,7 @@ impl Construction {
             self.factory_error(
                 key,
                 source,
+                location,
                 FactoryError::new(std::io::Error::other("alias projection target type mismatch")),
             )
         })
@@ -257,8 +259,14 @@ impl Construction {
     }
 
     /// Wraps a factory failure with source and the complete first root path.
-    fn factory_error(&self, key: &BindingKey, definition: DefinitionSource, error: FactoryError) -> BuildError {
-        let path = self.paths.get(key).cloned().unwrap_or_else(|| vec![key.clone()]);
+    fn factory_error(
+        &self,
+        key: &BindingKey,
+        definition: DefinitionSource,
+        location: BindingLocation,
+        error: FactoryError,
+    ) -> BuildError {
+        let path = self.diagnostics.path_to(location);
         if let Some((path_key, target)) = error.config_read_context() {
             return BuildError::ConfigReadFailed {
                 definition,

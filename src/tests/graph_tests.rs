@@ -381,7 +381,7 @@ fn test_graph_collection_orders_by_order_id_then_source() {
 }
 
 #[test]
-fn test_graph_error_path_follows_root_and_declared_dependency_order() {
+fn test_graph_missing_sibling_is_reported_before_descendant_failure() {
     let result = ValidatedGraph::validate(
         vec![
             instance(
@@ -398,7 +398,7 @@ fn test_graph_error_path_follows_root_and_declared_dependency_order() {
         &[],
     );
     assert!(
-        matches!(result, Err(BuildError::MissingDependency { path, definition, .. }) if definition.item == "B" && path == vec![BindingKey::of::<A>(None), BindingKey::of::<B>(None)])
+        matches!(result, Err(BuildError::MissingDependency { path, definition, .. }) if definition.item == "A" && path == vec![BindingKey::of::<A>(None)])
     );
 }
 
@@ -421,7 +421,14 @@ fn test_graph_alias_edges_detect_cycle() {
         |value| value,
     ));
     let result = ValidatedGraph::validate(vec![first, second], &[]);
-    assert!(matches!(result, Err(BuildError::DependencyCycle { path }) if path.len() == 3));
+    assert!(
+        matches!(result, Err(BuildError::DependencyCycle { path }) if path == vec![
+            BindingKey::of::<A>(None),
+            BindingKey::of::<String>(Some(BindingId::parse("first").expect("valid ID"))),
+            BindingKey::of::<String>(Some(BindingId::parse("second").expect("valid ID"))),
+            BindingKey::of::<String>(Some(BindingId::parse("first").expect("valid ID"))),
+        ])
+    );
 }
 
 #[test]

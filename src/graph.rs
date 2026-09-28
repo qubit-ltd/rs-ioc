@@ -24,6 +24,11 @@ use crate::error::BuildError;
 use crate::key::BindingKey;
 use crate::options::DefinitionSource;
 
+mod diagnostics;
+
+pub(crate) use diagnostics::DiagnosticPaths;
+use diagnostics::PathOrigin;
+
 /// The position of one binding in its registered definition.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct BindingLocation {
@@ -52,6 +57,8 @@ pub(crate) struct ValidatedGraph {
     pub(crate) order: Vec<BindingLocation>,
     /// Resolved request keys, indexed by definition and declaration order.
     pub(crate) resolved: Vec<Vec<ResolvedDependency>>,
+    /// Compact root provenance shared by validation and construction.
+    pub(crate) diagnostics: DiagnosticPaths,
 }
 
 /// One flattened binding with its stable registration position.
@@ -131,16 +138,12 @@ impl ValidatedGraph {
             by_type.entry(node.key.type_id()).or_default().push(index);
         }
         let (edges, resolved) = resolve_edges(&definitions, &nodes, &by_key, &by_type);
-        let reachable = if let Some(roots) = roots {
+        let seeds = if let Some(roots) = roots {
             select_roots(roots, &nodes, &by_type)?
         } else {
-            vec![true; nodes.len()]
+            build_all_seeds(&nodes, &edges)
         };
-        let reachable = if roots.is_some() {
-            close_definitions(&nodes, &edges, reachable)?
-        } else {
-            reachable
-        };
+        let (reachable, diagnostics) = close_definitions(&definitions, &nodes, &edges, &seeds)?;
         if roots.is_some() {
             let mut sources = HashMap::new();
             for (i, node) in nodes.iter().enumerate().filter(|(i, _)| reachable[*i]) {
@@ -161,12 +164,13 @@ impl ValidatedGraph {
                 .collect();
             validate_primary(&selected)?;
         }
-        detect_errors_and_cycles(&nodes, &edges, &reachable)?;
+        detect_errors_and_cycles(&nodes, &edges, &reachable, &diagnostics)?;
         let order = stable_topology(&nodes, &edges, &reachable);
         Ok(Self {
             definitions,
             order,
             resolved,
+            diagnostics,
         })
     }
 }
@@ -187,8 +191,9 @@ fn select_roots(
     roots: &[Dependency],
     nodes: &[Node],
     by_type: &HashMap<TypeId, Vec<usize>>,
-) -> Result<Vec<bool>, BuildError> {
-    let mut selected = vec![false; nodes.len()];
+) -> Result<Vec<usize>, BuildError> {
+    let mut selected = Vec::new();
+    let mut seen = HashSet::new();
     for request in roots {
         let candidates = candidates_for(request, nodes, by_type);
         let available = by_type
@@ -200,7 +205,9 @@ fn select_roots(
         match select(request, &candidates, nodes) {
             Ok(indices) => {
                 for index in indices {
-                    selected[index] = true;
+                    if seen.insert(index) {
+                        selected.push(index);
+                    }
                 }
             }
             Err(Edge::MissingDependency(_)) => {
@@ -221,10 +228,15 @@ fn select_roots(
     Ok(selected)
 }
 
-/// Extends root reachability to every binding that belongs to a selected
-/// definition and validates the newly included edges.
+/// Starts from ordered roots, closes dependencies and definition members, and
+/// retains one deterministic predecessor for each selected binding.
 #[allow(clippy::result_large_err)]
-fn close_definitions(nodes: &[Node], edges: &[Vec<Edge>], mut reachable: Vec<bool>) -> Result<Vec<bool>, BuildError> {
+fn close_definitions(
+    definitions: &[PendingDefinition],
+    nodes: &[Node],
+    edges: &[Vec<Edge>],
+    seeds: &[usize],
+) -> Result<(Vec<bool>, DiagnosticPaths), BuildError> {
     let definition_count = nodes
         .iter()
         .map(|node| node.location.definition)
@@ -234,72 +246,126 @@ fn close_definitions(nodes: &[Node], edges: &[Vec<Edge>], mut reachable: Vec<boo
     for (index, node) in nodes.iter().enumerate() {
         nodes_by_definition[node.location.definition].push(index);
     }
-    let mut discovered = reachable.clone();
-    let mut predecessors = vec![None; nodes.len()];
-    let mut queue = reachable
-        .iter()
-        .enumerate()
-        .filter_map(|(index, yes)| yes.then_some(index))
-        .collect::<VecDeque<_>>();
-    let mut visited_definitions = HashSet::new();
-    while let Some(index) = queue.pop_front() {
-        let definition = nodes[index].location.definition;
-        if !visited_definitions.insert(definition) {
-            continue;
+    let mut diagnostics = DiagnosticPaths::new(definitions);
+    let mut reachable = vec![false; nodes.len()];
+    let mut queue = VecDeque::new();
+    for &seed in seeds {
+        if diagnostics.record_root(nodes[seed].location) {
+            reachable[seed] = true;
+            queue.push_back(seed);
         }
-        for &i in &nodes_by_definition[definition] {
-            let node = &nodes[i];
-            reachable[i] = true;
-            let node_path = binding_path(index, &predecessors, nodes);
-            for edge in &edges[i] {
-                match edge {
-                    Edge::Target(target) => {
-                        if !discovered[*target] {
-                            discovered[*target] = true;
-                            predecessors[*target] = Some(i);
-                            queue.push_back(*target);
-                        }
+    }
+    while let Some(index) = queue.pop_front() {
+        let node = &nodes[index];
+        for edge in &edges[index] {
+            match edge {
+                Edge::Target(target) => {
+                    let target_location = nodes[*target].location;
+                    if diagnostics.record_from(target_location, PathOrigin::Dependency(node.location)) {
+                        reachable[*target] = true;
+                        queue.push_back(*target);
                     }
-                    Edge::MissingDependency(dependency) => {
-                        return Err(BuildError::MissingDependency {
-                            dependency: dependency.clone(),
-                            definition: node.source,
-                            path: node_path,
-                        });
-                    }
-                    Edge::AmbiguousDependency(dependency, candidates) => {
-                        return Err(BuildError::AmbiguousBinding {
-                            dependency: dependency.clone(),
-                            definition: node.source,
-                            candidates: candidates.clone(),
-                            path: node_path,
-                        });
-                    }
-                    Edge::MissingAliasTarget(target) => {
-                        return Err(BuildError::MissingAliasTarget {
-                            alias: node.key.clone(),
-                            target: target.clone(),
-                            definition: node.source,
-                            path: node_path,
-                        });
-                    }
+                }
+                Edge::MissingDependency(dependency) => {
+                    return Err(BuildError::MissingDependency {
+                        dependency: dependency.clone(),
+                        definition: node.source,
+                        path: diagnostics.path_to(node.location),
+                    });
+                }
+                Edge::AmbiguousDependency(dependency, candidates) => {
+                    return Err(BuildError::AmbiguousBinding {
+                        dependency: dependency.clone(),
+                        definition: node.source,
+                        candidates: candidates.clone(),
+                        path: diagnostics.path_to(node.location),
+                    });
+                }
+                Edge::MissingAliasTarget(target) => {
+                    return Err(BuildError::MissingAliasTarget {
+                        alias: node.key.clone(),
+                        target: target.clone(),
+                        definition: node.source,
+                        path: diagnostics.path_to(node.location),
+                    });
                 }
             }
         }
+        for &member in &nodes_by_definition[node.location.definition] {
+            let member_location = nodes[member].location;
+            if diagnostics.record_from(member_location, PathOrigin::DefinitionMember(node.location)) {
+                reachable[member] = true;
+                queue.push_back(member);
+            }
+        }
     }
-    Ok(reachable)
+    Ok((reachable, diagnostics))
 }
 
-/// Reconstructs the first root path to a binding from predecessor links.
-fn binding_path(index: usize, predecessors: &[Option<usize>], nodes: &[Node]) -> Vec<BindingKey> {
-    let mut path = Vec::new();
-    let mut current = Some(index);
-    while let Some(entry) = current {
-        path.push(nodes[entry].key.clone());
-        current = predecessors[entry];
+/// Selects unrooted graph components in registration order for `build_all`.
+fn build_all_seeds(nodes: &[Node], edges: &[Vec<Edge>]) -> Vec<usize> {
+    let mut has_incoming = vec![false; nodes.len()];
+    for requests in edges {
+        for edge in requests {
+            if let Edge::Target(target) = edge {
+                has_incoming[*target] = true;
+            }
+        }
     }
-    path.reverse();
-    path
+    let mut seeds = Vec::new();
+    let mut selected = vec![false; nodes.len()];
+    let definition_count = nodes
+        .iter()
+        .map(|node| node.location.definition)
+        .max()
+        .map_or(0, |value| value + 1);
+    let mut members = vec![Vec::new(); definition_count];
+    for (index, node) in nodes.iter().enumerate() {
+        members[node.location.definition].push(index);
+    }
+    for (index, incoming) in has_incoming.iter().copied().enumerate() {
+        if !incoming {
+            seeds.push(index);
+            mark_build_all_closure(index, nodes, edges, &members, &mut selected);
+        }
+    }
+    let indices = (0..selected.len()).collect::<Vec<_>>();
+    for index in indices {
+        if !selected[index] {
+            selected[index] = true;
+            seeds.push(index);
+            mark_build_all_closure(index, nodes, edges, &members, &mut selected);
+        }
+    }
+    seeds
+}
+
+/// Marks one build-all component, including its dependency and
+/// definition-member closure.
+fn mark_build_all_closure(
+    seed: usize,
+    nodes: &[Node],
+    edges: &[Vec<Edge>],
+    members: &[Vec<usize>],
+    selected: &mut [bool],
+) {
+    let mut queue = VecDeque::from([seed]);
+    while let Some(index) = queue.pop_front() {
+        for edge in &edges[index] {
+            if let Edge::Target(target) = edge
+                && !selected[*target]
+            {
+                selected[*target] = true;
+                queue.push_back(*target);
+            }
+        }
+        for &member in &members[nodes[index].location.definition] {
+            if !selected[member] {
+                selected[member] = true;
+                queue.push_back(member);
+            }
+        }
+    }
 }
 
 /// Flattens definitions in builder entry order and binding declaration order.
@@ -461,11 +527,21 @@ fn select(request: &Dependency, candidates: &[usize], nodes: &[Node]) -> Result<
 /// Visits registration roots to report the first failure with its full path.
 // BuildError preserves a complete path from a root to the graph failure.
 #[allow(clippy::result_large_err)]
-fn detect_errors_and_cycles(nodes: &[Node], edges: &[Vec<Edge>], reachable: &[bool]) -> Result<(), BuildError> {
+fn detect_errors_and_cycles(
+    nodes: &[Node],
+    edges: &[Vec<Edge>],
+    reachable: &[bool],
+    diagnostics: &DiagnosticPaths,
+) -> Result<(), BuildError> {
     let mut state = vec![0u8; nodes.len()];
     let mut stack = Vec::new();
-    for (root, is_reachable) in reachable.iter().copied().enumerate() {
-        if is_reachable && state[root] == 0 {
+    let ordered_roots = diagnostics
+        .roots()
+        .iter()
+        .copied()
+        .map(|location| diagnostics.node_index(location));
+    for root in ordered_roots.chain(0..nodes.len()) {
+        if reachable[root] && state[root] == 0 {
             state[root] = 1;
             stack.push((root, 0));
             while let Some((index, next_edge)) = stack.last_mut() {
@@ -480,11 +556,17 @@ fn detect_errors_and_cycles(nodes: &[Node], edges: &[Vec<Edge>], reachable: &[bo
                     Edge::Target(target) => match state[*target] {
                         2 => {}
                         1 => {
-                            let path = stack
+                            let cycle_start = stack
                                 .iter()
-                                .map(|(entry, _)| nodes[*entry].key.clone())
-                                .chain(std::iter::once(nodes[*target].key.clone()))
-                                .collect();
+                                .position(|(entry, _)| entry == target)
+                                .expect("active target must be present in the DFS stack");
+                            let mut path = diagnostics.path_to(nodes[*target].location);
+                            path.extend(
+                                stack[cycle_start + 1..]
+                                    .iter()
+                                    .map(|(entry, _)| nodes[*entry].key.clone()),
+                            );
+                            path.push(nodes[*target].key.clone());
                             return Err(BuildError::DependencyCycle { path });
                         }
                         _ => {
@@ -496,7 +578,7 @@ fn detect_errors_and_cycles(nodes: &[Node], edges: &[Vec<Edge>], reachable: &[bo
                         return Err(BuildError::MissingDependency {
                             dependency: dependency.clone(),
                             definition: nodes[*index].source,
-                            path: stack.iter().map(|(entry, _)| nodes[*entry].key.clone()).collect(),
+                            path: diagnostics.path_to(nodes[*index].location),
                         });
                     }
                     Edge::AmbiguousDependency(dependency, candidates) => {
@@ -504,7 +586,7 @@ fn detect_errors_and_cycles(nodes: &[Node], edges: &[Vec<Edge>], reachable: &[bo
                             dependency: dependency.clone(),
                             definition: nodes[*index].source,
                             candidates: candidates.clone(),
-                            path: stack.iter().map(|(entry, _)| nodes[*entry].key.clone()).collect(),
+                            path: diagnostics.path_to(nodes[*index].location),
                         });
                     }
                     Edge::MissingAliasTarget(target) => {
@@ -512,7 +594,7 @@ fn detect_errors_and_cycles(nodes: &[Node], edges: &[Vec<Edge>], reachable: &[bo
                             alias: nodes[*index].key.clone(),
                             target: target.clone(),
                             definition: nodes[*index].source,
-                            path: stack.iter().map(|(entry, _)| nodes[*entry].key.clone()).collect(),
+                            path: diagnostics.path_to(nodes[*index].location),
                         });
                     }
                 }

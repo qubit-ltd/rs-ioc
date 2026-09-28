@@ -7,6 +7,5 @@
 // =============================================================================
 
 mod construction;
-mod paths;
 
 pub(super) use construction::Construction;

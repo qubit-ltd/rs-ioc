@@ -57,7 +57,7 @@ fn new_definition(builder: &mut ContainerBuilder) -> Result<(), RegistrationErro
 }
 
 #[test]
-fn replacement_replaces_the_complete_definition_and_its_aliases() {
+fn test_replacement_replaces_the_complete_definition_and_its_aliases() {
     let mut builder = ContainerBuilder::new();
     old_definition(&mut builder);
     builder
@@ -67,6 +67,14 @@ fn replacement_replaces_the_complete_definition_and_its_aliases() {
     let context = builder.build().unwrap();
     let interface = context.get::<dyn Api>().unwrap();
     let concrete = context.get::<Service>().unwrap();
+    let (active, replaced) = context
+        .binding_sources(&BindingKey::of::<Service>(None))
+        .expect("replacement sources are retained");
+    assert_eq!(active.item, "Service");
+    assert_eq!(
+        replaced.iter().map(|source| source.item).collect::<Vec<_>>(),
+        ["Service"]
+    );
     assert_eq!(interface.value(), 2);
     assert_eq!(concrete.value(), 2);
     assert!(std::ptr::eq(
@@ -76,7 +84,7 @@ fn replacement_replaces_the_complete_definition_and_its_aliases() {
 }
 
 #[test]
-fn replacement_callback_errors_and_invalid_drafts_leave_builder_unchanged() {
+fn test_replacement_callback_errors_and_invalid_drafts_leave_builder_unchanged() {
     let mut builder = ContainerBuilder::new();
     old_definition(&mut builder);
     let error = builder
@@ -101,7 +109,7 @@ fn replacement_callback_errors_and_invalid_drafts_leave_builder_unchanged() {
 }
 
 #[test]
-fn replacement_requires_exactly_one_staged_definition() {
+fn test_replacement_requires_exactly_one_staged_definition() {
     let mut builder = ContainerBuilder::new();
     let error = builder
         .replace_definition(BindingKey::of::<u32>(None), |draft| {
@@ -116,7 +124,7 @@ fn replacement_requires_exactly_one_staged_definition() {
 }
 
 #[test]
-fn inactive_replacement_keeps_the_original_definition() {
+fn test_inactive_replacement_keeps_the_original_definition() {
     let mut builder = ContainerBuilder::new();
     let draft =
         DefinitionDraft::<Service>::from_instance(source("Service"), Default::default(), Arc::new(Service(1))).unwrap();
@@ -136,7 +144,7 @@ fn inactive_replacement_keeps_the_original_definition() {
 }
 
 #[test]
-fn replacement_reports_ambiguous_active_originals_before_factories() {
+fn test_replacement_reports_ambiguous_active_originals_before_factories() {
     use std::sync::atomic::AtomicUsize;
     use std::sync::atomic::Ordering;
 
@@ -161,7 +169,7 @@ fn replacement_reports_ambiguous_active_originals_before_factories() {
 }
 
 #[test]
-fn consecutive_replacements_preserve_all_original_sources() {
+fn test_consecutive_replacements_preserve_all_original_sources() {
     let mut builder = ContainerBuilder::new();
     old_definition(&mut builder);
     builder
@@ -180,18 +188,16 @@ fn consecutive_replacements_preserve_all_original_sources() {
         .unwrap();
     let context = builder.build_all().unwrap();
     assert_eq!(context.get::<Service>().unwrap().value(), 3);
+    let (active, replaced) = context.binding_sources(&BindingKey::of::<Service>(None)).unwrap();
+    assert_eq!(active.item, "ServiceAgain");
     assert_eq!(
-        context
-            .binding_sources(&BindingKey::of::<Service>(None))
-            .unwrap()
-            .1
-            .len(),
-        2
+        replaced.iter().map(|source| source.item).collect::<Vec<_>>(),
+        ["Service", "Service"]
     );
 }
 
 #[test]
-fn replacement_removes_old_aliases_and_dependencies_report_missing_alias() {
+fn test_replacement_removes_old_aliases_and_dependencies_report_missing_alias() {
     let mut builder = ContainerBuilder::new();
     old_definition(&mut builder);
     builder
