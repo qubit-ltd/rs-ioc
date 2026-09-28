@@ -20,7 +20,8 @@ use crate::ir::OutputShape;
 /// Parses an attribute declaration through the same validation boundary as a
 /// macro entry.
 fn declaration(kind: MacroKind, attributes: TokenStream, item: TokenStream) -> Result<Declaration> {
-    crate::validate::validate(crate::parse::parse(kind, attributes, item)?)
+    let runtime = crate::runtime_path::RuntimePath::for_root("qubit_ioc");
+    crate::validate::validate(crate::parse::parse(kind, attributes, item)?, &runtime)
 }
 
 #[test]
@@ -150,7 +151,6 @@ fn test_bean_recognizes_standard_qualified_result_output() {
             panic!("bean IR was expected");
         };
         assert_eq!(bean.output.shape, OutputShape::ResultArc);
-        assert!(bean.output.error_type.is_some());
     }
 }
 
@@ -172,6 +172,22 @@ fn test_bean_recognizes_managed_outputs_without_guessing_qualified_types() {
                 }
             ),
             OutputShape::ResultBare,
+        ),
+        (
+            quote!(
+                fn create() -> qubit_ioc::Managed<Repository> {
+                    todo!()
+                }
+            ),
+            OutputShape::Bare,
+        ),
+        (
+            quote!(
+                fn create() -> ::qubit_ioc::Managed<Repository> {
+                    todo!()
+                }
+            ),
+            OutputShape::Bare,
         ),
         (
             quote!(

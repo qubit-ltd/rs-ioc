@@ -547,3 +547,25 @@ fn test_configuration_group_and_explicit_install_report_duplicate() {
     };
     assert!(matches!(error, BuildError::DuplicateBinding { .. }));
 }
+
+mod application {
+    /// A normal application type whose name intentionally resembles the runtime
+    /// wrapper.
+    pub struct Managed<T>(pub T);
+}
+
+#[bean]
+fn application_managed_value() -> application::Managed<u32> {
+    application::Managed(23)
+}
+
+#[test]
+fn test_application_managed_path_remains_an_ordinary_factory_output() {
+    let mut builder = ContainerBuilder::new();
+    builder
+        .install::<ApplicationManagedValueBean>()
+        .expect("install ordinary factory");
+
+    let context = builder.build_all().expect("build ordinary output");
+    assert_eq!(context.get::<application::Managed<u32>>().expect("value").0, 23);
+}

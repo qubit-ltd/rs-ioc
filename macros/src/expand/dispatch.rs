@@ -12,10 +12,11 @@ use syn::Result;
 
 use crate::expand::ExpansionContext;
 use crate::ir::Declaration;
+use crate::runtime_path::RuntimePath;
 
 /// Selects an expander only after parsing and validation have succeeded.
-pub(crate) fn dispatch(declaration: Declaration) -> Result<TokenStream> {
-    let context = ExpansionContext::for_runtime()?;
+pub(crate) fn dispatch(declaration: Declaration, runtime: &RuntimePath) -> Result<TokenStream> {
+    let context = ExpansionContext::for_runtime(runtime)?;
     match declaration {
         Declaration::Component(value) => super::component::expand(value, &context),
         Declaration::Bean(value) => super::bean::expand(*value, &context),

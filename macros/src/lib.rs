@@ -29,11 +29,13 @@
 //!
 //! `bean` supports synchronous or `async fn` factories returning `T`, `Arc<T>`,
 //! or `Result<T, E>` / `Result<Arc<T>, E>`; managed functions return
-//! `Managed<T>` (or `Result<Managed<T>, E>`). Result handling is recognized for
-//! the Rust `Result` spelling and its standard `std::result::Result` or
-//! `core::result::Result` paths. A custom alias wrapping Result cannot be
-//! identified from its spelling; use a supported explicit Result spelling or
-//! a handwritten factory registration.
+//! `Managed<T>` (or `Result<Managed<T>, E>`), including the exact runtime
+//! dependency path when it is qualified. Unrelated paths such as
+//! `application::Managed<T>` remain ordinary output types. Result handling is
+//! recognized for the Rust `Result` spelling and its standard
+//! `std::result::Result` or `core::result::Result` paths. A custom alias
+//! wrapping Result cannot be identified from its spelling; use a supported
+//! explicit Result spelling or a handwritten factory registration.
 //!
 //! A bean keeps its original function callable and generates a public marker
 //! with the same visibility. The default marker is the function name in Pascal
@@ -59,31 +61,19 @@
 //! and IDs that do not match the runtime segmented ASCII grammar.
 
 use proc_macro::TokenStream;
-use syn::Error;
 
 mod conditions;
+mod entrypoint;
 mod expand;
-// Later expansion tasks consume the complete IR; parser tests exercise it
-// already.
-#[allow(dead_code)]
 mod ir;
 mod parse;
+mod runtime_path;
 mod validate;
 
 #[cfg(test)]
 mod parse_tests;
 
 use ir::MacroKind;
-
-/// Runs every declaration through parsing, validation, normalization, and
-/// expansion.
-fn expand_entry(kind: MacroKind, attribute: TokenStream, item: TokenStream) -> TokenStream {
-    parse::parse(kind, attribute.into(), item.into())
-        .and_then(validate::validate)
-        .and_then(expand::dispatch)
-        .unwrap_or_else(Error::into_compile_error)
-        .into()
-}
 
 /// Generates a component definition for a named-field or unit struct.
 ///
@@ -103,7 +93,7 @@ fn expand_entry(kind: MacroKind, attribute: TokenStream, item: TokenStream) -> T
 #[allow(non_snake_case)]
 #[proc_macro_attribute]
 pub fn Component(attribute: TokenStream, item: TokenStream) -> TokenStream {
-    expand_entry(MacroKind::Component, attribute, item)
+    entrypoint::expand_entry(MacroKind::Component, attribute, item)
 }
 
 /// Generates a struct-backed service definition using the `Component` field
@@ -120,7 +110,7 @@ pub fn Component(attribute: TokenStream, item: TokenStream) -> TokenStream {
 #[allow(non_snake_case)]
 #[proc_macro_attribute]
 pub fn Service(attribute: TokenStream, item: TokenStream) -> TokenStream {
-    expand_entry(MacroKind::Service, attribute, item)
+    entrypoint::expand_entry(MacroKind::Service, attribute, item)
 }
 
 /// Generates a struct-backed repository definition using the `Component`
@@ -137,7 +127,7 @@ pub fn Service(attribute: TokenStream, item: TokenStream) -> TokenStream {
 #[allow(non_snake_case)]
 #[proc_macro_attribute]
 pub fn Repository(attribute: TokenStream, item: TokenStream) -> TokenStream {
-    expand_entry(MacroKind::Repository, attribute, item)
+    entrypoint::expand_entry(MacroKind::Repository, attribute, item)
 }
 
 /// Generates `register_ioc` for direct bean functions in an inline module.
@@ -157,7 +147,7 @@ pub fn Repository(attribute: TokenStream, item: TokenStream) -> TokenStream {
 #[allow(non_snake_case)]
 #[proc_macro_attribute]
 pub fn Configuration(attribute: TokenStream, item: TokenStream) -> TokenStream {
-    expand_entry(MacroKind::Configuration, attribute, item)
+    entrypoint::expand_entry(MacroKind::Configuration, attribute, item)
 }
 
 /// Generates a config-backed component for a named-field struct that can be
@@ -176,7 +166,7 @@ pub fn Configuration(attribute: TokenStream, item: TokenStream) -> TokenStream {
 #[allow(non_snake_case)]
 #[proc_macro_attribute]
 pub fn ConfigurationProperties(attribute: TokenStream, item: TokenStream) -> TokenStream {
-    expand_entry(MacroKind::ConfigurationProperties, attribute, item)
+    entrypoint::expand_entry(MacroKind::ConfigurationProperties, attribute, item)
 }
 
 /// Generates a callable factory marker and registration definition for a safe,
@@ -193,5 +183,5 @@ pub fn ConfigurationProperties(attribute: TokenStream, item: TokenStream) -> Tok
 /// diagnostics for an invalid declaration.
 #[proc_macro_attribute]
 pub fn bean(attribute: TokenStream, item: TokenStream) -> TokenStream {
-    expand_entry(MacroKind::Bean, attribute, item)
+    entrypoint::expand_entry(MacroKind::Bean, attribute, item)
 }

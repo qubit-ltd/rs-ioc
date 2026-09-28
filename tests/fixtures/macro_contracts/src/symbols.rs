@@ -11,7 +11,6 @@ use std::sync::Arc;
 
 use r#type::bean;
 use r#type::Configuration;
-use r#type::ContainerBuilder;
 
 type Result<T> = std::result::Result<T, std::io::Error>;
 
@@ -38,6 +37,8 @@ pub fn collision(__qubit_context: Arc<u8>, __qubit_ioc_argument_0: Arc<u16>) -> 
 /// Installs a child bean from a module with a local result alias.
 #[Configuration]
 mod result_shadow {
+    use r#type::bean;
+
     type Result<T> = std::result::Result<T, std::io::Error>;
 
     #[bean]
@@ -55,6 +56,8 @@ mod result_shadow {
 /// Confirms generated registration code ignores consumer Result aliases.
 #[test]
 fn test_shadowed_result_and_internal_parameter_names() {
+    use r#type::ContainerBuilder;
+
     let _: Result<()> = std::result::Result::Ok(());
     let mut builder = ContainerBuilder::new();
     builder.register_instance(Arc::new(2_u8)).expect("register u8");

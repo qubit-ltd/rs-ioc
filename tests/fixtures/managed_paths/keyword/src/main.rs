@@ -1,0 +1,59 @@
+// =============================================================================
+//    Copyright (c) 2025 - 2026 Haixing Hu.
+//
+//    SPDX-License-Identifier: Apache-2.0
+//
+//    Licensed under the Apache License, Version 2.0.
+// =============================================================================
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
+use std::sync::Arc;
+
+use r#type::bean;
+use r#type::ContainerBuilder;
+
+static STOPS: AtomicUsize = AtomicUsize::new(0);
+
+#[bean]
+fn synchronous() -> Result<r#type::Managed<u32>, std::io::Error> {
+    Ok(r#type::Managed::new(Arc::new(7), |_| {
+        STOPS.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }))
+}
+
+#[bean]
+async fn asynchronous() -> Result<::r#type::Managed<String>, std::io::Error> {
+    Ok(r#type::Managed::new(Arc::new(String::from("async")), |_| {
+        STOPS.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    }))
+}
+
+fn verify_managed_output_path() {
+    let mut builder = ContainerBuilder::new();
+    builder.install::<SynchronousBean>().unwrap();
+    builder.install::<AsynchronousBean>().unwrap();
+    let runtime = tokio::runtime::Builder::new_current_thread().build().unwrap();
+    let context = runtime.block_on(builder.build_all_async()).unwrap();
+    assert_eq!(*context.get::<u32>().unwrap(), 7);
+    assert_eq!(context.get::<String>().unwrap().as_str(), "async");
+    let mut shutdown = context.begin_shutdown();
+    runtime.block_on(shutdown.wait()).unwrap();
+    assert_eq!(STOPS.load(Ordering::SeqCst), 2);
+}
+
+
+fn main() {
+    verify_managed_output_path();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::verify_managed_output_path;
+
+    #[test]
+    fn managed_factory_paths_build_query_and_shutdown() {
+        verify_managed_output_path();
+    }
+}

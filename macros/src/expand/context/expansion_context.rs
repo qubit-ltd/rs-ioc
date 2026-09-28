@@ -7,14 +7,10 @@
 // =============================================================================
 //! Resolves the runtime crate path shared by expansion domains.
 
-use proc_macro_crate::FoundCrate;
-use proc_macro_crate::crate_name;
-use proc_macro2::Span;
 use proc_macro2::TokenStream;
-use quote::quote;
-use syn::Error;
-use syn::Ident;
 use syn::Result;
+
+use crate::runtime_path::RuntimePath;
 
 /// Context shared by expansion domains without assuming the runtime crate
 /// alias.
@@ -26,20 +22,8 @@ pub(crate) struct ExpansionContext {
 
 impl ExpansionContext {
     /// Resolves the runtime path as named in the consuming crate's manifest.
-    pub(crate) fn for_runtime() -> Result<Self> {
-        let runtime = match crate_name("qubit-ioc") {
-            Ok(FoundCrate::Itself) => quote!(::qubit_ioc),
-            Ok(FoundCrate::Name(name)) => {
-                let ident = Ident::new_raw(&name, Span::call_site());
-                quote!(::#ident)
-            }
-            Err(error) => {
-                return Err(Error::new(
-                    Span::call_site(),
-                    format!("cannot locate `qubit-ioc` runtime dependency: {error}"),
-                ));
-            }
-        };
+    pub(crate) fn for_runtime(runtime_path: &RuntimePath) -> Result<Self> {
+        let runtime = runtime_path.tokens();
         Ok(Self { runtime })
     }
 }
