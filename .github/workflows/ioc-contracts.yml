@@ -19,6 +19,36 @@ jobs:
       - name: Test proc macro crate directly
         run: cargo +1.94.0 test -p qubit-ioc-macros --locked
 
+  macro-coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: 1.94
+      - name: Install cargo-llvm-cov
+        run: cargo install cargo-llvm-cov --version 0.8.6 --locked
+      - name: Collect proc macro crate coverage
+        env:
+          CARGO_INCREMENTAL: "1"
+        run: cargo +1.94.0 llvm-cov -p qubit-ioc-macros --all-features --locked --json --output-path target/qubit-ioc-macros-coverage.json
+      - name: Print coverage totals
+        run: |
+          ruby -rjson -e '
+            totals = JSON.parse(File.read(ARGV.fetch(0))).fetch("data").first.fetch("totals")
+            %w[functions lines regions].each do |metric|
+              value = totals.fetch(metric)
+              puts "#{metric}: #{value.fetch("covered")}/#{value.fetch("count")} (#{value.fetch("percent")}%)"
+            end
+          ' target/qubit-ioc-macros-coverage.json
+      - name: Upload proc macro coverage report
+        uses: actions/upload-artifact@v7
+        with:
+          name: qubit-ioc-macros-coverage
+          path: target/qubit-ioc-macros-coverage.json
+          retention-days: 14
+          if-no-files-found: error
+
   macro-consumer:
     runs-on: ubuntu-latest
     strategy:
