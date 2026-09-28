@@ -10,12 +10,13 @@
 use proc_macro2::TokenStream;
 use quote::quote;
 use quote::quote_spanned;
+use syn::Result;
 
 use crate::expand::ExpansionContext;
 use crate::ir::ConfigurationPropertiesIr;
 
 /// Emits the user's struct and its config-dependent typed factory.
-pub(crate) fn expand(value: ConfigurationPropertiesIr, context: &ExpansionContext) -> syn::Result<TokenStream> {
+pub(crate) fn expand(value: ConfigurationPropertiesIr, context: &ExpansionContext) -> Result<TokenStream> {
     let ConfigurationPropertiesIr {
         item,
         prefix,

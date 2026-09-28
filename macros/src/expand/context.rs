@@ -5,17 +5,8 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-//! Dispatches validated declarations to independent expansion domains.
+//! Re-exports the context used to resolve the runtime crate path.
 
-mod component;
-mod context;
-mod dispatch;
+mod expansion_context;
 
-mod bean;
-mod config_properties;
-mod configuration;
-mod symbols;
-mod value;
-
-pub(crate) use context::ExpansionContext;
-pub(crate) use dispatch::dispatch;
+pub(crate) use expansion_context::ExpansionContext;

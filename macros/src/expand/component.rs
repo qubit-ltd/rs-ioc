@@ -10,7 +10,10 @@
 use proc_macro2::TokenStream;
 use quote::quote;
 use quote::quote_spanned;
+use syn::Fields;
+use syn::Ident;
 use syn::LitStr;
+use syn::Result;
 
 use crate::expand::ExpansionContext;
 use crate::expand::value;
@@ -21,7 +24,7 @@ use crate::ir::DependencyKind;
 
 /// Emits the original struct, a typed factory and its linked registration
 /// entry.
-pub(crate) fn expand(value: ComponentIr, context: &ExpansionContext) -> syn::Result<TokenStream> {
+pub(crate) fn expand(value: ComponentIr, context: &ExpansionContext) -> Result<TokenStream> {
     let ComponentIr {
         item,
         options,
@@ -71,7 +74,7 @@ pub(crate) fn expand(value: ComponentIr, context: &ExpansionContext) -> syn::Res
         initializers.push(quote!(#(#conditions)* #field_ident: #expression));
     }
 
-    let construct = if matches!(item.fields, syn::Fields::Unit) {
+    let construct = if matches!(item.fields, Fields::Unit) {
         quote!(#ident)
     } else {
         quote!(#ident { #(#initializers),* })
@@ -137,7 +140,7 @@ fn dependency_tokens(dependency: &DependencyIr, runtime: &TokenStream) -> TokenS
 }
 
 /// Builds one field from the exact request registered above or a Config read.
-fn field_expression(dependency: &DependencyIr, field_ident: &syn::Ident, runtime: &TokenStream) -> TokenStream {
+fn field_expression(dependency: &DependencyIr, field_ident: &Ident, runtime: &TokenStream) -> TokenStream {
     let requested_type = &dependency.requested_type;
     let context = quote!(__qubit_ioc_context);
     let access = match (&dependency.kind, &dependency.id) {

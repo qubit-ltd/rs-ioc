@@ -11,6 +11,7 @@ use proc_macro2::TokenStream;
 use quote::format_ident;
 use quote::quote;
 use syn::Ident;
+use syn::Result;
 use syn::ext::IdentExt;
 
 use crate::expand::ExpansionContext;
@@ -24,7 +25,7 @@ use crate::ir::OutputShape;
 
 /// Emits the original function, a marker definition, and optional linked
 /// discovery.
-pub(crate) fn expand(value: BeanIr, context: &ExpansionContext) -> syn::Result<TokenStream> {
+pub(crate) fn expand(value: BeanIr, context: &ExpansionContext) -> Result<TokenStream> {
     let BeanIr {
         item,
         options,

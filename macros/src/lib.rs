@@ -61,6 +61,7 @@
 use proc_macro::TokenStream;
 
 mod conditions;
+mod entrypoint;
 mod expand;
 // Later expansion tasks consume the complete IR; parser tests exercise it
 // already.
@@ -72,17 +73,8 @@ mod validate;
 #[cfg(test)]
 mod parse_tests;
 
+pub(crate) use entrypoint::expand_entry;
 use ir::MacroKind;
-
-/// Runs every declaration through parsing, validation, normalization, and
-/// expansion.
-fn expand_entry(kind: MacroKind, attribute: TokenStream, item: TokenStream) -> TokenStream {
-    parse::parse(kind, attribute.into(), item.into())
-        .and_then(validate::validate)
-        .and_then(expand::dispatch)
-        .unwrap_or_else(syn::Error::into_compile_error)
-        .into()
-}
 
 /// Generates a component definition for a named-field or unit struct.
 ///
