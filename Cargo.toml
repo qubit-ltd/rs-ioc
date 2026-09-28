@@ -20,6 +20,7 @@ include = [
     "/README.zh_CN.md",
     "/examples/readme_declarative.rs",
     "/examples/readme_manual.rs",
+    "/examples/app_lifecycle.rs",
     "/src/**",
     "/doc/**",
     "/tests/**",
@@ -48,3 +49,4 @@ serde = { version = "1.0", optional = true }
 serde = { version = "1.0", features = ["derive"] }
 trybuild = "1.0"
 qubit-spi = "0.13.0"
+tokio = { version = "1.53", features = ["rt", "sync"] }
