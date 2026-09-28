@@ -15,19 +15,22 @@ can use attribute macros or explicit registration.
 
 ## Installation
 
-This source checkout builds version `0.1.0`. Add it as a path dependency:
+After the `0.2.0` release is published, add the registry dependency:
 
 ```toml
 [dependencies]
-qubit-ioc = { version = "0.1", path = "../rs-ioc" }
+qubit-ioc = "0.2"
 ```
 
-The default features are `macros` and `config`. To use only the
-manual runtime, set `default-features = false`:
+This checkout is a `0.2.0` release candidate and is not yet available from
+crates.io. To develop against a local checkout, use:
 
 ```toml
-qubit-ioc = { version = "0.1", path = "../rs-ioc", default-features = false }
+qubit-ioc = { version = "0.2", path = "../rs-ioc" }
 ```
+
+The default features are `macros` and `config`. To use only the manual
+runtime, add `default-features = false` to either dependency declaration.
 
 | Feature | Default | Purpose |
 | --- | --- | --- |
@@ -91,6 +94,9 @@ parameter. `Option<Arc<T>>` and `Vec<Arc<T>>` express optional and all-candidate
 requests. `#[bean]` supports synchronous and asynchronous free functions,
 including factories returning `Managed<T>` or `Result<Managed<T>, E>`;
 asynchronous definitions require `build_async()`.
+The return may use an imported `Managed`, `qubit_ioc::Managed`, or the exact
+renamed runtime dependency path. Unrelated paths such as
+`application::Managed` remain ordinary component types.
 The macros apply `cfg` activation to generated dependency and registration
 code. Write `inject` and `value` helper attributes directly on fields; putting
 them inside `cfg_attr` produces a focused diagnostic.
@@ -98,6 +104,14 @@ Create each managed resource inside its managed factory, after graph
 validation. Register an already-running external resource with
 `register_instance(Arc<T>)` and keep its shutdown responsibility in the
 application; do not capture an already-created `Managed<T>` in a factory.
+The built context supports concurrent read-only queries through `Arc`.
+Release shared context handles before recovering the single shutdown owner with
+`Arc::try_unwrap`; then call `begin_shutdown()` and await its handle.
+
+Config reads from `#[value]` and `ConfigurationProperties` preserve stored
+values without interpolation. Structured deserialization rejects unknown
+fields by default. When interpolation is required, call
+`Config::get_interpolated` explicitly in a factory.
 
 ### Manual assembly
 

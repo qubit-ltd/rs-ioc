@@ -13,18 +13,21 @@
 
 ## 安装
 
-当前源码版本是 `0.1.0`。在本地源码工作区中可使用路径依赖：
+待 `0.2.0` 正式发布后，可通过注册表添加依赖：
 
 ```toml
 [dependencies]
-qubit-ioc = { version = "0.1", path = "../rs-ioc" }
+qubit-ioc = "0.2"
 ```
 
-默认启用 `macros` 和 `config`；只使用手动注册时可关闭默认 feature：
+当前 checkout 是 `0.2.0` 发布候选，尚未发布到 crates.io。在本地针对源码开发时可使用：
 
 ```toml
-qubit-ioc = { version = "0.1", path = "../rs-ioc", default-features = false }
+qubit-ioc = { version = "0.2", path = "../rs-ioc" }
 ```
+
+默认启用 `macros` 和 `config`；只使用手动注册时，在任一依赖声明中添加
+`default-features = false`。
 
 | feature | 默认 | 用途 |
 | --- | --- | --- |
@@ -84,11 +87,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 `Option<Arc<T>>` 表示可缺省，`Vec<Arc<T>>` 注入全部候选。`#[bean]` 可标注同步或
 异步自由函数，也支持返回 `Managed<T>` 或 `Result<Managed<T>, E>` 的托管工厂；
 图中含异步工厂时须调用 `build_async()`。
+返回类型可使用导入的 `Managed`、`qubit_ioc::Managed` 或重命名后的运行时依赖路径。
+`application::Managed` 这类无关路径仍按普通组件类型处理。
 宏会把 `cfg` 激活条件应用到生成的依赖请求和注册代码。`inject`、`value` 等 helper
 属性必须直接写在字段上；放进 `cfg_attr` 会收到明确诊断。
 托管资源应在图验证通过后由托管工厂创建。装配前已启动的外部资源使用
 `register_instance(Arc<T>)` 注入，并由应用负责关闭；不要在工厂闭包中捕获已创建的
 `Managed<T>`。
+
+构建后的上下文支持通过 `Arc` 并发执行只读查询。关闭前先释放共享上下文句柄，
+再用 `Arc::try_unwrap` 取回唯一所有者，调用 `begin_shutdown()` 并等待关闭句柄完成。
+
+`#[value]` 与 `ConfigurationProperties` 读取保存的原始值，不会自动插值。
+结构化反序列化默认拒绝未知字段。需要插值时，可在工厂中显式调用
+`Config::get_interpolated`。
 
 ### 手动组装
 

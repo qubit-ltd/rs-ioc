@@ -2,7 +2,7 @@
 
 [English user guide](user_guide.md) · [项目 README](../README.zh_CN.md)
 
-本手册面向使用 `qubit-ioc` 0.1.0 源码的 Rust 应用开发者，介绍如何在启动时组装
+本手册面向使用 `qubit-ioc` 0.2.0 发布候选的 Rust 应用开发者，介绍如何在启动时组装
 应用级共享组件、定位错误，以及安排资源关闭。项目清单要求 Rust 1.94 或更新版本。
 
 ## 概念模型
@@ -46,7 +46,7 @@ cargo test --manifest-path tests/fixtures/ioc_cross_crate/Cargo.toml
 
 ```toml
 [dependencies]
-qubit-ioc = { version = "0.1", path = "../rs-ioc", default-features = false }
+qubit-ioc = { version = "0.2", path = "../rs-ioc", default-features = false }
 ```
 
 将下面的代码放到该应用的 `src/main.rs`，然后在应用目录运行 `cargo run`：
@@ -152,6 +152,12 @@ fn replace_for_test() -> Result<(), Box<dyn Error>> {
 
 读取一组结构化配置时，给具名字段结构体派生 `Deserialize`，并标注 `#[ConfigurationProperties(prefix = "service")]`。安装该定义，并让 builder 使用同一份配置快照。属性缺失或反序列化失败会中止构建，错误保留原始反序列化细节。`tests/config_macro_tests.rs` 展示了完整设置方式和成功结果。
 
+`#[value]` 读取保存的原始值。结构化读取同样不会插值，并且默认拒绝未知字段。
+应用需要插值时，可在手工工厂中注入 `Config` 并调用
+`Config::get_interpolated`；可运行示例见
+[`examples/config_contract.rs`](../examples/config_contract.rs)，对应测试见
+[`config_tests.rs`](../tests/config_tests.rs)。
+
 只有构造过程需要等待 I/O 时才使用异步工厂。可以声明 `#[bean] async fn`，也可调用 `register_async_factory`；之后用 `build_async()` 或 `build_all_async()`，并由应用执行器驱动 future。若选中图里有异步定义却调用同步 `build()`，会在工厂运行前返回 `BuildError::AsyncRequired`。执行器选择和取消策略由应用负责。
 
 ## 错误与排障
@@ -171,7 +177,10 @@ fn replace_for_test() -> Result<(), Box<dyn Error>> {
 
 ## 生命周期与限制
 
-上下文保存共享 `Arc`，查询不会再次执行工厂。需要关闭的资源组件可显式选择
+上下文保存共享 `Arc`，查询不会再次执行工厂，并可在多线程中并发查询。
+需要关闭时先释放全部共享上下文句柄，再用 `Arc::try_unwrap` 取回唯一所有者，
+随后调用 `begin_shutdown()`。完整示例见
+[`examples/context_sharing.rs`](../examples/context_sharing.rs)。需要关闭的资源组件可显式选择
 `Managed<T>`。仓库提供可运行的 worker 示例：它在托管工厂中启动任务，发送停止信号，
 等待任务退出并检查结果。可在仓库根目录运行
 `cargo run --example app_lifecycle --no-default-features`；源码见

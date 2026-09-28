@@ -1,7 +1,7 @@
 # qubit-ioc Current Design
 
 > This document describes the implemented design and public contracts of
-> `qubit-ioc` 0.1.0. For usage, see the [English user guide](user_guide.md) or
+> `qubit-ioc` 0.2.0 release candidate. For usage, see the [English user guide](user_guide.md) or
 > [中文用户手册](user_guide.zh_CN.md). Historical design notes remain available
 > in [the kernel draft](design.zh_CN.md) and [the annotation draft](annotation-design.zh_CN.md).
 > The implementation and tests define behavior; this document does not promise
@@ -16,6 +16,10 @@ application startup. A successful build publishes a read-only
 registration. A macro-generated definition is not installed automatically:
 the application or provider must call `install::<T>()` or its own
 `register_ioc(&mut builder)` function.
+
+The built context supports concurrent read-only queries through `Arc`.
+Shutdown remains a single-owner operation that consumes the context after all
+shared query handles have been released.
 
 The runtime handles bindings, dependency selection, construction order,
 diagnostic paths, and explicit managed shutdown. `qubit-spi` handles provider
@@ -114,6 +118,9 @@ it is not rejected by `with_config` itself. `#[value]` reads a scalar and
 `#[ConfigurationProperties]` deserializes a subtree. A missing snapshot,
 missing value, or conversion error is reported during validation or
 construction with the original configuration source and component path.
+`#[value]` and structured deserialization do not interpolate values;
+structured deserialization rejects unknown fields by default. A manual factory
+can call `Config::get_interpolated` when interpolation is required.
 
 Provider crates should expose an explicit `register_ioc(&mut builder)` entry
 point. The application chooses which providers to install. The

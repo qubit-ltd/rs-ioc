@@ -2,7 +2,7 @@
 
 [中文用户手册](user_guide.zh_CN.md) · [README](../README.md)
 
-This guide is for Rust application authors using the `qubit-ioc` 0.1.0 source
+This guide is for Rust application authors using the `qubit-ioc` 0.2.0 release candidate
 checkout. It explains how to assemble application-wide shared components,
 diagnose startup failures, and manage their lifetime. Rust 1.94 or newer is
 required by the package manifest.
@@ -51,7 +51,7 @@ In an application beside this checkout, add:
 
 ```toml
 [dependencies]
-qubit-ioc = { version = "0.1", path = "../rs-ioc", default-features = false }
+qubit-ioc = { version = "0.2", path = "../rs-ioc", default-features = false }
 ```
 
 Place the following code in `src/main.rs`, then run `cargo run` in that
@@ -170,6 +170,13 @@ Use `Option<Arc<T>>` when a profile may omit a dependency; it resolves to `None`
 
 With both `macros` and `config` enabled, a field can read one value with `#[value("service.port")]`. Stage the snapshot using `builder.with_config(config)?` before installing the definition. A missing key or a value of the wrong type becomes `BuildError::ConfigReadFailed`, retaining the configuration source and field path.
 
+`#[value]` reads the stored value directly. `ConfigurationProperties` also
+deserializes stored values without interpolation and rejects unknown fields by
+default. If an application needs interpolation, inject `Config` into a manual
+factory and call `Config::get_interpolated`; see
+[`examples/config_contract.rs`](../examples/config_contract.rs). These rules
+are covered in [config_tests.rs](../tests/config_tests.rs).
+
 For a structured subtree, derive `Deserialize` and use `#[ConfigurationProperties(prefix = "service")]` on a named-field struct. Install that definition and stage the same config snapshot. A missing or invalid property fails construction; the error retains the original deserialization detail. The config macro tests in `tests/config_macro_tests.rs` show the exact setup and successful result.
 
 Use an async factory when construction itself must await I/O. `#[bean] async fn` and `register_async_factory` both create async definitions; choose `build_async()` or `build_all_async()` and drive the returned future with the application's executor. Calling synchronous `build()` on a selected async definition returns `BuildError::AsyncRequired` before any factory runs. The app owns executor choice and cancellation policy.
@@ -193,7 +200,11 @@ at registration, or it receives `BuildAccessError::UndeclaredDependency`.
 ## Lifetime and limits
 
 The context stores shared `Arc` instances and does not rerun factories on
-lookup. Components own synchronization of their mutable state. Resource
+lookup. Read-only context queries support concurrent sharing through `Arc`.
+When shutdown is needed, release all shared context handles, recover the
+single owner with `Arc::try_unwrap`, then call `begin_shutdown()`. The
+[`context_sharing` example](../examples/context_sharing.rs) demonstrates this
+sequence. Components own synchronization of their mutable state. Resource
 components can opt in to managed shutdown with `Managed<T>`. The runnable
 example starts a worker task inside its factory, sends a stop signal, awaits
 the task, and verifies it exited:

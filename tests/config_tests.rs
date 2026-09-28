@@ -26,6 +26,12 @@ struct ServiceProperties {
     port: u16,
 }
 
+#[derive(Debug, Deserialize, PartialEq)]
+struct EndpointProperties {
+    host: String,
+    endpoint: String,
+}
+
 #[test]
 fn test_with_config_shares_one_snapshot_with_factories() {
     let mut config = Config::new();
@@ -67,6 +73,33 @@ fn test_get_value_uses_direct_read_without_interpolation() {
     assert_eq!(
         get_value::<String>(&config, "service.url").expect("direct read"),
         "https://${service.host}"
+    );
+}
+
+#[test]
+fn test_scalar_and_structured_reads_leave_interpolation_explicit() {
+    let mut config = Config::new();
+    config.set("service.host", "localhost").expect("set host");
+    config
+        .set("service.endpoint", "${service.host}:8080")
+        .expect("set endpoint");
+
+    assert_eq!(
+        get_value::<String>(&config, "service.endpoint").expect("direct read"),
+        "${service.host}:8080"
+    );
+    assert_eq!(
+        deserialize_properties::<EndpointProperties>(&config, "service").expect("structured read"),
+        EndpointProperties {
+            host: "localhost".to_owned(),
+            endpoint: "${service.host}:8080".to_owned(),
+        }
+    );
+    assert_eq!(
+        config
+            .get_interpolated::<String>("service.endpoint")
+            .expect("explicit interpolation"),
+        "localhost:8080"
     );
 }
 
