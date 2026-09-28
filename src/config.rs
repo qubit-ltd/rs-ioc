@@ -23,6 +23,11 @@ use crate::error::FactoryError;
 ///
 /// `T` is the value type to convert from the configuration entry.
 ///
+/// # Parameters
+///
+/// * `config` - Snapshot that supplies the value.
+/// * `path` - Exact configuration key to read without interpolation.
+///
 /// # Returns
 ///
 /// The converted value at `path`.
@@ -42,6 +47,12 @@ pub fn get_value<T: FromConfig>(config: &Config, path: &str) -> Result<T, Factor
 /// # Type Parameters
 ///
 /// `T` is the value type to convert from the configuration entry.
+///
+/// # Parameters
+///
+/// * `config` - Snapshot that supplies the value.
+/// * `path` - Exact configuration key to read without interpolation.
+/// * `target` - Generated field or parameter named in build diagnostics.
 ///
 /// # Returns
 ///
@@ -68,6 +79,11 @@ pub fn get_value_for<T: FromConfig>(config: &Config, path: &str, target: &str) -
 ///
 /// `T` is the owned target type deserialized from the selected subtree.
 ///
+/// # Parameters
+///
+/// * `config` - Snapshot containing the subtree.
+/// * `prefix` - Root-relative path of the subtree to deserialize.
+///
 /// # Returns
 ///
 /// The deserialized value for the subtree at `prefix`.
@@ -88,6 +104,12 @@ pub fn deserialize_properties<T: DeserializeOwned>(config: &Config, prefix: &str
 /// # Type Parameters
 ///
 /// `T` is the owned properties type deserialized from the selected subtree.
+///
+/// # Parameters
+///
+/// * `config` - Snapshot containing the subtree.
+/// * `prefix` - Root-relative path of the subtree to deserialize.
+/// * `target` - Generated properties type named in build diagnostics.
 ///
 /// # Returns
 ///

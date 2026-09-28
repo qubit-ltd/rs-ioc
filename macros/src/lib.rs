@@ -90,6 +90,15 @@ fn expand_entry(kind: MacroKind, attribute: TokenStream, item: TokenStream) -> T
 /// and `profile`. Fields use `Arc<T>`, `Option<Arc<T>>`, or `Vec<Arc<T>>`;
 /// `#[inject(id = "...")]` selects one exact binding. `#[value("...")]`
 /// requires both runtime features `macros` and `config`.
+///
+/// # Parameters
+///
+/// `attribute` contains the declaration options; `item` contains the struct.
+///
+/// # Returns
+///
+/// The expanded struct and its generated component definition, or compiler
+/// diagnostics for an invalid declaration.
 #[allow(non_snake_case)]
 #[proc_macro_attribute]
 pub fn Component(attribute: TokenStream, item: TokenStream) -> TokenStream {
@@ -98,6 +107,15 @@ pub fn Component(attribute: TokenStream, item: TokenStream) -> TokenStream {
 
 /// Generates a struct-backed service definition using the `Component` field
 /// injection rules.
+///
+/// # Parameters
+///
+/// `attribute` contains component options; `item` contains the struct.
+///
+/// # Returns
+///
+/// The expanded struct and its generated service definition, or compiler
+/// diagnostics for an invalid declaration.
 #[allow(non_snake_case)]
 #[proc_macro_attribute]
 pub fn Service(attribute: TokenStream, item: TokenStream) -> TokenStream {
@@ -106,6 +124,15 @@ pub fn Service(attribute: TokenStream, item: TokenStream) -> TokenStream {
 
 /// Generates a struct-backed repository definition using the `Component`
 /// field injection rules.
+///
+/// # Parameters
+///
+/// `attribute` contains component options; `item` contains the struct.
+///
+/// # Returns
+///
+/// The expanded struct and its generated repository definition, or compiler
+/// diagnostics for an invalid declaration.
 #[allow(non_snake_case)]
 #[proc_macro_attribute]
 pub fn Repository(attribute: TokenStream, item: TokenStream) -> TokenStream {
@@ -116,6 +143,16 @@ pub fn Repository(attribute: TokenStream, item: TokenStream) -> TokenStream {
 /// Its optional `profile` becomes the default for child beans without their
 /// own profile. The function installs definitions in source order; building
 /// the container remains the application's responsibility.
+///
+/// # Parameters
+///
+/// `attribute` contains the optional profile; `item` contains the inline
+/// module.
+///
+/// # Returns
+///
+/// The expanded module with a generated `register_ioc` function, or compiler
+/// diagnostics for an invalid declaration.
 #[allow(non_snake_case)]
 #[proc_macro_attribute]
 pub fn Configuration(attribute: TokenStream, item: TokenStream) -> TokenStream {
@@ -125,6 +162,16 @@ pub fn Configuration(attribute: TokenStream, item: TokenStream) -> TokenStream {
 /// Generates a config-backed component for a named-field struct that can be
 /// deserialized by Serde. `prefix` is required; the runtime `config` feature
 /// must be enabled along with `macros`.
+///
+/// # Parameters
+///
+/// `attribute` contains the required prefix and optional component settings;
+/// `item` contains the struct.
+///
+/// # Returns
+///
+/// The expanded struct and its generated config-backed definition, or compiler
+/// diagnostics for an invalid declaration.
 #[allow(non_snake_case)]
 #[proc_macro_attribute]
 pub fn ConfigurationProperties(attribute: TokenStream, item: TokenStream) -> TokenStream {
@@ -134,6 +181,15 @@ pub fn ConfigurationProperties(attribute: TokenStream, item: TokenStream) -> Tok
 /// Generates a callable factory marker and registration definition for a safe,
 /// non-generic free function. Parameters use the supported injection shapes;
 /// return forms and marker visibility are described in the crate-level docs.
+///
+/// # Parameters
+///
+/// `attribute` contains factory options; `item` contains the free function.
+///
+/// # Returns
+///
+/// The callable function and generated marker definition, or compiler
+/// diagnostics for an invalid declaration.
 #[proc_macro_attribute]
 pub fn bean(attribute: TokenStream, item: TokenStream) -> TokenStream {
     expand_entry(MacroKind::Bean, attribute, item)

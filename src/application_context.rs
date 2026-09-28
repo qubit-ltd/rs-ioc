@@ -81,6 +81,10 @@ impl ApplicationContext {
     /// immutable context and lists removed active bindings in registration
     /// order.
     ///
+    /// # Parameters
+    ///
+    /// `key` is the exact typed binding key whose source history is queried.
+    ///
     /// # Returns
     ///
     /// `Some` contains the active definition source and replaced sources;
@@ -139,6 +143,10 @@ impl ApplicationContext {
     ///
     /// `T` is the concrete or trait-object type used to identify the binding.
     /// It must be thread-safe and `'static` so the context can share it.
+    ///
+    /// # Parameters
+    ///
+    /// `id` is the exact, case-sensitive identifier of the requested binding.
     ///
     /// # Returns
     ///

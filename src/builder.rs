@@ -65,9 +65,17 @@ type PreparedDefinitions = (Vec<PendingDefinition>, Vec<String>, Vec<Dependency>
 /// ```
 pub trait ComponentDefinition {
     /// Returns this definition's diagnostic source location.
+    ///
+    /// # Returns
+    ///
+    /// The package, module, file, and item location used in diagnostics.
     fn source() -> DefinitionSource;
 
     /// Registers this definition into `builder`.
+    ///
+    /// # Parameters
+    ///
+    /// `builder` receives the definition and its generated binding aliases.
     ///
     /// # Errors
     ///
@@ -117,6 +125,10 @@ struct Replacement {
 #[allow(clippy::result_large_err)]
 impl ContainerBuilder {
     /// Creates an empty container builder with the `default` profile active.
+    ///
+    /// # Returns
+    ///
+    /// An empty builder ready to receive component definitions.
     pub fn new() -> Self {
         Self::default()
     }
@@ -147,6 +159,15 @@ impl ContainerBuilder {
     ///
     /// `T` is the component type whose exact-ID binding should be built.
     ///
+    /// # Parameters
+    ///
+    /// `id` is the exact identifier selected as a required root.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` after the request is added, or when it was already
+    /// present.
+    ///
     /// # Errors
     ///
     /// Returns [`RegistrationError::InvalidBindingId`] when `id` does not
@@ -167,6 +188,18 @@ impl ContainerBuilder {
     ///
     /// `T` is the concrete or trait-object component type and must be
     /// thread-safe and `'static` for storage in the context.
+    ///
+    /// # Parameters
+    ///
+    /// `value` is the shared component to stage under default options.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` after staging the instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RegistrationError`] if the generated definition is invalid.
     #[track_caller]
     pub fn register_instance<T: ?Sized + Send + Sync + 'static>(
         &mut self,
@@ -185,6 +218,19 @@ impl ContainerBuilder {
     ///
     /// `T` is the concrete or trait-object component type and must be
     /// thread-safe and `'static` for storage in the context.
+    ///
+    /// # Parameters
+    ///
+    /// * `value` - Shared component to stage.
+    /// * `options` - ID, profile, primary selection, and collection order.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` after staging the instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RegistrationError`] for invalid options or a duplicate key.
     #[track_caller]
     pub fn register_instance_with<T: ?Sized + Send + Sync + 'static>(
         &mut self,
@@ -205,6 +251,19 @@ impl ContainerBuilder {
     ///
     /// `T` is the component type returned by the factory. `F` is a sendable,
     /// one-shot factory that returns a shared `T` or [`FactoryError`].
+    ///
+    /// # Parameters
+    ///
+    /// * `dependencies` - Requests the factory may read during construction.
+    /// * `factory` - One-shot closure that creates the shared component.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` after staging the factory.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RegistrationError`] for invalid requests or default options.
     #[track_caller]
     pub fn register_factory<T, F>(&mut self, dependencies: &[Dependency], factory: F) -> Result<(), RegistrationError>
     where
@@ -223,6 +282,20 @@ impl ContainerBuilder {
     ///
     /// `T` is the component type returned by the factory. `F` is a sendable,
     /// one-shot factory that returns a shared `T` or [`FactoryError`].
+    ///
+    /// # Parameters
+    ///
+    /// * `dependencies` - Requests the factory may read during construction.
+    /// * `options` - ID, profile, primary selection, and collection order.
+    /// * `factory` - One-shot closure that creates the shared component.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` after staging the factory.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RegistrationError`] for invalid options or duplicate requests.
     #[track_caller]
     pub fn register_factory_with<T, F>(
         &mut self,
@@ -330,6 +403,19 @@ impl ContainerBuilder {
     ///
     /// `T` is the component type returned by the future. `F` is a sendable,
     /// one-shot factory that creates that future.
+    ///
+    /// # Parameters
+    ///
+    /// * `dependencies` - Requests the factory may read during construction.
+    /// * `factory` - One-shot closure that creates the component future.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` after staging the factory.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RegistrationError`] for invalid requests or default options.
     #[track_caller]
     pub fn register_async_factory<T, F>(
         &mut self,
@@ -351,6 +437,20 @@ impl ContainerBuilder {
     ///
     /// `T` is the component type returned by the future. `F` is a sendable,
     /// one-shot factory that creates that future.
+    ///
+    /// # Parameters
+    ///
+    /// * `dependencies` - Requests the factory may read during construction.
+    /// * `options` - ID, profile, primary selection, and collection order.
+    /// * `factory` - One-shot closure that creates the component future.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` after staging the factory.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RegistrationError`] for invalid options or duplicate requests.
     #[track_caller]
     pub fn register_async_factory_with<T, F>(
         &mut self,
@@ -457,6 +557,14 @@ impl ContainerBuilder {
     ///
     /// `D` is a generated or handwritten definition implementing
     /// [`ComponentDefinition`].
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` after the definition is staged.
+    ///
+    /// # Errors
+    ///
+    /// Returns the registration error produced by the definition.
     pub fn install<D: ComponentDefinition>(&mut self) -> Result<(), RegistrationError> {
         D::register(self)
     }
@@ -468,6 +576,20 @@ impl ContainerBuilder {
     /// `anchor` exactly once. At build time, the complete matching active
     /// definition is removed after profile filtering. Later duplicates still
     /// fail.
+    ///
+    /// # Parameters
+    ///
+    /// * `anchor` - Exact key identifying the active definition to replace.
+    /// * `definition` - Callback that stages the replacement definition.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` after staging the complete replacement.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RegistrationError`] if the callback fails, stages other than
+    /// one definition, or does not declare `anchor` exactly once.
     pub fn replace_definition<F>(&mut self, anchor: BindingKey, definition: F) -> Result<(), RegistrationError>
     where
         F: FnOnce(&mut Self) -> Result<(), RegistrationError>,
@@ -506,6 +628,18 @@ impl ContainerBuilder {
     /// Each profile must match `[A-Za-z][A-Za-z0-9_-]*`; an empty slice
     /// restores the default profile. Invalid input leaves the consumed
     /// builder unavailable.
+    ///
+    /// # Parameters
+    ///
+    /// `profiles` lists the profiles to activate for subsequent builds.
+    ///
+    /// # Returns
+    ///
+    /// The builder with the new active profile set.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RegistrationError::InvalidProfile`] if any profile is invalid.
     #[track_caller]
     pub fn active_profiles(mut self, profiles: &[&str]) -> Result<Self, RegistrationError> {
         for profile in profiles {
@@ -526,6 +660,15 @@ impl ContainerBuilder {
     /// An active asynchronous factory yields `AsyncRequired` before any factory
     /// runs. Factory failures retain their source and no partial context
     /// escapes.
+    ///
+    /// # Returns
+    ///
+    /// The context containing the selected dependency closure.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BuildError`] for missing roots, invalid graphs, asynchronous
+    /// factories, or construction failures.
     pub fn build(self) -> Result<ApplicationContext, BuildError> {
         if self.roots.is_empty() {
             return Err(BuildError::NoRootsSelected);
@@ -553,6 +696,15 @@ impl ContainerBuilder {
     ///
     /// Prefer [`Self::build`] when the application only needs a subset of
     /// discovered definitions.
+    ///
+    /// # Returns
+    ///
+    /// The context containing every active definition.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BuildError`] for invalid graphs, asynchronous factories, or
+    /// construction failures.
     pub fn build_all(self) -> Result<ApplicationContext, BuildError> {
         let (definitions, profiles, _) = self.prepare_definitions()?;
         let graph = ValidatedGraph::validate_roots(definitions, &profiles, None)?;
@@ -578,6 +730,15 @@ impl ContainerBuilder {
     ///
     /// Dropping it stops unstarted factories; completed external side effects
     /// remain the factory's responsibility. A failure publishes no context.
+    ///
+    /// # Returns
+    ///
+    /// A future that resolves to the context containing the selected closure.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BuildError`] for missing roots, invalid graphs, or factory
+    /// failures. Managed cleanup failures are retained with the build error.
     pub async fn build_async(self) -> Result<ApplicationContext, BuildError> {
         if self.roots.is_empty() {
             return Err(BuildError::NoRootsSelected);
@@ -589,6 +750,16 @@ impl ContainerBuilder {
 
     /// Validates and asynchronously constructs every definition active under
     /// the configured profiles, whether or not a root was registered.
+    ///
+    /// # Returns
+    ///
+    /// A future that resolves to the context containing every active
+    /// definition.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BuildError`] for invalid graphs or factory failures. Managed
+    /// cleanup failures are retained with the build error.
     pub async fn build_all_async(self) -> Result<ApplicationContext, BuildError> {
         let (definitions, profiles, _) = self.prepare_definitions()?;
         let graph = ValidatedGraph::validate_roots(definitions, &profiles, None)?;

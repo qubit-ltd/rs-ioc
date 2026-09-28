@@ -27,6 +27,10 @@ impl ContainerBuilder {
     ///
     /// The builder containing the registered shared configuration snapshot.
     ///
+    /// # Parameters
+    ///
+    /// `config` is the shared configuration snapshot to register.
+    ///
     /// # Errors
     ///
     /// Returns [`RegistrationError`] if staging the snapshot fails.

@@ -72,6 +72,10 @@ impl BuildContext {
     /// `T` identifies the declared concrete or trait-object dependency and
     /// must be thread-safe and `'static`.
     ///
+    /// # Parameters
+    ///
+    /// `id` is the exact identifier of the declared required request.
+    ///
     /// # Returns
     ///
     /// A shared handle to the component selected for the declared request.
@@ -97,6 +101,10 @@ impl BuildContext {
     /// `T` identifies the declared concrete or trait-object dependency and
     /// must be thread-safe and `'static`.
     ///
+    /// # Parameters
+    ///
+    /// `id` is the exact identifier of the declared required request.
+    ///
     /// # Returns
     ///
     /// A shared handle to the component selected by `id`.
@@ -118,6 +126,10 @@ impl BuildContext {
     ///
     /// `T` identifies the declared concrete or trait-object dependency and
     /// must be thread-safe and `'static`.
+    ///
+    /// # Parameters
+    ///
+    /// `id` is the exact identifier of the declared required request.
     ///
     /// # Returns
     ///
@@ -142,6 +154,10 @@ impl BuildContext {
     ///
     /// `T` identifies the declared concrete or trait-object dependency and
     /// must be thread-safe and `'static`.
+    ///
+    /// # Parameters
+    ///
+    /// `id` is the exact identifier of the declared optional request.
     ///
     /// # Returns
     ///

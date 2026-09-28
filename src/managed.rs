@@ -29,6 +29,14 @@ use crate::store::InstanceStore;
 ///
 /// The future is `Send` and owns everything needed to finish after the
 /// component context begins shutdown.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_ioc::managed::CleanupFuture;
+///
+/// let wait: CleanupFuture = Box::pin(async { Ok(()) });
+/// ```
 pub type CleanupFuture = Pin<Box<dyn Future<Output = Result<(), CleanupError>> + Send + 'static>>;
 
 /// A sendable future that constructs one managed component.
@@ -38,6 +46,18 @@ pub type CleanupFuture = Pin<Box<dyn Future<Output = Result<(), CleanupError>> +
 /// # Type Parameters
 ///
 /// `T` is the thread-safe component value returned by the future.
+///
+/// # Examples
+///
+/// ```
+/// use std::sync::Arc;
+/// use qubit_ioc::managed::ManagedFactoryFuture;
+/// use qubit_ioc::Managed;
+///
+/// let factory: ManagedFactoryFuture<u32> = Box::pin(async {
+///     Ok(Managed::new(Arc::new(1), |_| Ok(())))
+/// });
+/// ```
 pub type ManagedFactoryFuture<T> =
     Pin<Box<dyn Future<Output = Result<Managed<T>, crate::error::FactoryError>> + Send + 'static>>;
 
