@@ -1,52 +1,35 @@
-# 应用组件生命周期
+# 托管组件生命周期
 
-`qubit-ioc` 只对显式标记为 `Managed<T>` 的组件保存 stop 和可选 wait 动作。
-普通组件仍由应用自行管理。托管组件在成功构建后由 `ApplicationContext` 持有关闭动作；
-应用应在退出时消费上下文并调用 `begin_shutdown()`，再等待返回的句柄。
-托管资源应在托管工厂执行时创建，使图验证失败或 root 未选中时不会提前启动资源。
-已启动的外部资源通过 `register_instance(Arc<T>)` 注入，并由应用负责关闭。
+[English lifecycle guide](lifecycle.md) · [中文用户手册](user_guide.zh_CN.md)
 
-```rust
-use std::sync::Arc;
-use qubit_ioc::{ApplicationContext, CleanupError, ContainerBuilder, Managed};
+`qubit-ioc` 只为显式返回 `Managed<T>` 的组件保留 stop 和可选 wait 动作。普通组件由
+应用负责。托管 factory 在登记时不会启动资源；它只会在所选依赖图验证通过后运行，
+因此未选中的定义或无效图不会提前启动 worker。
 
-struct Worker;
-impl Worker {
-    fn request_stop(&self) -> Result<(), std::io::Error> { Ok(()) }
-}
+完整的可执行示例位于[`examples/app_lifecycle.rs`](../examples/app_lifecycle.rs)，运行：
 
-async fn run() -> Result<(), Box<dyn std::error::Error>> {
-    let mut builder = ContainerBuilder::new();
-    builder.register_managed_factory::<Worker, _>(&[], |_| {
-        let worker = Arc::new(Worker);
-        Ok(Managed::new(Arc::clone(&worker), |worker| {
-            worker.request_stop().map_err(CleanupError::new)
-        }))
-    })?;
-    builder.root::<Worker>();
-    let context: ApplicationContext = builder.build_async().await?;
-    let _worker = context.get::<Worker>()?;
-
-    let mut shutdown = context.begin_shutdown();
-    shutdown.wait().await?;
-    Ok(())
-}
+```bash
+cargo run --example app_lifecycle --no-default-features
 ```
 
-`Managed::new` 提供同步 stop；`.with_wait` 可添加异步终止等待。正常关闭会先按逆构建顺序
-调用全部 stop，再按同一顺序执行 wait，并聚合错误。`build()` 的工厂失败会 stop 已创建
-资源，但不会等待；若构建失败前也必须等待资源终止，应使用 `build_async()`，即使工厂
-本身都是同步的。异步构建失败会 stop 后 wait，并保留原始构建错误及清理错误。
+示例在托管 factory 执行时启动 Tokio task。同步 stop 回调发送 one-shot 停止信号；
+wait 回调 await task handle；主函数检查 task 已退出。Tokio 只是示例的 dev-dependency，
+运行时库本身不依赖 Tokio。
 
-stop 返回错误或发生 panic 时，失败会记录为 `ShutdownPhase::Stop` 并继续调用其他
-stop；panic 文本会放入对应的 `CleanupError`。wait 回调创建或 wait future 轮询时发生的
-unwind panic 会转换为 `ShutdownPhase::Wait` 失败，其他 wait 仍会执行。`panic = "abort"`
-以及 future 析构期间的 panic 不会被捕获。
+`ApplicationContext::begin_shutdown(self)` 消费 context，按逆构建顺序尝试所有 stop，
+并返回 `ShutdownHandle`。调用并 await `ShutdownHandle::wait(&mut self)`，按相同顺序
+等待 worker 结束并汇总错误。stop 错误或 unwind panic 会记录下来，但不会阻止后续
+stop；创建或轮询 wait future 时发生的 panic 也会记录，并继续执行后续 wait。
 
-异步构建 future 被取消时，已构造资源会收到 stop，但不会 wait；stop 错误无法返回给已
-取消的调用方。工厂在返回 `Managed<T>` 前产生的副作用由工厂自己清理。普通上下文 drop
-不会自动停止资源；外部 `Arc` 克隆也可能在关闭后继续持有对象。若 wait future 被取消，保留句柄并再次调用 `wait()` 可从原 future 继续等待。
+如果调用方取消 `wait`，保留同一个 handle 后再次调用 `wait`，会从当前 pending future
+继续。丢弃 handle 会放弃未完成的 wait；stop 已经执行。未调用
+`begin_shutdown` 就丢弃 `ApplicationContext` 不会触发托管回调。外部持有的组件 `Arc`
+可在 shutdown 完成后继续保持值存活。
 
-下游消费者夹具位于 `rs-execution-services/tests/fixtures/ioc_application_consumer`，展示
-`EventBus` 和 `ExecutionServices` 的托管关闭调用，不表示已有生产应用采用。最小示例见
-`cargo run --example app_lifecycle`。
+同步 build 失败会停止已完成构造的托管资源，但不会等待它们。异步 build 失败会 stop
+并 wait，再把原 build 错误与清理错误一并返回。取消异步 build 只 stop 已构造资源，不
+wait；被取消的调用方无法接收 stop 错误。factory 在返回 `Managed<T>` 之前产生的副作用，
+由 factory 自己负责清理。
+
+已启动的外部资源可以通过 `register_instance(Arc<T>)` 登记，应用仍保留关闭责任。不要
+为了追加清理动作，把已经运行的外部资源伪装成 factory 创建的托管资源。

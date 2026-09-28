@@ -98,6 +98,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 自动生成绑定。`macros` 与 `config` 可独立启用：组件和 bean 声明需要 `macros`；
 `#[value]`、`#[ConfigurationProperties]` 同时需要 `macros` 和 `config`，只开
 `config` 不会导出这些宏。关闭默认 feature 后，手动注册不需要这两个 feature。
+字段上的 `cfg` 与嵌套 `cfg_attr(..., cfg(...))` 会同步控制生成的依赖请求和字段初始化。
+`inject`、`value` 等 helper 必须直接写在字段上；嵌在 `cfg_attr` 中会产生清晰诊断。
 
 `root::<T>()` 选择未指定 ID 的根节点；`root_by_id::<T>("some.id")?` 精确
 选择绑定。`build()` 至少需要一个根节点，只构建它的传递依赖；`build_all()` 会
@@ -110,11 +112,12 @@ ASCII 字母，后续只能使用 ASCII 字母、数字或下划线。构建后�
 `get_by_id::<T>()`、`try_get::<T>()`、`get_all::<T>()` 分别进行精确、可选或
 集合查询。`get_all()` 按 `order`、ID 和来源位置排序。
 
-定义可以指定生效的 `profile`。未主动选择时，默认 profile 生效；构建前可用
-`active_profiles(&["name"])?` 指定其他 profile。通过 `#[value]` 或
+定义可以指定生效的 `profile`。每次调用 `active_profiles` 都会替换此前的集合；空集合
+激活 `default`，无 profile 定义始终生效。通过 `#[value]` 或
 `#[ConfigurationProperties]` 读取配置，需要启用 `config` feature 并登记
-`qubit-config` 的配置快照。其余选项可用 `cargo doc --no-deps --open` 查看
-公开 API，或阅读[完整设计](complete-design.zh_CN.md)。
+`qubit-config` 的配置快照。重复的活跃 `Config` 键会在构建阶段返回
+`BuildError::DuplicateBinding`。完整契约见[当前设计](complete-design.zh_CN.md)与
+[English Current Design](complete-design.md)。
 
 ### 替换一个完整定义
 
@@ -169,30 +172,11 @@ fn replace_for_test() -> Result<(), Box<dyn Error>> {
 ## 生命周期与限制
 
 上下文保存共享 `Arc`，查询不会再次执行工厂。需要关闭的资源组件可显式选择
-`Managed<T>`：
-
-```rust
-use std::sync::Arc;
-use qubit_ioc::{CleanupError, ContainerBuilder, Managed};
-
-struct Worker;
-impl Worker { fn request_stop(&self) -> Result<(), std::io::Error> { Ok(()) } }
-
-async fn managed_lifecycle() -> Result<(), Box<dyn std::error::Error>> {
-    let mut builder = ContainerBuilder::new();
-    builder.register_managed_factory::<Worker, _>(&[], |_| {
-        let worker = Arc::new(Worker);
-        Ok(Managed::new(Arc::clone(&worker), |worker| {
-            worker.request_stop().map_err(CleanupError::new)
-        }))
-    })?;
-    builder.root::<Worker>();
-    let context = builder.build_async().await?;
-    let mut shutdown = context.begin_shutdown();
-    shutdown.wait().await?;
-    Ok(())
-}
-```
+`Managed<T>`。仓库提供可运行的 worker 示例：它在托管工厂中启动任务，发送停止信号，
+等待任务退出并检查结果。可在仓库根目录运行
+`cargo run --example app_lifecycle --no-default-features`；源码见
+[`examples/app_lifecycle.rs`](../examples/app_lifecycle.rs)，关闭和取消语义见
+[生命周期说明](lifecycle.zh_CN.md)。
 
 托管资源应在托管工厂中创建；工厂只会在依赖图验证后运行。装配前已启动的外部资源
 使用 `register_instance(Arc<T>)` 注入，关闭动作由应用负责。不要在托管工厂闭包中捕获

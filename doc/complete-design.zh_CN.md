@@ -1,6 +1,6 @@
 # qubit-ioc 当前设计
 
-> 本文描述当前实现（0.1.0）的设计与公开契约。历史设计背景见[容器内核草案](design.zh_CN.md)和[注解草案](annotation-design.zh_CN.md)；接入步骤见[中文用户手册](user_guide.zh_CN.md)与[English user guide](user_guide.md)。实现和测试是事实依据，本文不承诺未在公开 API 中提供的能力。
+> 本文描述当前实现（0.1.0）的设计与公开契约。英文版见[Current Design](complete-design.md)。历史设计背景见[容器内核草案](design.zh_CN.md)和[注解草案](annotation-design.zh_CN.md)；接入步骤见[中文用户手册](user_guide.zh_CN.md)与[English user guide](user_guide.md)。实现和测试是事实依据，本文不承诺未在公开 API 中提供的能力。
 
 ## 1. 目标与边界
 
@@ -23,15 +23,15 @@ workspace 包含运行时 `qubit-ioc` 与过程宏 `qubit-ioc-macros`。Edition 
 
 **定义**是一次组件或工厂注册；**绑定**由 Rust 类型和可选 ID 唯一标识。ID 区分大小写，以点分段；每段以 ASCII 字母开头，后续可含字母、数字和下划线。一个具体实例可通过显式 `bind = dyn Trait` 暴露 trait 绑定；独立 `impl Trait for Type` 不会自动产生绑定。具体键和其接口别名共享同一底层 `Arc`。
 
-宏支持具名字段结构体和单元结构体，以及同步/异步自由函数工厂。组件字段或 bean 参数显式声明依赖；支持单值、精确 ID、可选和集合请求。对其他数据形状，使用手动工厂。配置宏需要 `config` feature 和已登记的配置快照。
+宏支持具名字段结构体和单元结构体，以及同步/异步自由函数工厂。组件字段或 bean 参数显式声明依赖；支持单值、精确 ID、可选和集合请求。对其他数据形状，使用手动工厂。字段与工厂的 `cfg` 激活条件会同步投影到宏生成的依赖请求和构造代码；嵌套 `cfg_attr(..., cfg(...))` 转换为等价条件。`inject`、`value` 等 helper 属性必须直接写在字段上，放进 `cfg_attr` 会得到明确诊断。配置宏需要 `config` feature 和已登记的配置快照。
 
-应用可以用 `BindingOptions` 指定 ID、primary、order 和 profile。profile 在冲突与依赖验证前筛选；未显式指定时默认 profile 生效。多个同类型候选只有在恰有一个 `primary` 时才能满足未指定 ID 的单值请求；指定 ID 时精确匹配，primary 不参与。
+应用可以用 `BindingOptions` 指定 ID、primary、order 和 profile。profile 在冲突与依赖验证前筛选；无 profile 定义始终生效。每次 `active_profiles` 都替换之前的集合；空集合激活 `default` 与无 profile 定义。多个同类型候选只有在恰有一个 `primary` 时才能满足未指定 ID 的单值请求；指定 ID 时精确匹配，primary 不参与。alias 的 primary/order 不改变具体类型绑定的选择元数据。
 
 `replace_definition(anchor, callback)` 在临时 builder 中登记一个完整替代定义。替代定义必须恰好一次声明 anchor；成功后原定义的所有绑定（包含 alias）都会被替换，所需 alias 必须由新定义重新声明。callback 失败或声明不满足约束时原 builder 不变。
 
 ## 4. 注册、验证与构造
 
-推荐的装配顺序是：创建 `ContainerBuilder`，登记配置和外部实例，调用 provider 的显式注册入口或逐个 `install::<D>()`，设置 roots/profile，然后构建。注册阶段不运行用户工厂。
+生命周期阶段为“注册 → 活跃定义与根闭包 → 图验证 → 构造 → 发布 context → 显式关闭”。推荐的装配顺序是：创建 `ContainerBuilder`，登记配置和外部实例，调用 provider 的显式注册入口或逐个 `install::<D>()`，设置 roots/profile，然后构建。注册阶段不运行用户工厂。
 
 `build()` 从一个或多个 `root` 构造所选定义的依赖闭包；至少需要一个 root。`build_all()` 构造所有生效定义，并允许空图。异步对应方法为 `build_async()` 与 `build_all_async()`。若选中图含异步工厂，同步 build 会在运行任何工厂前返回 `AsyncRequired`。异步构建由应用提供执行器，且可以混合同步和异步工厂。
 
@@ -41,7 +41,7 @@ workspace 包含运行时 `qubit-ioc` 与过程宏 `qubit-ioc-macros`。Edition 
 
 ## 5. 配置与上下游边界
 
-启用 `config` 后，`with_config(config)` 将配置快照放入 builder；与重复配置键冲突时按注册错误处理。`#[value]` 读取配置值，`#[ConfigurationProperties]` 读取结构化子树。缺少快照或反序列化失败在构造阶段返回错误，并保留原始配置错误 source 与组件/字段路径。
+启用 `config` 后，`with_config(config)` 将配置快照放入 builder；第二个活跃 `Config` 同键冲突在构建时作为 `BuildError::DuplicateBinding` 返回。`#[value]` 读取配置值，`#[ConfigurationProperties]` 读取结构化子树。缺少快照或反序列化失败在验证或构造阶段返回错误，并保留原始配置错误 source 与组件/字段路径。
 
 provider crate 应导出显式 `register_ioc(&mut builder)`，由应用决定纳入哪些 provider。跨 crate fixture `tests/fixtures/ioc_cross_crate/` 验证 provider 注册、trait alias、profile、配置错误来源及无默认 feature 手动装配；它是契约测试，不代表生产应用采用。
 
@@ -49,7 +49,7 @@ provider crate 应导出显式 `register_ioc(&mut builder)`，由应用决定纳
 
 ## 6. 错误与生命周期
 
-错误按阶段表达：`RegistrationError` 表示 ID、profile、重复请求等登记问题；`BuildError` 表示 roots、候选、图、异步要求、配置或工厂问题；`ResolveError` 表示 context 查询问题；`ShutdownError` 聚合资源关闭失败。工厂和配置错误保留 source 链，构建错误尽可能包含完整依赖路径和定义来源。
+错误按阶段表达：`RegistrationError` 表示 ID、profile、重复依赖声明等登记问题；`BuildError` 表示 roots、候选、重复活跃绑定、图、异步要求、配置或工厂问题；`ResolveError` 表示 context 查询问题；`ShutdownError` 聚合资源关闭失败。工厂和配置错误保留 source 链，构建错误尽可能包含完整依赖路径和定义来源。多个 root 保留声明顺序；cycle 诊断包含 root 前缀和实际环路后缀，定义成员补全也保留对应来源关系。
 
 托管资源只能由托管工厂在依赖图验证通过后创建，再通过 `Managed<T>` 注册 stop 和可选的异步 wait。已有外部资源应作为普通实例注册，并由应用自行负责关闭。应用显式调用 `context.begin_shutdown()`，再对返回句柄调用 `wait().await`。关闭会先按逆构建顺序执行全部 stop，再按该顺序执行 wait；stop 返回错误或 unwind panic 会记录为 `ShutdownFailure` 并继续后续动作。wait 回调创建和 wait future 轮询中的 unwind panic 也会记录为 `ShutdownPhase::Wait` 失败，并继续等待其他组件。`panic = "abort"` 和清理 future 析构时的 panic 无法由此机制捕获。取消 wait 后保留句柄并再次调用 `wait()`，会继续同一个 future。
 
@@ -57,4 +57,4 @@ provider crate 应导出显式 `register_ioc(&mut builder)`，由应用决定纳
 
 ## 7. 当前验收依据
 
-当前契约由 `tests/`、`macros/tests/` 和跨 crate fixture 验证，重点包括：显式安装和未安装 root 诊断；候选、ID、profile、替换及完整路径；同步/异步构造和取消；trait alias 的共享身份；配置 source 保留；托管 stop/wait 顺序、错误聚合和取消恢复；独立 feature 组合。公共 API 的精确签名以生成的 Rust API 文档为准。
+当前契约由 `tests/`、宏 crate 测试和跨 crate fixture 验证，重点包括：显式安装和未安装 root 诊断；候选、ID、profile、替换及完整路径；同步/异步构造和取消；trait alias 的共享身份；配置 source 保留；托管 stop/wait 顺序、错误聚合和取消恢复；独立 feature 组合。公共 API 的精确签名以生成的 Rust API 文档为准。完整 worker 启停示例见[生命周期说明](lifecycle.zh_CN.md)与[可运行程序](../examples/app_lifecycle.rs)。

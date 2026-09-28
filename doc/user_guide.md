@@ -107,7 +107,11 @@ definition with `builder.install::<T>()?`, or call a provider crate's
 The `macros` and `config` features can be enabled independently. Component and
 bean declarations need `macros`. `#[value]` and `#[ConfigurationProperties]`
 need both `macros` and `config`; enabling `config` alone does not export those
-macros. With `default-features = false`, manual registration needs neither.
+macros. Field `cfg` and nested `cfg_attr(..., cfg(...))` conditions also
+control generated dependency requests and initialization. Put `inject` and
+`value` helpers directly on fields; nested helpers inside `cfg_attr` are
+rejected with a diagnostic. With `default-features = false`, manual
+registration needs neither feature.
 
 Call `root::<T>()` for an unnamed request or `root_by_id::<T>("some.id")?` for
 an exact binding. `build()` needs at least one root and constructs only its
@@ -152,12 +156,13 @@ definition that declares the anchor key. An error leaves the original builder
 unchanged. The complete original definition is replaced, including all aliases;
 the replacement must declare any aliases that remain needed.
 
-Definitions can use an activation `profile`. The default profile is active
-when none is chosen; `active_profiles(&["name"])?` selects another set before
-building. Configuration reads through `#[value]` or
+Definitions can use an activation `profile`. Each call to `active_profiles`
+replaces the previous set; an empty set activates `default`, and definitions
+without a profile always remain active. Configuration reads through `#[value]` or
 `#[ConfigurationProperties]` require the `config` feature and a staged
-`qubit-config` snapshot. Generate the public API with `cargo doc --no-deps` and see the
-[design document](complete-design.zh_CN.md) for the full option set.
+`qubit-config` snapshot. A repeated active `Config` key is reported as a
+build-time `BuildError::DuplicateBinding`. See the [English design document](complete-design.md)
+for the full lifecycle and option contract.
 
 ## Configuration and request choices
 
@@ -189,30 +194,16 @@ at registration, or it receives `BuildAccessError::UndeclaredDependency`.
 
 The context stores shared `Arc` instances and does not rerun factories on
 lookup. Components own synchronization of their mutable state. Resource
-components can opt in to managed shutdown with `Managed<T>`:
+components can opt in to managed shutdown with `Managed<T>`. The runnable
+example starts a worker task inside its factory, sends a stop signal, awaits
+the task, and verifies it exited:
 
-```rust
-use std::sync::Arc;
-use qubit_ioc::{CleanupError, ContainerBuilder, Managed};
-
-struct Worker;
-impl Worker { fn request_stop(&self) -> Result<(), std::io::Error> { Ok(()) } }
-
-async fn managed_lifecycle() -> Result<(), Box<dyn std::error::Error>> {
-    let mut builder = ContainerBuilder::new();
-    builder.register_managed_factory::<Worker, _>(&[], |_| {
-        let worker = Arc::new(Worker);
-        Ok(Managed::new(Arc::clone(&worker), |worker| {
-            worker.request_stop().map_err(CleanupError::new)
-        }))
-    })?;
-    builder.root::<Worker>();
-    let context = builder.build_async().await?;
-    let mut shutdown = context.begin_shutdown();
-    shutdown.wait().await?;
-    Ok(())
-}
+```bash
+cargo run --example app_lifecycle --no-default-features
 ```
+
+See [`examples/app_lifecycle.rs`](../examples/app_lifecycle.rs) for its source
+and the [lifecycle guide](lifecycle.md) for shutdown and cancellation details.
 
 Create managed resources inside managed factories, which run only after graph
 validation. For an external resource that is already running, register its

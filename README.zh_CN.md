@@ -84,6 +84,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 `Option<Arc<T>>` 表示可缺省，`Vec<Arc<T>>` 注入全部候选。`#[bean]` 可标注同步或
 异步自由函数，也支持返回 `Managed<T>` 或 `Result<Managed<T>, E>` 的托管工厂；
 图中含异步工厂时须调用 `build_async()`。
+宏会把 `cfg` 激活条件应用到生成的依赖请求和注册代码。`inject`、`value` 等 helper
+属性必须直接写在字段上；放进 `cfg_attr` 会收到明确诊断。
 托管资源应在图验证通过后由托管工厂创建。装配前已启动的外部资源使用
 `register_instance(Arc<T>)` 注入，并由应用负责关闭；不要在工厂闭包中捕获已创建的
 `Managed<T>`。
@@ -130,8 +132,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 循环代理和动态库发现。托管工厂可通过 `Managed<T>` 和
 `ApplicationContext::begin_shutdown` 与 `ShutdownHandle::wait` 执行 stop/wait 关闭动作。结构体宏支持具名字段和单元结构体，其他形状可使用手动工厂。
 组件构造不依赖运行时反射。`qubit-spi` 继续负责 provider 的选择和回退；其注册表或
-选中的服务可作为普通 IoC 组件注册。当前设计边界与诊断说明见
-[当前设计文档](doc/complete-design.zh_CN.md)。
+选中的服务可作为普通 IoC 组件注册。托管资源需要显式调用 `begin_shutdown()` 和
+`ShutdownHandle::wait()`。完整流程见[生命周期指南](doc/lifecycle.zh_CN.md)与可运行的
+[`app_lifecycle`示例](examples/app_lifecycle.rs)，设计边界见
+[English current design](doc/complete-design.md)和[中文当前设计](doc/complete-design.zh_CN.md)。
 
 ## 延伸阅读
 

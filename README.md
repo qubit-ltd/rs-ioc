@@ -91,6 +91,9 @@ parameter. `Option<Arc<T>>` and `Vec<Arc<T>>` express optional and all-candidate
 requests. `#[bean]` supports synchronous and asynchronous free functions,
 including factories returning `Managed<T>` or `Result<Managed<T>, E>`;
 asynchronous definitions require `build_async()`.
+The macros apply `cfg` activation to generated dependency and registration
+code. Write `inject` and `value` helper attributes directly on fields; putting
+them inside `cfg_attr` produces a focused diagnostic.
 Create each managed resource inside its managed factory, after graph
 validation. Register an already-running external resource with
 `register_instance(Arc<T>)` and keep its shutdown responsibility in the
@@ -144,13 +147,17 @@ factories can opt into explicit stop and wait actions through `Managed<T>` and
 other shapes can use manual factories. Runtime reflection is not used to
 construct components. `qubit-spi` remains responsible for provider selection
 and fallback; its registry or a selected service can be registered as a normal
-IoC component. See [the current design](doc/complete-design.zh_CN.md) for the
-design boundary and diagnostics.
+IoC component. Managed shutdown requires explicit `begin_shutdown()` and
+`ShutdownHandle::wait()` calls. See the [lifecycle guide](doc/lifecycle.md),
+the runnable [`app_lifecycle` example](examples/app_lifecycle.rs), and the
+[English current design](doc/complete-design.md) for design boundaries.
 
 ## Learn more
 
 Follow the [English user guide](doc/user_guide.md) or
 [中文用户手册](doc/user_guide.zh_CN.md) for setup, selection, errors, and shutdown.
+The [English current design](doc/complete-design.md) and
+[中文当前设计](doc/complete-design.zh_CN.md) describe the public contracts.
 Run `cargo doc --no-deps --open` in this checkout to browse the public API.
 
 ## Testing
