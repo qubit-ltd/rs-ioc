@@ -1,0 +1,5 @@
+error: `cfg_attr` cannot contain `inject` or `value`; apply the helper attribute directly
+  --> tests/ui/component/cfg_attr_helper.rs:12:38
+   |
+12 |     #[cfg_attr(feature = "disabled", value("service.port"))]
+   |                                      ^^^^^

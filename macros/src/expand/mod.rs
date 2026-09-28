@@ -27,9 +27,9 @@ impl ExpansionContext {
     /// Resolves the runtime path as named in the consuming crate's manifest.
     pub(crate) fn for_runtime() -> syn::Result<Self> {
         let runtime = match crate_name("qubit-ioc") {
-            Ok(FoundCrate::Itself) => quote!(crate),
+            Ok(FoundCrate::Itself) => quote!(::qubit_ioc),
             Ok(FoundCrate::Name(name)) => {
-                let ident = syn::Ident::new(&name, Span::call_site());
+                let ident = syn::Ident::new_raw(&name, Span::call_site());
                 quote!(::#ident)
             }
             Err(error) => {
@@ -59,4 +59,5 @@ mod component;
 mod bean;
 mod config_properties;
 mod configuration;
+mod symbols;
 mod value;

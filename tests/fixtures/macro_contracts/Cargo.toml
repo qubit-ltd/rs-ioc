@@ -1,0 +1,15 @@
+[package]
+name = "ioc-macro-contracts"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[features]
+default = []
+extra = []
+config = ["type/config"]
+
+[dependencies]
+"type" = { package = "qubit-ioc", path = "../../..", default-features = false, features = ["macros"] }

@@ -7,6 +7,8 @@
 // =============================================================================
 //! Application-level component assembly and sharing for the Qubit ecosystem.
 
+pub use crate as qubit_ioc;
+
 pub mod application_context;
 mod binding;
 pub mod build_context;

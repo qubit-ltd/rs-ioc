@@ -38,7 +38,7 @@ pub(super) fn read_value(
             #context.get::<#runtime::__private::codegen_v1::Config>()
                 .map_err(#runtime::FactoryError::new)?.as_ref(),
             #path,
-            stringify!(#target),
+            ::core::stringify!(#target),
         )?
     }
 }

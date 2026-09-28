@@ -13,7 +13,7 @@
 #[doc(hidden)]
 #[macro_export]
 macro_rules! require_config {
-    ($($item:item)*) => { $($item)* };
+    ($($tokens:tt)*) => { $($tokens)* };
 }
 
 /// Reports the missing feature at the consuming declaration.
@@ -21,7 +21,7 @@ macro_rules! require_config {
 #[doc(hidden)]
 #[macro_export]
 macro_rules! require_config {
-    ($($item:item)*) => {
+    ($($tokens:tt)*) => {
         compile_error!("qubit-ioc: #[value] and #[ConfigurationProperties] require the `config` feature");
     };
 }

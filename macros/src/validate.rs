@@ -24,6 +24,7 @@ use syn::ReturnType;
 use syn::Type;
 use syn::spanned::Spanned;
 
+use crate::conditions::activation_attributes;
 use crate::ir::BeanIr;
 use crate::ir::BindingOptions;
 use crate::ir::ComponentIr;
@@ -154,8 +155,13 @@ fn component(kind: MacroKind, mut item: syn::ItemStruct, options: ValidatedOptio
         fields.reserve(named.named.len());
         for field in &mut named.named {
             let ident = field.ident.clone().expect("named fields always have identifiers");
+            let conditions = activation_attributes(&field.attrs)?;
             let dependency = dependency(&mut field.attrs, &field.ty)?;
-            fields.push(FieldIr { ident, dependency });
+            fields.push(FieldIr {
+                ident,
+                dependency,
+                conditions,
+            });
         }
     }
     Ok(ComponentIr {

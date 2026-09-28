@@ -34,25 +34,41 @@ pub(crate) fn expand(value: ComponentIr, context: &ExpansionContext) -> syn::Res
     let item_name = &source.item;
     let source_expr = quote_spanned! {source.span=>
         #runtime::DefinitionSource::new(
-            env!("CARGO_PKG_NAME"), module_path!(), file!(), line!(), column!(),
-            stringify!(#item_name),
+            ::core::env!("CARGO_PKG_NAME"), ::core::module_path!(), ::core::file!(),
+            ::core::line!(), ::core::column!(), ::core::stringify!(#item_name),
         )
     };
     let mut dependencies = Vec::with_capacity(fields.len());
     let mut initializers = Vec::with_capacity(fields.len());
-    let requires_config = fields
-        .iter()
-        .any(|field| matches!(field.dependency.kind, DependencyKind::Value { .. }));
     for field in &fields {
         let field_ident = &field.ident;
         let dependency = &field.dependency;
-        if matches!(dependency.kind, DependencyKind::Value { .. }) {
-            dependencies.push(value::config_request(runtime));
+        let conditions = &field.conditions;
+        let request = if matches!(dependency.kind, DependencyKind::Value { .. }) {
+            value::config_request(runtime)
         } else {
-            dependencies.push(dependency_tokens(dependency, runtime));
-        }
+            dependency_tokens(dependency, runtime)
+        };
+        let request = if matches!(dependency.kind, DependencyKind::Value { .. }) {
+            quote!(#runtime::__private::require_config! { #request })
+        } else {
+            request
+        };
+        dependencies.push(quote! {
+            #(#conditions)* {
+                let __qubit_ioc_request = #request;
+                if !__qubit_ioc_dependencies.contains(&__qubit_ioc_request) {
+                    __qubit_ioc_dependencies.push(__qubit_ioc_request);
+                }
+            }
+        });
         let expression = field_expression(dependency, field_ident, runtime);
-        initializers.push(quote!(#field_ident: #expression));
+        let expression = if matches!(dependency.kind, DependencyKind::Value { .. }) {
+            quote!(#runtime::__private::require_config! { #expression })
+        } else {
+            expression
+        };
+        initializers.push(quote!(#(#conditions)* #field_ident: #expression));
     }
 
     let construct = if matches!(item.fields, syn::Fields::Unit) {
@@ -82,11 +98,7 @@ pub(crate) fn expand(value: ComponentIr, context: &ExpansionContext) -> syn::Res
                 builder: &mut #runtime::ContainerBuilder,
             ) -> ::std::result::Result<(), #runtime::RegistrationError> {
                 let mut __qubit_ioc_dependencies = ::std::vec::Vec::<#runtime::Dependency>::new();
-                for request in [#(#dependencies),*] {
-                    if !__qubit_ioc_dependencies.contains(&request) {
-                        __qubit_ioc_dependencies.push(request);
-                    }
-                }
+                #(#dependencies)*
                 let mut __qubit_ioc_draft =
                     #runtime::__private::codegen_v1::DefinitionDraft::<#ident>::new_sync(
                         <#ident as #runtime::ComponentDefinition>::source(),
@@ -101,11 +113,6 @@ pub(crate) fn expand(value: ComponentIr, context: &ExpansionContext) -> syn::Res
             }
         }
 
-    };
-    let generated = if requires_config {
-        quote!(#runtime::__private::require_config! { #generated })
-    } else {
-        generated
     };
     Ok(quote! { #item #generated })
 }

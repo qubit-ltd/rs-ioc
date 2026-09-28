@@ -27,8 +27,8 @@ pub(crate) fn expand(value: ConfigurationPropertiesIr, context: &ExpansionContex
     let item_name = &source.item;
     let source_expr = quote_spanned! {source.span=>
         #runtime::DefinitionSource::new(
-            env!("CARGO_PKG_NAME"), module_path!(), file!(), line!(), column!(),
-            stringify!(#item_name),
+            ::core::env!("CARGO_PKG_NAME"), ::core::module_path!(), ::core::file!(),
+            ::core::line!(), ::core::column!(), ::core::stringify!(#item_name),
         )
     };
     let id = options.id.as_ref().map_or_else(
@@ -69,7 +69,7 @@ pub(crate) fn expand(value: ConfigurationPropertiesIr, context: &ExpansionContex
                             .get::<#runtime::__private::codegen_v1::Config>()
                             .map_err(#runtime::FactoryError::new)?;
                         let __qubit_ioc_value = #runtime::config::deserialize_properties_for::<#ident>(
-                            __qubit_ioc_config.as_ref(), #prefix, stringify!(#item_name),
+                            __qubit_ioc_config.as_ref(), #prefix, ::core::stringify!(#item_name),
                         )?;
                         ::std::result::Result::Ok(::std::sync::Arc::new(__qubit_ioc_value))
                     },

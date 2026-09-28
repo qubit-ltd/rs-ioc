@@ -14,6 +14,7 @@ use syn::Ident;
 use syn::ext::IdentExt;
 
 use crate::expand::ExpansionContext;
+use crate::expand::symbols::internal_ident;
 use crate::expand::value;
 use crate::ir::BeanIr;
 use crate::ir::BindingOptions;
@@ -44,12 +45,20 @@ pub(crate) fn expand(value: BeanIr, context: &ExpansionContext) -> syn::Result<T
         &params.iter().map(|param| &param.dependency).collect::<Vec<_>>(),
         runtime,
     );
-    let arguments = params.iter().map(|param| &param.ident).collect::<Vec<_>>();
+    let arguments = (0..params.len())
+        .map(|index| internal_ident("argument", index))
+        .collect::<Vec<_>>();
+    let context = internal_ident("context", 0);
+    let draft = internal_ident("draft", 0);
+    let dependencies_ident = internal_ident("dependencies", 0);
+    let dependency_ident = internal_ident("dependency", 0);
+    let output_ident = internal_ident("output", 0);
     let accesses = params
         .iter()
-        .map(|param| {
-            let ident = &param.ident;
-            let access = dependency_access(&param.dependency, ident, runtime);
+        .enumerate()
+        .map(|(index, param)| {
+            let ident = &arguments[index];
+            let access = dependency_access(&param.dependency, &param.ident, runtime, &context);
             quote!(let #ident = #access;)
         })
         .collect::<Vec<_>>();
@@ -77,33 +86,33 @@ pub(crate) fn expand(value: BeanIr, context: &ExpansionContext) -> syn::Result<T
             OutputShape::Arc | OutputShape::ResultArc => unreachable!("managed bean cannot also be an Arc output"),
         };
         if item.sig.asyncness.is_some() {
-            quote!(|__qubit_context| -> #runtime::ManagedFactoryFuture<#component_type> {
+            quote!(|#context| -> #runtime::ManagedFactoryFuture<#component_type> {
                 ::std::boxed::Box::pin(async move {
                     #(#accesses)*
-                    let value: #runtime::Managed<#component_type> = #managed_wrap;
-                    Ok(value)
+                    let #output_ident: #runtime::Managed<#component_type> = #managed_wrap;
+                    ::core::result::Result::Ok(#output_ident)
                 })
             })
         } else {
-            quote!(|__qubit_context| -> Result<#runtime::Managed<#component_type>, #runtime::FactoryError> {
+            quote!(|#context| -> ::core::result::Result<#runtime::Managed<#component_type>, #runtime::FactoryError> {
                 #(#accesses)*
-                let value: #runtime::Managed<#component_type> = #managed_wrap;
-                Ok(value)
+                let #output_ident: #runtime::Managed<#component_type> = #managed_wrap;
+                ::core::result::Result::Ok(#output_ident)
             })
         }
     } else if item.sig.asyncness.is_some() {
-        quote!(|__qubit_context| -> #runtime::FactoryFuture<#component_type> {
+        quote!(|#context| -> #runtime::FactoryFuture<#component_type> {
             ::std::boxed::Box::pin(async move {
                 #(#accesses)*
-                let value: ::std::sync::Arc<#component_type> = #wrap;
-                Ok(value)
+                let #output_ident: ::std::sync::Arc<#component_type> = #wrap;
+                ::core::result::Result::Ok(#output_ident)
             })
         })
     } else {
-        quote!(|__qubit_context| -> Result<::std::sync::Arc<#component_type>, #runtime::FactoryError> {
+        quote!(|#context| -> ::core::result::Result<::std::sync::Arc<#component_type>, #runtime::FactoryError> {
             #(#accesses)*
-            let value: ::std::sync::Arc<#component_type> = #wrap;
-            Ok(value)
+            let #output_ident: ::std::sync::Arc<#component_type> = #wrap;
+            ::core::result::Result::Ok(#output_ident)
         })
     };
     let draft_constructor = if output.managed {
@@ -119,7 +128,7 @@ pub(crate) fn expand(value: BeanIr, context: &ExpansionContext) -> syn::Result<T
     };
     let aliases = options.binds.iter().map(|target| {
         quote! {
-            draft.bind::<#target, _>(#alias_options, |concrete| {
+            #draft.bind::<#target, _>(#alias_options, |concrete| {
                 let alias: ::std::sync::Arc<#target> = concrete;
                 alias
             })?;
@@ -127,32 +136,38 @@ pub(crate) fn expand(value: BeanIr, context: &ExpansionContext) -> syn::Result<T
     });
     let item_name = &source.item;
     let generated = quote! {
+        #[doc = concat!(
+            "Registration definition for the `", ::core::stringify!(#function), "` factory. ",
+            "Install it with `ContainerBuilder::install::<", ::core::stringify!(#marker), ">()`; ",
+            "calling the original factory function does not register it."
+        )]
         #visibility struct #marker;
 
         impl #marker {
             const __IOC_SOURCE: #runtime::DefinitionSource = #runtime::DefinitionSource::new(
-                env!("CARGO_PKG_NAME"), module_path!(), file!(), line!(), column!(), stringify!(#item_name),
+                ::core::env!("CARGO_PKG_NAME"), ::core::module_path!(), ::core::file!(),
+                ::core::line!(), ::core::column!(), ::core::stringify!(#item_name),
             );
         }
 
         impl #runtime::ComponentDefinition for #marker {
             fn source() -> #runtime::DefinitionSource { Self::__IOC_SOURCE }
 
-            fn register(builder: &mut #runtime::ContainerBuilder) -> Result<(), #runtime::RegistrationError> {
-                let mut dependencies: ::std::vec::Vec<#runtime::Dependency> = ::std::vec::Vec::new();
-                for dependency in [#(#dependencies),*] {
-                    if !dependencies.contains(&dependency) {
-                        dependencies.push(dependency);
+            fn register(builder: &mut #runtime::ContainerBuilder) -> ::core::result::Result<(), #runtime::RegistrationError> {
+                let mut #dependencies_ident: ::std::vec::Vec<#runtime::Dependency> = ::std::vec::Vec::new();
+                for #dependency_ident in [#(#dependencies),*] {
+                    if !#dependencies_ident.contains(&#dependency_ident) {
+                        #dependencies_ident.push(#dependency_ident);
                     }
                 }
-                let mut draft = #runtime::__private::codegen_v1::DefinitionDraft::<#component_type>::#draft_constructor(
+                let mut #draft = #runtime::__private::codegen_v1::DefinitionDraft::<#component_type>::#draft_constructor(
                     Self::__IOC_SOURCE,
-                    &dependencies,
+                    &#dependencies_ident,
                     #concrete_options,
                     #factory,
                 )?;
                 #(#aliases)*
-                draft.register(builder)
+                #draft.register(builder)
             }
         }
     };
@@ -185,14 +200,14 @@ pub(super) fn default_marker(function: &Ident) -> Ident {
 
 /// Builds runtime options, leaving priority and order on aliases when present.
 fn binding_options(options: &BindingOptions, concrete_has_aliases: bool, runtime: &TokenStream) -> TokenStream {
-    let id = options
-        .id
-        .as_ref()
-        .map_or_else(|| quote!(None), |id| quote!(Some(#id.to_owned())));
-    let profile = options
-        .profile
-        .as_ref()
-        .map_or_else(|| quote!(None), |profile| quote!(Some(#profile.to_owned())));
+    let id = options.id.as_ref().map_or_else(
+        || quote!(::core::option::Option::None),
+        |id| quote!(::core::option::Option::Some(#id.to_owned())),
+    );
+    let profile = options.profile.as_ref().map_or_else(
+        || quote!(::core::option::Option::None),
+        |profile| quote!(::core::option::Option::Some(#profile.to_owned())),
+    );
     let primary = options.primary && !concrete_has_aliases;
     let order = if concrete_has_aliases { 0 } else { options.order };
     quote!(#runtime::BindingOptions {
@@ -235,21 +250,26 @@ fn dependency_requests(params: &[&DependencyIr], runtime: &TokenStream) -> Vec<T
 
 /// Reads one declared request and wraps any impossible access failure as a
 /// factory error.
-fn dependency_access(dependency: &DependencyIr, parameter: &Ident, runtime: &TokenStream) -> TokenStream {
+fn dependency_access(
+    dependency: &DependencyIr,
+    parameter: &Ident,
+    runtime: &TokenStream,
+    context: &Ident,
+) -> TokenStream {
     let target = &dependency.requested_type;
     if let DependencyKind::Value { .. } = &dependency.kind {
-        return value::read_value(dependency, parameter, runtime, &quote!(__qubit_context));
+        return value::read_value(dependency, parameter, runtime, &quote!(#context));
     }
     let request = match &dependency.kind {
         DependencyKind::Required => match &dependency.id {
-            Some(id) => quote!(__qubit_context.get_by_id::<#target>(#id)),
-            None => quote!(__qubit_context.get::<#target>()),
+            Some(id) => quote!(#context.get_by_id::<#target>(#id)),
+            None => quote!(#context.get::<#target>()),
         },
         DependencyKind::Optional => match &dependency.id {
-            Some(id) => quote!(__qubit_context.try_get_by_id::<#target>(#id)),
-            None => quote!(__qubit_context.try_get::<#target>()),
+            Some(id) => quote!(#context.try_get_by_id::<#target>(#id)),
+            None => quote!(#context.try_get::<#target>()),
         },
-        DependencyKind::All => quote!(__qubit_context.get_all::<#target>()),
+        DependencyKind::All => quote!(#context.get_all::<#target>()),
         DependencyKind::Value { .. } => unreachable!("value dependencies were handled above"),
     };
     quote!(#request.map_err(#runtime::FactoryError::new)?)

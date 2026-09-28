@@ -7,11 +7,9 @@
 // =============================================================================
 use std::sync::Arc;
 
-// Attribute expansion treats this same-package example as the runtime crate.
-pub use qubit_ioc::{
-    __private, ApplicationContext, BindingOptions, Component, ComponentDefinition, ContainerBuilder, DefinitionSource,
-    Dependency, FactoryError, RegistrationError, Service,
-};
+use qubit_ioc::ApplicationContext;
+use qubit_ioc::Component;
+use qubit_ioc::Service;
 
 trait Greeting: Send + Sync {
     fn text(&self) -> &'static str;

@@ -8,6 +8,7 @@
 //! Validated declarations shared by the IoC attribute expanders.
 
 use proc_macro2::Span;
+use syn::Attribute;
 use syn::Ident;
 use syn::ItemFn;
 use syn::ItemMod;
@@ -115,6 +116,9 @@ pub(crate) struct FieldIr {
     pub(crate) ident: Ident,
     /// Request used to construct the field value.
     pub(crate) dependency: DependencyIr,
+    /// Conditions under which generated dependency and initialization code
+    /// exists.
+    pub(crate) conditions: Vec<Attribute>,
 }
 
 /// A named bean parameter and its dependency request.

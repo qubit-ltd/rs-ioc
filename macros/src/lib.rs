@@ -5,10 +5,62 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-//! Declarative component registration macros for `qubit-ioc`.
+//! Attribute macros that turn declarations into explicit `qubit-ioc`
+//! registrations.
+//!
+//! Enable the runtime crate's `macros` feature to use these attributes.
+//! Generated definitions are staged with `ContainerBuilder::install` or a
+//! generated `Configuration::register_ioc` function; registering a definition
+//! does not construct its component.
+//!
+//! # Supported declarations
+//!
+//! | Attribute | Accepted item | Declaration options |
+//! | --- | --- | --- |
+//! | `Component`, `Service`, `Repository` | Named-field or unit struct | `id`, repeated `bind = dyn Trait`, `primary`, `order`, `profile` |
+//! | `bean` | Safe, non-generic free function with named parameters and an owned return type | `id`, repeated `bind`, `primary`, `order`, `profile`, `type`, `marker` |
+//! | `Configuration` | Inline module containing direct bean functions | `profile` |
+//! | `ConfigurationProperties` | Named-field struct | required `prefix`, optional `id`, `primary`, `order`, `profile` |
+//!
+//! Struct injection accepts `Arc<T>`, `Option<Arc<T>>`, and `Vec<Arc<T>>`;
+//! `#[inject]` and `#[inject(id = "storage.primary")]` refine selection.
+//! With both `macros` and `config` features enabled, `#[value("path.key")]`
+//! reads one value and `ConfigurationProperties` deserializes one subtree.
+//!
+//! `bean` supports synchronous or `async fn` factories returning `T`, `Arc<T>`,
+//! or `Result<T, E>` / `Result<Arc<T>, E>`; managed functions return
+//! `Managed<T>` (or `Result<Managed<T>, E>`). Result handling is recognized for
+//! the Rust `Result` spelling and its standard `std::result::Result` or
+//! `core::result::Result` paths. A custom alias wrapping Result cannot be
+//! identified from its spelling; use a supported explicit Result spelling or
+//! a handwritten factory registration.
+//!
+//! A bean keeps its original function callable and generates a public marker
+//! with the same visibility. The default marker is the function name in Pascal
+//! case followed by `Bean`; `marker = Name` selects another name. Install one
+//! with `builder.install::<NameBean>()?`. `Configuration` applies its profile
+//! only to direct children without a profile override and generates one
+//! `register_ioc` function in source order.
+//!
+//! # Example
+//!
+//! ```text
+//! #[qubit_ioc::Configuration(profile = "worker")]
+//! mod wiring {
+//!     #[qubit_ioc::bean(marker = LabelDefinition)]
+//!     pub fn label() -> String { String::from("worker") }
+//! }
+//! wiring::register_ioc(&mut builder)?;
+//! ```
+//!
+//! This snippet assumes `macros` is enabled and `builder` is a
+//! `qubit_ioc::ContainerBuilder`. Attributes reject unsupported item kinds,
+//! option names, signatures, injection shapes, duplicate/conflicting helpers,
+//! and IDs that do not match the runtime segmented ASCII grammar.
 
 use proc_macro::TokenStream;
 
+mod conditions;
 mod expand;
 // Later expansion tasks consume the complete IR; parser tests exercise it
 // already.
@@ -32,42 +84,56 @@ fn expand_entry(kind: MacroKind, attribute: TokenStream, item: TokenStream) -> T
         .into()
 }
 
-/// Marks a component definition.
+/// Generates a component definition for a named-field or unit struct.
+///
+/// Accepted options are `id`, repeated `bind = dyn Trait`, `primary`, `order`,
+/// and `profile`. Fields use `Arc<T>`, `Option<Arc<T>>`, or `Vec<Arc<T>>`;
+/// `#[inject(id = "...")]` selects one exact binding. `#[value("...")]`
+/// requires both runtime features `macros` and `config`.
 #[allow(non_snake_case)]
 #[proc_macro_attribute]
 pub fn Component(attribute: TokenStream, item: TokenStream) -> TokenStream {
     expand_entry(MacroKind::Component, attribute, item)
 }
 
-/// Marks a service definition.
+/// Generates a struct-backed service definition using the `Component` field
+/// injection rules.
 #[allow(non_snake_case)]
 #[proc_macro_attribute]
 pub fn Service(attribute: TokenStream, item: TokenStream) -> TokenStream {
     expand_entry(MacroKind::Service, attribute, item)
 }
 
-/// Marks a repository definition.
+/// Generates a struct-backed repository definition using the `Component`
+/// field injection rules.
 #[allow(non_snake_case)]
 #[proc_macro_attribute]
 pub fn Repository(attribute: TokenStream, item: TokenStream) -> TokenStream {
     expand_entry(MacroKind::Repository, attribute, item)
 }
 
-/// Marks a configuration module.
+/// Generates `register_ioc` for direct bean functions in an inline module.
+/// Its optional `profile` becomes the default for child beans without their
+/// own profile. The function installs definitions in source order; building
+/// the container remains the application's responsibility.
 #[allow(non_snake_case)]
 #[proc_macro_attribute]
 pub fn Configuration(attribute: TokenStream, item: TokenStream) -> TokenStream {
     expand_entry(MacroKind::Configuration, attribute, item)
 }
 
-/// Marks a configuration properties type.
+/// Generates a config-backed component for a named-field struct that can be
+/// deserialized by Serde. `prefix` is required; the runtime `config` feature
+/// must be enabled along with `macros`.
 #[allow(non_snake_case)]
 #[proc_macro_attribute]
 pub fn ConfigurationProperties(attribute: TokenStream, item: TokenStream) -> TokenStream {
     expand_entry(MacroKind::ConfigurationProperties, attribute, item)
 }
 
-/// Marks a component factory function.
+/// Generates a callable factory marker and registration definition for a safe,
+/// non-generic free function. Parameters use the supported injection shapes;
+/// return forms and marker visibility are described in the crate-level docs.
 #[proc_macro_attribute]
 pub fn bean(attribute: TokenStream, item: TokenStream) -> TokenStream {
     expand_entry(MacroKind::Bean, attribute, item)

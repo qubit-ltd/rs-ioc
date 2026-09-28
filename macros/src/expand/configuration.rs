@@ -15,6 +15,7 @@ use syn::Ident;
 use syn::Item;
 use syn::Meta;
 
+use crate::conditions::activation_attributes;
 use crate::expand::ExpansionContext;
 use crate::expand::bean::default_marker;
 use crate::ir::ConfigurationIr;
@@ -40,12 +41,7 @@ pub(crate) fn expand(value: ConfigurationIr, context: &ExpansionContext) -> syn:
     for child in children.iter_mut() {
         let Item::Fn(function) = child else { continue };
         let function_name = function.sig.ident.clone();
-        let cfg_attributes = function
-            .attrs
-            .iter()
-            .filter(|attr| attr.path().is_ident("cfg") || attr.path().is_ident("cfg_attr"))
-            .cloned()
-            .collect::<Vec<_>>();
+        let cfg_attributes = activation_attributes(&function.attrs)?;
         let Some(attribute) = function.attrs.iter_mut().find(|attr| is_bean(attr)) else {
             continue;
         };
@@ -59,9 +55,11 @@ pub(crate) fn expand(value: ConfigurationIr, context: &ExpansionContext) -> syn:
     }
     children.push(syn::parse_quote! {
         /// Installs this module's direct bean definitions in source order.
-        pub fn register_ioc(builder: &mut #runtime::ContainerBuilder) -> Result<(), #runtime::RegistrationError> {
+        pub fn register_ioc(
+            builder: &mut #runtime::ContainerBuilder,
+        ) -> ::core::result::Result<(), #runtime::RegistrationError> {
             #(#installations)*
-            Ok(())
+            ::core::result::Result::Ok(())
         }
     });
     Ok(quote!(#item))
