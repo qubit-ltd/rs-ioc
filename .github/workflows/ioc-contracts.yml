@@ -1,0 +1,58 @@
+name: IoC Consumer Contracts
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  macro-package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: 1.94
+      - name: Test proc macro crate directly
+        run: cargo +1.94.0 test -p qubit-ioc-macros --locked
+
+  macro-consumer:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        consumer-features: ["", extra, config, "extra,config"]
+    env:
+      CONSUMER_FEATURES: ${{ matrix.consumer-features }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: 1.94
+      - name: Test consumer without optional features
+        if: env.CONSUMER_FEATURES == ''
+        run: cargo +1.94.0 test --manifest-path tests/fixtures/macro_contracts/Cargo.toml --locked
+      - name: Test consumer feature combination
+        if: env.CONSUMER_FEATURES != ''
+        run: cargo +1.94.0 test --manifest-path tests/fixtures/macro_contracts/Cargo.toml --features "$CONSUMER_FEATURES" --locked
+      - name: Run same-package declarative example
+        run: cargo +1.94.0 run --example readme_declarative --no-default-features --features macros --locked
+
+  assembly-boundaries:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: 1.94
+      - name: Test cross-crate provider assembly
+        run: cargo +1.94.0 test --manifest-path tests/fixtures/ioc_cross_crate/Cargo.toml -p qubit-ioc-fixture-app --locked
+      - name: Test feature-minimal manual assembly
+        run: cargo +1.94.0 test --manifest-path tests/fixtures/ioc_cross_crate/Cargo.toml -p qubit-ioc-fixture-manual --locked
+      - name: Verify manual consumer feature isolation
+        run: cargo +1.94.0 tree --manifest-path tests/fixtures/ioc_cross_crate/Cargo.toml -p qubit-ioc-fixture-manual -e features
+      - name: Run managed lifecycle example
+        run: cargo +1.94.0 run --example app_lifecycle --no-default-features --locked
