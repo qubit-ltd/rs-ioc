@@ -1,12 +1,7 @@
 # Reviewed exceptions for cohesive type groups whose split would obscure one module boundary.
-multiple-public-types | src/application_context.rs | BuiltBinding is private query metadata owned exclusively by ApplicationContext.
 multiple-public-types | src/binding.rs | Pending binding states and their one-shot definition form one internal registration model.
 multiple-public-types | src/builder.rs | The definition trait, builder, replacement record, and construction state form one registration lifecycle boundary.
-multiple-public-types | src/dependency.rs | DependencyCardinality is the request mode of Dependency and is documented alongside it.
-multiple-public-types | src/error.rs | Registration, build, access, lookup, and factory errors form one public diagnostic boundary.
 multiple-public-types | src/graph.rs | Binding positions, resolved requests, graph state, and edges are one private validation representation.
-multiple-public-types | src/key.rs | BindingId and BindingKey jointly define the exact identity of a binding.
-multiple-public-types | src/options.rs | BindingOptions and DefinitionSource jointly describe registration metadata and its provenance.
 multiple-public-types | src/managed.rs | Lifecycle errors and managed cleanup actions form one public lifecycle API and share private action state.
 multiple-public-types | macros/src/ir.rs | MacroKind, Declaration, and the declaration IR types form one private cross-expander representation model.
 multiple-public-types | macros/src/parse.rs | RawDeclaration, RawOption, and RawValue form one parser output model for attribute syntax.

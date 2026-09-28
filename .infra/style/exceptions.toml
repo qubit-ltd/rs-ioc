@@ -7,26 +7,6 @@ reason = "ContainerBuilder and ComponentDefinition form the single public regist
 
 [[exceptions]]
 rule = "multiple-public-types"
-path = "src/key.rs"
-reason = "BindingId and BindingKey are the validated identifier and exact key of one binding identity model."
-
-[[exceptions]]
-rule = "multiple-public-types"
-path = "src/error.rs"
-reason = "The structured registration, build, access, resolution, and factory errors form one cohesive public error boundary."
-
-[[exceptions]]
-rule = "multiple-public-types"
-path = "src/dependency.rs"
-reason = "Dependency and DependencyCardinality jointly describe one typed dependency request."
-
-[[exceptions]]
-rule = "multiple-public-types"
-path = "src/options.rs"
-reason = "BindingOptions and DefinitionSource jointly describe registration metadata and its diagnostic provenance."
-
-[[exceptions]]
-rule = "multiple-public-types"
 path = "src/managed.rs"
 reason = "Managed, cleanup errors, and shutdown failures form one public opt-in component lifecycle contract."
 

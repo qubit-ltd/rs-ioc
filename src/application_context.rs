@@ -5,13 +5,16 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-// qubit-style: allow multiple-public-types
 //! Read-only queries over a successfully built component graph.
 
+mod internal;
 mod query_index;
+
 use std::any::TypeId;
 use std::sync::Arc;
+use std::sync::Mutex;
 
+pub(crate) use internal::BuiltBinding;
 use query_index::QueryIndex;
 
 use crate::builder::ContainerBuilder;
@@ -23,21 +26,12 @@ use crate::managed::ShutdownHandle;
 use crate::options::DefinitionSource;
 use crate::store::InstanceStore;
 
-/// Lookup metadata retained for candidate selection after construction.
-pub(crate) struct BuiltBinding {
-    /// Typed key used for exact lookup and candidate selection.
-    pub(crate) key: BindingKey,
-    /// Whether unnamed requests prefer this binding over other candidates.
-    pub(crate) primary: bool,
-    /// Position used to order collection queries.
-    pub(crate) order: i32,
-    /// Source of the currently active definition.
-    pub(crate) source: DefinitionSource,
-    /// Earlier sources whose exact key was replaced.
-    pub(crate) replaced_sources: Vec<DefinitionSource>,
-}
-
 /// Shared, read-only component context after successful construction.
+///
+/// Cloning an `Arc<ApplicationContext>` permits concurrent queries from
+/// multiple threads. Shutdown remains a single-owner operation: release all
+/// shared context handles, recover the context with `Arc::try_unwrap`, then
+/// call [`Self::begin_shutdown`].
 ///
 /// Every successful query clones an existing `Arc`; factories never run again.
 ///
@@ -61,7 +55,7 @@ pub struct ApplicationContext {
     /// Immutable indexes for exact-key and same-type metadata lookup.
     query_index: QueryIndex,
     /// Explicit lifecycle actions for managed concrete bindings.
-    cleanup: CleanupJournal,
+    cleanup: Mutex<CleanupJournal>,
 }
 
 impl ApplicationContext {
@@ -110,7 +104,7 @@ impl ApplicationContext {
             store,
             bindings,
             query_index,
-            cleanup,
+            cleanup: Mutex::new(cleanup),
         }
     }
 
@@ -129,8 +123,11 @@ impl ApplicationContext {
     ///
     /// This method does not return cleanup errors; [`ShutdownHandle::wait`]
     /// returns all stop and wait failures after waiting completes.
-    pub fn begin_shutdown(mut self) -> ShutdownHandle {
-        let mut cleanup = std::mem::take(&mut self.cleanup);
+    pub fn begin_shutdown(self) -> ShutdownHandle {
+        let mut cleanup = self
+            .cleanup
+            .into_inner()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let failures = cleanup.stop_reverse();
         ShutdownHandle::new(self.store, cleanup, failures)
     }

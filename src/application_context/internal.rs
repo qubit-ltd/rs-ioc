@@ -5,10 +5,8 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-//! Validated binding IDs and typed binding keys.
+//! Private metadata retained by the application context.
 
-mod binding_id;
-mod binding_key;
+mod built_binding;
 
-pub use binding_id::BindingId;
-pub use binding_key::BindingKey;
+pub(crate) use built_binding::BuiltBinding;
