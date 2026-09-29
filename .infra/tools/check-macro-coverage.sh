@@ -41,9 +41,9 @@ for metric in functions lines regions; do
         exit 1
     fi
     percent=$(awk -v covered="$covered" -v count="$count" 'BEGIN { printf "%.2f", covered * 100 / count }')
-    whole=${percent%.*}
     printf 'macro %-9s %s%% (%s/%s), minimum %s%%\n' "$metric" "$percent" "$covered" "$count" "$threshold"
-    if [ "$whole" -lt "$threshold" ]; then
+    if ! awk -v covered="$covered" -v count="$count" -v threshold="$threshold" \
+        'BEGIN { exit (covered * 100 >= count * threshold) ? 0 : 1 }'; then
         echo "macro $metric coverage is below its baseline-derived minimum" >&2
         exit 1
     fi
