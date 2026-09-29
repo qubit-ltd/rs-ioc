@@ -9,7 +9,12 @@ publish = false
 [features]
 default = []
 extra = []
+invalid = []
 config = ["type/config"]
+value_input = ["type/config"]
 
 [dependencies]
 "type" = { package = "qubit-ioc", path = "../../..", default-features = false, features = ["macros"] }
+
+[dev-dependencies]
+trybuild = "1.0"

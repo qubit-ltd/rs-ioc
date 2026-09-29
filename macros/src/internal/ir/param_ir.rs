@@ -7,6 +7,7 @@
 // =============================================================================
 //! Param macro intermediate representation.
 
+use syn::Attribute;
 use syn::Ident;
 
 use crate::ir::DependencyIr;
@@ -15,6 +16,8 @@ use crate::ir::DependencyIr;
 pub(crate) struct ParamIr {
     /// Parameter supplied when invoking the original factory function.
     pub(crate) ident: Ident,
+    /// Conditions under which this parameter and its generated code exist.
+    pub(crate) conditions: Vec<Attribute>,
     /// Request used to obtain the parameter value.
     pub(crate) dependency: DependencyIr,
 }

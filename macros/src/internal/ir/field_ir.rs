@@ -8,6 +8,7 @@
 //! Field macro intermediate representation.
 
 use syn::Attribute;
+use syn::Error;
 use syn::Ident;
 
 use crate::ir::DependencyIr;
@@ -18,6 +19,8 @@ pub(crate) struct FieldIr {
     pub(crate) ident: Ident,
     /// Request used to construct the field value.
     pub(crate) dependency: DependencyIr,
+    /// Dependency validation failure emitted only while this field is active.
+    pub(crate) validation_error: Option<Error>,
     /// Conditions under which generated dependency and initialization code
     /// exists.
     pub(crate) conditions: Vec<Attribute>,

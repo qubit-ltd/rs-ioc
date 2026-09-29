@@ -23,8 +23,7 @@ use crate::ir::DependencyIr;
 use crate::ir::DependencyKind;
 use crate::ir::OutputShape;
 
-/// Emits the original function, a marker definition, and optional linked
-/// discovery.
+/// Emits the original callable function and its registration marker.
 pub(crate) fn expand(value: BeanIr, context: &ExpansionContext) -> Result<TokenStream> {
     let BeanIr {
         item,
@@ -42,10 +41,22 @@ pub(crate) fn expand(value: BeanIr, context: &ExpansionContext) -> Result<TokenS
     let has_aliases = !options.binds.is_empty();
     let concrete_options = binding_options(&options, has_aliases, runtime);
     let alias_options = binding_options(&options, false, runtime);
-    let dependencies = dependency_requests(
-        &params.iter().map(|param| &param.dependency).collect::<Vec<_>>(),
-        runtime,
-    );
+    let dependencies = params
+        .iter()
+        .map(|param| {
+            let conditions = &param.conditions;
+            let request = dependency_requests(&[&param.dependency], runtime)
+                .into_iter()
+                .next()
+                .expect("each parameter has a dependency request");
+            let request = if matches!(param.dependency.kind, DependencyKind::Value { .. }) {
+                quote!(#runtime::__private::require_config! { #request })
+            } else {
+                request
+            };
+            quote!(#(#conditions)* #request)
+        })
+        .collect::<Vec<_>>();
     let arguments = (0..params.len())
         .map(|index| internal_ident("argument", index))
         .collect::<Vec<_>>();
@@ -60,13 +71,24 @@ pub(crate) fn expand(value: BeanIr, context: &ExpansionContext) -> Result<TokenS
         .map(|(index, param)| {
             let ident = &arguments[index];
             let access = dependency_access(&param.dependency, &param.ident, runtime, &context);
-            quote!(let #ident = #access;)
+            let access = if matches!(param.dependency.kind, DependencyKind::Value { .. }) {
+                quote!(#runtime::__private::require_config! { #access })
+            } else {
+                access
+            };
+            let conditions = &param.conditions;
+            quote!(#(#conditions)* let #ident = #access;)
         })
         .collect::<Vec<_>>();
-    let requires_config = params
+    let invocation_arguments = params
         .iter()
-        .any(|param| matches!(param.dependency.kind, DependencyKind::Value { .. }));
-    let invocation = quote!(#function(#(#arguments),*));
+        .zip(arguments.iter())
+        .map(|(param, argument)| {
+            let conditions = &param.conditions;
+            quote!(#(#conditions)* #argument)
+        })
+        .collect::<Vec<_>>();
+    let invocation = quote!(#function(#(#invocation_arguments),*));
     let invocation = if item.sig.asyncness.is_some() {
         quote!(#invocation.await)
     } else {
@@ -84,7 +106,9 @@ pub(crate) fn expand(value: BeanIr, context: &ExpansionContext) -> Result<TokenS
         let managed_wrap = match output.shape {
             OutputShape::Bare => invocation.clone(),
             OutputShape::ResultBare => quote!(#invocation.map_err(#runtime::FactoryError::new)?),
-            OutputShape::Arc | OutputShape::ResultArc => unreachable!("managed bean cannot also be an Arc output"),
+            OutputShape::Arc | OutputShape::ResultArc => {
+                unreachable!("managed bean cannot also be an Arc output")
+            }
         };
         if item.sig.asyncness.is_some() {
             quote!(|#context| -> #runtime::ManagedFactoryFuture<#component_type> {
@@ -171,11 +195,6 @@ pub(crate) fn expand(value: BeanIr, context: &ExpansionContext) -> Result<TokenS
                 #draft.register(builder)
             }
         }
-    };
-    let generated = if requires_config {
-        quote!(#runtime::__private::require_config! { #generated })
-    } else {
-        generated
     };
     Ok(quote! { #item #generated })
 }

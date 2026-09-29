@@ -1,0 +1,5 @@
+error: unsupported injection type; expected `Arc<T>`, `Option<Arc<T>>`, or `Vec<Arc<T>>`
+  --> tests/ui/active_invalid_injection.rs:16:12
+   |
+16 |     field: MissingType,
+   |            ^^^^^^^^^^^

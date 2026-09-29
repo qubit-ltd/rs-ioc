@@ -22,6 +22,7 @@ use syn::spanned::Spanned;
 use super::ValidatedOptions;
 use super::component::dependency;
 use super::component::single_generic;
+use crate::conditions::activation_attributes;
 use crate::internal::RuntimePath;
 use crate::ir::BeanIr;
 use crate::ir::OutputIr;
@@ -64,8 +65,13 @@ pub(super) fn bean(mut item: ItemFn, options: ValidatedOptions, runtime: &Runtim
             ));
         };
         let ident = pattern.ident.clone();
+        let conditions = activation_attributes(&argument.attrs)?;
         let dependency = dependency(&mut argument.attrs, &argument.ty)?;
-        params.push(ParamIr { ident, dependency });
+        params.push(ParamIr {
+            ident,
+            conditions,
+            dependency,
+        });
     }
     let marker = options.marker.clone();
     Ok(BeanIr {

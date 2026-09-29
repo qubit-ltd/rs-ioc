@@ -45,10 +45,22 @@ pub(super) fn component(kind: MacroKind, mut item: ItemStruct, options: Validate
         for field in &mut named.named {
             let ident = field.ident.clone().expect("named fields always have identifiers");
             let conditions = activation_attributes(&field.attrs)?;
-            let dependency = dependency(&mut field.attrs, &field.ty)?;
+            let (dependency, validation_error) = match dependency(&mut field.attrs, &field.ty) {
+                Ok(dependency) => (dependency, None),
+                Err(error) if conditions.is_empty() => return Err(error),
+                Err(error) => (
+                    DependencyIr {
+                        kind: DependencyKind::Required,
+                        requested_type: field.ty.clone(),
+                        id: None,
+                    },
+                    Some(error),
+                ),
+            };
             fields.push(FieldIr {
                 ident,
                 dependency,
+                validation_error,
                 conditions,
             });
         }

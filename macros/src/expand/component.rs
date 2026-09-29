@@ -47,10 +47,17 @@ pub(crate) fn expand(value: ComponentIr, context: &ExpansionContext) -> Result<T
     };
     let mut dependencies = Vec::with_capacity(fields.len());
     let mut initializers = Vec::with_capacity(fields.len());
+    let mut validation_errors = Vec::new();
     for field in &fields {
         let field_ident = &field.ident;
-        let dependency = &field.dependency;
         let conditions = &field.conditions;
+        if let Some(error) = &field.validation_error {
+            let error = error.to_compile_error();
+            validation_errors.push(quote!(#(#conditions)* #error));
+            initializers.push(quote!(#(#conditions)* #field_ident: loop {}));
+            continue;
+        }
+        let dependency = &field.dependency;
         let request = if matches!(dependency.kind, DependencyKind::Value { .. }) {
             value::config_request(runtime)
         } else {
@@ -84,6 +91,11 @@ pub(crate) fn expand(value: ComponentIr, context: &ExpansionContext) -> Result<T
         quote!(#ident { #(#initializers),* })
     };
     let concrete_options = options_tokens(&options, runtime, options.binds.is_empty());
+    let validation_allow = if validation_errors.is_empty() {
+        quote!()
+    } else {
+        quote!(#[allow(unreachable_code)])
+    };
     let mut aliases = Vec::with_capacity(options.binds.len());
     for bind in &options.binds {
         let alias_options = options_tokens(&options, runtime, true);
@@ -96,12 +108,14 @@ pub(crate) fn expand(value: ComponentIr, context: &ExpansionContext) -> Result<T
     }
 
     let generated = quote! {
+        #(#validation_errors)*
         #(#conditions)*
         impl #runtime::ComponentDefinition for #ident {
             fn source() -> #runtime::DefinitionSource {
                 #source_expr
             }
 
+            #validation_allow
             fn register(
                 builder: &mut #runtime::ContainerBuilder,
             ) -> ::std::result::Result<(), #runtime::RegistrationError> {

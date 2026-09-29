@@ -8,10 +8,12 @@
 //! Exercises conditional component fields at an external crate boundary.
 
 use r#type::Component;
-#[cfg(test)]
-use r#type::ContainerBuilder;
+use r#type::bean;
+type MissingType = u32;
 #[cfg(all(test, feature = "extra"))]
 use r#type::BuildError;
+#[cfg(test)]
+use r#type::ContainerBuilder;
 #[cfg(all(test, feature = "extra"))]
 use r#type::Dependency;
 
@@ -41,10 +43,32 @@ pub struct DisabledValue {
 #[Component]
 pub struct DisabledUnknownType {
     #[cfg(any())]
-    missing: std::sync::Arc<MissingType>,
+    missing: MissingType,
 }
 
-/// Exercises an active configuration-backed field with the consumer config feature.
+/// Activates a bean dependency only when the matching function parameter
+/// exists.
+#[bean(marker = ConditionalFactory)]
+pub fn conditional_bean(#[cfg(feature = "extra")] value: std::sync::Arc<u8>) -> u32 {
+    #[cfg(feature = "extra")]
+    let _ = value;
+    17
+}
+
+/// Requests a configuration value only when its parameter is enabled.
+#[bean(marker = ConditionalConfigFactory)]
+pub fn conditional_config_bean(
+    #[cfg(feature = "value_input")]
+    #[value("test.conditional")]
+    value: String,
+) -> u32 {
+    #[cfg(feature = "value_input")]
+    let _ = value;
+    19
+}
+
+/// Exercises an active configuration-backed field with the consumer config
+/// feature.
 #[cfg(feature = "config")]
 #[Component]
 pub struct EnabledValue {
@@ -70,18 +94,45 @@ pub struct DerivedConditionalStruct;
 #[test]
 fn test_struct_activation_preserves_enabled_definition_and_derives() {
     let mut builder = ContainerBuilder::new();
-    builder.install::<DerivedConditionalStruct>().expect("install active conditional struct");
+    builder
+        .install::<DerivedConditionalStruct>()
+        .expect("install active conditional struct");
     #[cfg(feature = "extra")]
-    builder.install::<ConditionalStruct>().expect("install conditionally active struct");
-    let context = builder.build_all().expect("active structs should register without dependencies");
-    let component = context.get::<DerivedConditionalStruct>().expect("active struct should be available");
+    builder
+        .install::<ConditionalStruct>()
+        .expect("install conditionally active struct");
+    let context = builder
+        .build_all()
+        .expect("active structs should register without dependencies");
+    let component = context
+        .get::<DerivedConditionalStruct>()
+        .expect("active struct should be available");
     #[cfg(feature = "extra")]
     {
         let _: DerivedConditionalStruct = component.as_ref().clone();
-        context.get::<ConditionalStruct>().expect("conditionally active struct should be available");
+        context
+            .get::<ConditionalStruct>()
+            .expect("conditionally active struct should be available");
     }
     #[cfg(not(feature = "extra"))]
     let _ = component;
+}
+
+#[test]
+fn test_bean_parameter_activation_matches_dependency_and_call_argument() {
+    #[cfg(feature = "extra")]
+    use std::sync::Arc;
+
+    let mut builder = ContainerBuilder::new();
+    #[cfg(feature = "extra")]
+    builder.register_instance(Arc::new(23_u8)).expect("register u8");
+    builder
+        .install::<ConditionalFactory>()
+        .expect("install conditional bean");
+    let context = builder
+        .build_all()
+        .expect("only active parameter dependencies are requested");
+    assert_eq!(*context.get::<u32>().expect("conditional bean"), 17);
 }
 
 #[test]
