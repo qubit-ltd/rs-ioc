@@ -10,7 +10,7 @@
 use proc_macro2::TokenStream;
 use syn::Result;
 
-use crate::runtime_path::RuntimePath;
+use crate::internal::RuntimePath;
 
 /// Context shared by expansion domains without assuming the runtime crate
 /// alias.

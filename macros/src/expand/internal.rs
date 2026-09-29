@@ -5,16 +5,10 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-//! Expands validated declarations into runtime registration tokens.
+//! Private expansion context and generated-symbol helpers.
 
-mod bean;
-mod component;
-mod config_properties;
-mod configuration;
-mod dispatch;
-mod internal;
-mod value;
+mod expansion_context;
+mod symbols;
 
-pub(crate) use dispatch::dispatch;
-pub(crate) use internal::ExpansionContext;
-pub(crate) use internal::internal_ident;
+pub(crate) use expansion_context::ExpansionContext;
+pub(crate) use symbols::internal_ident;

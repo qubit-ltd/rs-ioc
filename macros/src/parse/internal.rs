@@ -5,8 +5,12 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-//! Re-exports the context used to resolve the runtime crate path.
+//! Parsed option and declaration records.
 
-mod expansion_context;
+pub(crate) mod raw_declaration;
+pub(crate) mod raw_option;
+pub(crate) mod raw_value;
 
-pub(crate) use expansion_context::ExpansionContext;
+pub(crate) use raw_declaration::RawDeclaration;
+pub(crate) use raw_option::RawOption;
+pub(crate) use raw_value::RawValue;

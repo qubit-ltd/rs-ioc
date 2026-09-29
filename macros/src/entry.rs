@@ -11,9 +11,9 @@ use proc_macro::TokenStream;
 use syn::Error;
 
 use crate::expand;
+use crate::internal::RuntimePath;
 use crate::ir::MacroKind;
 use crate::parse;
-use crate::runtime_path::RuntimePath;
 use crate::validate;
 
 /// Runs every declaration through parsing, validation, normalization, and

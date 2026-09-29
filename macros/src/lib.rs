@@ -63,15 +63,15 @@
 use proc_macro::TokenStream;
 
 mod conditions;
-mod entrypoint;
+mod entry;
 mod expand;
+mod internal;
 mod ir;
 mod parse;
-mod runtime_path;
 mod validate;
 
 #[cfg(test)]
-mod parse_tests;
+mod tests;
 
 use ir::MacroKind;
 
@@ -93,7 +93,7 @@ use ir::MacroKind;
 #[allow(non_snake_case)]
 #[proc_macro_attribute]
 pub fn Component(attribute: TokenStream, item: TokenStream) -> TokenStream {
-    entrypoint::expand_entry(MacroKind::Component, attribute, item)
+    entry::expand_entry(MacroKind::Component, attribute, item)
 }
 
 /// Generates a struct-backed service definition using the `Component` field
@@ -110,7 +110,7 @@ pub fn Component(attribute: TokenStream, item: TokenStream) -> TokenStream {
 #[allow(non_snake_case)]
 #[proc_macro_attribute]
 pub fn Service(attribute: TokenStream, item: TokenStream) -> TokenStream {
-    entrypoint::expand_entry(MacroKind::Service, attribute, item)
+    entry::expand_entry(MacroKind::Service, attribute, item)
 }
 
 /// Generates a struct-backed repository definition using the `Component`
@@ -127,7 +127,7 @@ pub fn Service(attribute: TokenStream, item: TokenStream) -> TokenStream {
 #[allow(non_snake_case)]
 #[proc_macro_attribute]
 pub fn Repository(attribute: TokenStream, item: TokenStream) -> TokenStream {
-    entrypoint::expand_entry(MacroKind::Repository, attribute, item)
+    entry::expand_entry(MacroKind::Repository, attribute, item)
 }
 
 /// Generates `register_ioc` for direct bean functions in an inline module.
@@ -147,7 +147,7 @@ pub fn Repository(attribute: TokenStream, item: TokenStream) -> TokenStream {
 #[allow(non_snake_case)]
 #[proc_macro_attribute]
 pub fn Configuration(attribute: TokenStream, item: TokenStream) -> TokenStream {
-    entrypoint::expand_entry(MacroKind::Configuration, attribute, item)
+    entry::expand_entry(MacroKind::Configuration, attribute, item)
 }
 
 /// Generates a config-backed component for a named-field struct that can be
@@ -166,7 +166,7 @@ pub fn Configuration(attribute: TokenStream, item: TokenStream) -> TokenStream {
 #[allow(non_snake_case)]
 #[proc_macro_attribute]
 pub fn ConfigurationProperties(attribute: TokenStream, item: TokenStream) -> TokenStream {
-    entrypoint::expand_entry(MacroKind::ConfigurationProperties, attribute, item)
+    entry::expand_entry(MacroKind::ConfigurationProperties, attribute, item)
 }
 
 /// Generates a callable factory marker and registration definition for a safe,
@@ -183,5 +183,5 @@ pub fn ConfigurationProperties(attribute: TokenStream, item: TokenStream) -> Tok
 /// diagnostics for an invalid declaration.
 #[proc_macro_attribute]
 pub fn bean(attribute: TokenStream, item: TokenStream) -> TokenStream {
-    entrypoint::expand_entry(MacroKind::Bean, attribute, item)
+    entry::expand_entry(MacroKind::Bean, attribute, item)
 }

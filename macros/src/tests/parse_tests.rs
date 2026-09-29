@@ -20,7 +20,7 @@ use crate::ir::OutputShape;
 /// Parses an attribute declaration through the same validation boundary as a
 /// macro entry.
 fn declaration(kind: MacroKind, attributes: TokenStream, item: TokenStream) -> Result<Declaration> {
-    let runtime = crate::runtime_path::RuntimePath::for_root("qubit_ioc");
+    let runtime = crate::internal::RuntimePath::for_root("qubit_ioc");
     crate::validate::validate(crate::parse::parse(kind, attributes, item)?, &runtime)
 }
 

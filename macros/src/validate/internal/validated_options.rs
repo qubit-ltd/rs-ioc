@@ -16,28 +16,28 @@ use crate::ir::BindingOptions;
 
 /// The checked option set before it is split into declaration-specific IR.
 #[derive(Default)]
-pub(super) struct ValidatedOptions {
+pub(in crate::validate) struct ValidatedOptions {
     /// Validated optional component ID.
-    pub(super) id: Option<LitStr>,
+    pub(in crate::validate) id: Option<LitStr>,
     /// Interface projections declared by repeated `bind` options.
-    pub(super) binds: Vec<TypeTraitObject>,
+    pub(in crate::validate) binds: Vec<TypeTraitObject>,
     /// Whether the binding is preferred by unnamed selection.
-    pub(super) primary: bool,
+    pub(in crate::validate) primary: bool,
     /// Order value used by collection requests.
-    pub(super) order: i32,
+    pub(in crate::validate) order: i32,
     /// Optional activation profile.
-    pub(super) profile: Option<LitStr>,
+    pub(in crate::validate) profile: Option<LitStr>,
     /// Required configuration subtree prefix.
-    pub(super) prefix: Option<LitStr>,
+    pub(in crate::validate) prefix: Option<LitStr>,
     /// Explicit component type for an opaque bean return alias.
-    pub(super) explicit_type: Option<Type>,
+    pub(in crate::validate) explicit_type: Option<Type>,
     /// Optional generated registration marker name.
-    pub(super) marker: Option<Ident>,
+    pub(in crate::validate) marker: Option<Ident>,
 }
 
 impl ValidatedOptions {
     /// Moves common binding values into their stable IR representation.
-    pub(super) fn binding(self) -> BindingOptions {
+    pub(in crate::validate) fn binding(self) -> BindingOptions {
         BindingOptions {
             id: self.id,
             binds: self.binds,

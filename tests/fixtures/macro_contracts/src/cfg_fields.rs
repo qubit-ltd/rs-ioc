@@ -44,8 +44,8 @@ pub struct DisabledUnknownType {
     missing: std::sync::Arc<MissingType>,
 }
 
-#[cfg(feature = "config")]
 /// Exercises an active configuration-backed field with the consumer config feature.
+#[cfg(feature = "config")]
 #[Component]
 pub struct EnabledValue {
     #[value("test.enabled")]
@@ -80,7 +80,7 @@ fn test_enabled_fields_register_their_dependencies() {
 #[cfg(feature = "extra")]
 #[test]
 fn test_enabled_field_reports_a_missing_dependency_before_construction() {
-    let mut builder = r#type::ContainerBuilder::new();
+    let mut builder = ContainerBuilder::new();
     builder.install::<Conditional>().expect("install conditional");
     let error = builder.build_all().err().expect("u8 dependency is required");
     assert!(matches!(error, BuildError::MissingDependency { dependency, .. }

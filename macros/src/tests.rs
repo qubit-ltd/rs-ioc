@@ -5,16 +5,6 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-//! Expands validated declarations into runtime registration tokens.
+//! Proc-macro parsing and validation unit tests.
 
-mod bean;
-mod component;
-mod config_properties;
-mod configuration;
-mod dispatch;
-mod internal;
-mod value;
-
-pub(crate) use dispatch::dispatch;
-pub(crate) use internal::ExpansionContext;
-pub(crate) use internal::internal_ident;
+mod parse_tests;

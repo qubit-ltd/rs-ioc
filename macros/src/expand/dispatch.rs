@@ -11,8 +11,8 @@ use proc_macro2::TokenStream;
 use syn::Result;
 
 use crate::expand::ExpansionContext;
+use crate::internal::RuntimePath;
 use crate::ir::Declaration;
-use crate::runtime_path::RuntimePath;
 
 /// Selects an expander only after parsing and validation have succeeded.
 pub(crate) fn dispatch(declaration: Declaration, runtime: &RuntimePath) -> Result<TokenStream> {

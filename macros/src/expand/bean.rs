@@ -15,7 +15,7 @@ use syn::Result;
 use syn::ext::IdentExt;
 
 use crate::expand::ExpansionContext;
-use crate::expand::symbols::internal_ident;
+use crate::expand::internal_ident;
 use crate::expand::value;
 use crate::ir::BeanIr;
 use crate::ir::BindingOptions;
