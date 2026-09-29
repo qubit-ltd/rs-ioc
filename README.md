@@ -94,9 +94,12 @@ parameter. `Option<Arc<T>>` and `Vec<Arc<T>>` express optional and all-candidate
 requests. `#[bean]` supports synchronous and asynchronous free functions,
 including factories returning `Managed<T>` or `Result<Managed<T>, E>`;
 asynchronous definitions require `build_async()`.
-The return may use an imported `Managed`, `qubit_ioc::Managed`, or the exact
-renamed runtime dependency path. Unrelated paths such as
-`application::Managed` remain ordinary component types.
+The return may use an imported `Managed`, `qubit_ioc::Managed`, or
+`::qubit_ioc::Managed`. Renamed dependencies and raw-keyword crate names are
+supported too: `ioc::Managed` / `::ioc::Managed` and `r#type::Managed` /
+`::r#type::Managed`. These spellings also work inside `Result<Managed<T>, E>`.
+Unrelated paths such as `application::Managed` and type aliases remain ordinary
+component types.
 The macros apply `cfg` activation to generated dependency and registration
 code. Write `inject` and `value` helper attributes directly on fields; putting
 them inside `cfg_attr` produces a focused diagnostic.

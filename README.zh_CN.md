@@ -87,8 +87,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 `Option<Arc<T>>` 表示可缺省，`Vec<Arc<T>>` 注入全部候选。`#[bean]` 可标注同步或
 异步自由函数，也支持返回 `Managed<T>` 或 `Result<Managed<T>, E>` 的托管工厂；
 图中含异步工厂时须调用 `build_async()`。
-返回类型可使用导入的 `Managed`、`qubit_ioc::Managed` 或重命名后的运行时依赖路径。
-`application::Managed` 这类无关路径仍按普通组件类型处理。
+返回类型可使用导入的 `Managed`、`qubit_ioc::Managed` / `::qubit_ioc::Managed`。
+重命名依赖和 raw keyword crate 名也受支持，例如 `ioc::Managed` / `::ioc::Managed`
+以及 `r#type::Managed` / `::r#type::Managed`；这些路径也适用于
+`Result<Managed<T>, E>`。`application::Managed` 等无关路径和类型别名仍按普通组件类型处理。
 宏会把 `cfg` 激活条件应用到生成的依赖请求和注册代码。`inject`、`value` 等 helper
 属性必须直接写在字段上；放进 `cfg_attr` 会收到明确诊断。
 托管资源应在图验证通过后由托管工厂创建。装配前已启动的外部资源使用

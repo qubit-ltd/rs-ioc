@@ -158,6 +158,21 @@ fn replace_for_test() -> Result<(), Box<dyn Error>> {
 [`examples/config_contract.rs`](../examples/config_contract.rs)，对应测试见
 [`config_tests.rs`](../tests/config_tests.rs)。
 
+### Managed 工厂的返回路径
+
+`#[bean]` 仅在 `Managed<T>` 路径符合运行时依赖 crate 名称时，才将其识别为托管输出：
+
+| 运行时依赖名称 | 支持的返回路径 |
+| --- | --- |
+| `qubit-ioc` | 导入后的 `Managed<T>`、`qubit_ioc::Managed<T>`、`::qubit_ioc::Managed<T>` |
+| 重命名为 `ioc` | `ioc::Managed<T>`、`::ioc::Managed<T>` |
+| 重命名为关键字 `type` | `r#type::Managed<T>`、`::r#type::Managed<T>` |
+
+同步和异步 bean 的 `Result<Managed<T>, E>` 也支持这些路径。宏不会猜测
+`application::Managed<T>` 或类型别名就是运行时封装；它们仍按普通组件输出处理。
+独立消费 workspace 在
+[`managed_paths`](../tests/fixtures/managed_paths/) 中覆盖了每种路径。
+
 只有构造过程需要等待 I/O 时才使用异步工厂。可以声明 `#[bean] async fn`，也可调用 `register_async_factory`；之后用 `build_async()` 或 `build_all_async()`，并由应用执行器驱动 future。若选中图里有异步定义却调用同步 `build()`，会在工厂运行前返回 `BuildError::AsyncRequired`。执行器选择和取消策略由应用负责。
 
 ## 错误与排障

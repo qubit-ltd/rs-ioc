@@ -1,7 +1,4 @@
-# Reviewed exceptions for cohesive type groups whose split would obscure one module boundary.
-multiple-public-types | src/binding.rs | Pending binding states and their one-shot definition form one internal registration model.
-multiple-public-types | src/builder.rs | The definition trait, builder, replacement record, and construction state form one registration lifecycle boundary.
-multiple-public-types | src/graph.rs | Binding positions, resolved requests, graph state, and edges are one private validation representation.
-multiple-public-types | src/managed.rs | Lifecycle errors and managed cleanup actions form one public lifecycle API and share private action state.
-multiple-public-types | macros/src/ir.rs | MacroKind, Declaration, and the declaration IR types form one private cross-expander representation model.
-multiple-public-types | macros/src/parse.rs | RawDeclaration, RawOption, and RawValue form one parser output model for attribute syntax.
+# Narrow exceptions preserve source spellings that are the macro behavior under test.
+explicit-imports | tests/fixtures/managed_paths/canonical/src/main.rs | Canonical and absolute runtime paths are compile-time inputs under test for Managed output recognition.
+explicit-imports | tests/fixtures/managed_paths/renamed/src/main.rs | Renamed and absolute crate paths are compile-time inputs under test for Managed output recognition.
+explicit-imports | tests/fixtures/managed_paths/keyword/src/main.rs | Raw-keyword and absolute crate paths are compile-time inputs under test for Managed output recognition.

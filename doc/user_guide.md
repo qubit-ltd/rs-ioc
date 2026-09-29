@@ -179,6 +179,23 @@ are covered in [config_tests.rs](../tests/config_tests.rs).
 
 For a structured subtree, derive `Deserialize` and use `#[ConfigurationProperties(prefix = "service")]` on a named-field struct. Install that definition and stage the same config snapshot. A missing or invalid property fails construction; the error retains the original deserialization detail. The config macro tests in `tests/config_macro_tests.rs` show the exact setup and successful result.
 
+### Managed factory output paths
+
+`#[bean]` recognizes `Managed<T>` when its path matches the runtime dependency
+name. The following source forms are supported:
+
+| Runtime dependency name | Accepted output paths |
+| --- | --- |
+| `qubit-ioc` | imported `Managed<T>`, `qubit_ioc::Managed<T>`, `::qubit_ioc::Managed<T>` |
+| renamed to `ioc` | `ioc::Managed<T>`, `::ioc::Managed<T>` |
+| renamed to the keyword `type` | `r#type::Managed<T>`, `::r#type::Managed<T>` |
+
+The same paths work inside `Result<Managed<T>, E>` for sync and async beans.
+The macro does not guess that `application::Managed<T>` or a type alias is the
+runtime wrapper; those remain ordinary component outputs. Independent consumer
+workspaces exercise each path in
+[`managed_paths`](../tests/fixtures/managed_paths/).
+
 Use an async factory when construction itself must await I/O. `#[bean] async fn` and `register_async_factory` both create async definitions; choose `build_async()` or `build_all_async()` and drive the returned future with the application's executor. Calling synchronous `build()` on a selected async definition returns `BuildError::AsyncRequired` before any factory runs. The app owns executor choice and cancellation policy.
 
 ## Errors and diagnostics
