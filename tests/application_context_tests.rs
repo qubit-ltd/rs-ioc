@@ -8,6 +8,8 @@
 use std::sync::Arc;
 
 use qubit_ioc::ApplicationContext;
+use qubit_ioc::BindingId;
+use qubit_ioc::BindingKey;
 use qubit_ioc::BindingOptions;
 use qubit_ioc::ContainerBuilder;
 use qubit_ioc::ResolveError;
@@ -106,4 +108,121 @@ fn test_equal_order_sorts_by_id_and_missing_lookup_lists_available_keys() {
         context.try_get::<u32>(),
         Err(ResolveError::AmbiguousBinding { .. })
     ));
+}
+
+#[test]
+fn test_collection_order_and_named_queries_reuse_arcs() {
+    let mut builder = ContainerBuilder::new();
+    for (id, order, value) in [("z", 0, 3_u8), ("a", 0, 1), ("m", -1, 2)] {
+        builder
+            .register_instance_with(
+                Arc::new(value),
+                BindingOptions {
+                    id: Some(id.to_owned()),
+                    order,
+                    ..BindingOptions::default()
+                },
+            )
+            .expect("register collection member");
+    }
+    let context = builder.build_all().expect("build collection");
+    let first = context.get_all::<u8>();
+    let second = context.get_all::<u8>();
+    assert_eq!(first.iter().map(|value| **value).collect::<Vec<_>>(), [2, 1, 3]);
+    assert_eq!(first.len(), second.len());
+    assert!(first.iter().zip(&second).all(|(left, right)| Arc::ptr_eq(left, right)));
+    let named = context.get_by_id::<u8>("a").expect("named member");
+    assert!(Arc::ptr_eq(&named, &first[1]));
+    assert!(Arc::ptr_eq(
+        &named,
+        &context.get_by_id::<u8>("a").expect("repeated named member")
+    ));
+}
+
+#[test]
+fn test_unique_primary_get_and_try_get_reuse_the_same_arc() {
+    let mut builder = ContainerBuilder::new();
+    for (id, primary, value) in [("z", false, 3_u8), ("a", true, 1), ("m", false, 2)] {
+        builder
+            .register_instance_with(
+                Arc::new(value),
+                BindingOptions {
+                    id: Some(id.to_owned()),
+                    primary,
+                    ..BindingOptions::default()
+                },
+            )
+            .expect("register primary selection candidate");
+    }
+    let context = builder.build_all().expect("build primary selection");
+    let selected = context.get::<u8>().expect("unique primary");
+    assert_eq!(*selected, 1);
+    assert!(Arc::ptr_eq(&selected, &context.get::<u8>().expect("repeated primary")));
+    assert!(Arc::ptr_eq(
+        &selected,
+        &context
+            .try_get::<u8>()
+            .expect("optional primary")
+            .expect("primary exists")
+    ));
+    assert!(Arc::ptr_eq(
+        &selected,
+        &context.get_by_id::<u8>("a").expect("named primary")
+    ));
+}
+
+#[test]
+fn test_ambiguity_and_missing_errors_preserve_registered_candidate_order() {
+    let mut builder = ContainerBuilder::new();
+    let mut expected = Vec::new();
+    for (position, id) in ["z", "a", "m"].into_iter().enumerate() {
+        builder
+            .register_instance_with(
+                Arc::new(position as u8),
+                BindingOptions {
+                    id: Some(id.to_owned()),
+                    order: -(position as i32),
+                    ..BindingOptions::default()
+                },
+            )
+            .expect("register ambiguous candidate");
+        expected.push(BindingKey::of::<u8>(Some(BindingId::parse(id).expect("valid ID"))));
+    }
+    let context = builder.build_all().expect("build ambiguous candidates");
+    for error in [
+        context.get::<u8>().expect_err("get is ambiguous"),
+        context.try_get::<u8>().expect_err("try_get is equally ambiguous"),
+    ] {
+        match error {
+            ResolveError::AmbiguousBinding { request, candidates } => {
+                assert_eq!(request, BindingKey::of::<u8>(None));
+                assert_eq!(candidates, expected);
+            }
+            other => panic!("expected ambiguity, got {other:?}"),
+        }
+    }
+    match context.get_by_id::<u8>("missing").expect_err("unknown ID") {
+        ResolveError::MissingComponent { request, available } => {
+            assert_eq!(
+                request,
+                BindingKey::of::<u8>(Some(BindingId::parse("missing").expect("valid missing ID")))
+            );
+            assert_eq!(available, expected);
+        }
+        other => panic!("expected missing component, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_absent_type_queries_preserve_empty_contracts() {
+    let context = ContainerBuilder::new().build_all().expect("build empty context");
+    assert!(context.try_get::<u8>().expect("optional absent type").is_none());
+    assert!(context.get_all::<u8>().is_empty());
+    match context.get::<u8>().expect_err("absent type") {
+        ResolveError::MissingComponent { request, available } => {
+            assert_eq!(request, BindingKey::of::<u8>(None));
+            assert!(available.is_empty());
+        }
+        other => panic!("expected missing component, got {other:?}"),
+    }
 }

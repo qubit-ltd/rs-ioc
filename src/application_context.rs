@@ -63,31 +63,10 @@ impl ApplicationContext {
     /// # Returns
     ///
     /// A new builder with the default activation profile.
+    #[inline]
+    #[must_use]
     pub fn builder() -> ContainerBuilder {
         ContainerBuilder::new()
-    }
-
-    /// Returns the active source and earlier sources replaced for one exact
-    /// key.
-    ///
-    /// `None` means that `key` is absent. The returned slice borrows this
-    /// immutable context and lists removed active bindings in registration
-    /// order.
-    ///
-    /// # Parameters
-    ///
-    /// `key` is the exact typed binding key whose source history is queried.
-    ///
-    /// # Returns
-    ///
-    /// `Some` contains the active definition source and replaced sources;
-    /// `None` means no active binding has the exact key.
-    #[must_use]
-    pub fn binding_sources(&self, key: &BindingKey) -> Option<(DefinitionSource, &[DefinitionSource])> {
-        self.query_index
-            .by_key(key)
-            .map(|index| &self.bindings[index])
-            .map(|binding| (binding.source, binding.replaced_sources.as_slice()))
     }
 
     /// Creates a context from a fully constructed store and active lookup
@@ -105,6 +84,30 @@ impl ApplicationContext {
             query_index,
             cleanup: Mutex::new(cleanup),
         }
+    }
+
+    /// Returns the active source and earlier sources replaced for one exact
+    /// key.
+    ///
+    /// `None` means that `key` is absent. The returned slice borrows this
+    /// immutable context and lists removed active bindings in registration
+    /// order.
+    ///
+    /// # Parameters
+    ///
+    /// `key` is the exact typed binding key whose source history is queried.
+    ///
+    /// # Returns
+    ///
+    /// `Some` contains the active definition source and replaced sources;
+    /// `None` means no active binding has the exact key.
+    #[inline]
+    #[must_use]
+    pub fn binding_sources(&self, key: &BindingKey) -> Option<(DefinitionSource, &[DefinitionSource])> {
+        self.query_index
+            .by_key(key)
+            .map(|index| &self.bindings[index])
+            .map(|binding| (binding.source, binding.replaced_sources.as_slice()))
     }
 
     /// Sends every managed stop request and returns a handle for waiting.
@@ -140,10 +143,6 @@ impl ApplicationContext {
     /// `T` is the concrete or trait-object type used to identify the binding.
     /// It must be thread-safe and `'static` so the context can share it.
     ///
-    /// # Parameters
-    ///
-    /// `id` is the exact, case-sensitive identifier of the requested binding.
-    ///
     /// # Returns
     ///
     /// The selected shared component.
@@ -169,6 +168,10 @@ impl ApplicationContext {
     ///
     /// `T` is the concrete or trait-object type used to identify the binding.
     /// It must be thread-safe and `'static` so the context can share it.
+    ///
+    /// # Parameters
+    ///
+    /// `id` is the exact, case-sensitive identifier of the requested binding.
     ///
     /// # Returns
     ///
