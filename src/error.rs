@@ -11,6 +11,7 @@
 mod build_access_error;
 mod build_error;
 mod factory_error;
+mod internal;
 mod invalid_binding_id;
 mod registration_error;
 mod resolve_error;

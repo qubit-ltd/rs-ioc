@@ -22,158 +22,19 @@ use crate::dependency::Dependency;
 use crate::dependency::DependencyCardinality;
 use crate::error::BuildError;
 use crate::key::BindingKey;
-use crate::options::DefinitionSource;
 
 mod diagnostics;
 
 pub(crate) use diagnostics::DiagnosticPaths;
 use diagnostics::PathOrigin;
 
-/// The position of one binding in its registered definition.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub(crate) struct BindingLocation {
-    /// Index of the owning definition in the active definition vector.
-    pub(crate) definition: usize,
-    /// Index of the binding within that definition.
-    pub(crate) binding: usize,
-}
+mod internal;
 
-/// A declared request and its exact selected keys, in injection order.
-pub(crate) struct ResolvedDependency {
-    /// Original request declared by the definition.
-    pub(crate) request: Dependency,
-    /// Selected keys in deterministic injection order.
-    pub(crate) keys: Vec<BindingKey>,
-}
-
-/// Active definitions, resolved requests, and dependency-first binding order.
-///
-/// Every binding occurs once in `order`; aliases follow their target, and
-/// concrete bindings follow every selected request of their definition.
-pub(crate) struct ValidatedGraph {
-    /// Definitions remaining after profile filtering.
-    pub(crate) definitions: Vec<PendingDefinition>,
-    /// Dependency-first execution order for selected bindings.
-    pub(crate) order: Vec<BindingLocation>,
-    /// Resolved request keys, indexed by definition and declaration order.
-    pub(crate) resolved: Vec<Vec<ResolvedDependency>>,
-    /// Compact root provenance shared by validation and construction.
-    pub(crate) diagnostics: DiagnosticPaths,
-}
-
-/// One flattened binding with its stable registration position.
-#[derive(Clone)]
-struct Node {
-    /// Original position within the definition list.
-    location: BindingLocation,
-    /// Exact typed identity used during matching.
-    key: BindingKey,
-    /// Definition source retained for diagnostics and stable ordering.
-    source: DefinitionSource,
-    /// Whether an unnamed request can select this candidate as primary.
-    primary: bool,
-    /// Collection ordering value.
-    order: i32,
-}
-
-/// A resolved edge or a failure delayed until its root path is known.
-enum Edge {
-    /// A dependency or alias target selected by validation.
-    Target(usize),
-    /// A required request with no matching key.
-    MissingDependency(Dependency),
-    /// A single-value request with multiple candidates.
-    AmbiguousDependency(Dependency, Vec<BindingKey>),
-    /// An alias refers to a key absent from active definitions.
-    MissingAliasTarget(BindingKey),
-}
-
-// BuildError carries public candidate sets and complete dependency paths.
-#[allow(clippy::result_large_err)]
-impl ValidatedGraph {
-    /// Validates definitions as an unrooted test graph.
-    ///
-    /// This helper is available only to graph unit tests; production callers
-    /// use root selection through `ContainerBuilder`.
-    #[cfg(test)]
-    pub(crate) fn validate(
-        definitions: Vec<PendingDefinition>,
-        active_profiles: &[String],
-    ) -> Result<Self, BuildError> {
-        Self::validate_roots(definitions, active_profiles, None)
-    }
-
-    /// Filters `definitions` using `active_profiles`, then validates the graph.
-    ///
-    /// An empty profile slice activates `default`. This never calls a factory
-    /// or alias projector. Errors carry the relevant binding path.
-    pub(crate) fn validate_roots(
-        definitions: Vec<PendingDefinition>,
-        active_profiles: &[String],
-        roots: Option<&[Dependency]>,
-    ) -> Result<Self, BuildError> {
-        let definitions: Vec<_> = definitions
-            .into_iter()
-            .filter(|definition| {
-                definition.profile.as_deref().is_none_or(|profile| {
-                    if active_profiles.is_empty() {
-                        profile == "default"
-                    } else {
-                        active_profiles.iter().any(|active| active == profile)
-                    }
-                })
-            })
-            .collect();
-        let nodes = flatten(&definitions);
-        let by_key = if roots.is_none() {
-            exact_keys(&nodes)?
-        } else {
-            first_keys(&nodes)
-        };
-        if roots.is_none() {
-            validate_primary(&nodes)?;
-        }
-        let mut by_type: HashMap<TypeId, Vec<usize>> = HashMap::new();
-        for (index, node) in nodes.iter().enumerate() {
-            by_type.entry(node.key.type_id()).or_default().push(index);
-        }
-        let (edges, resolved) = resolve_edges(&definitions, &nodes, &by_key, &by_type);
-        let seeds = if let Some(roots) = roots {
-            select_roots(roots, &nodes, &by_type)?
-        } else {
-            build_all_seeds(&nodes, &edges)
-        };
-        let (reachable, diagnostics) = close_definitions(&definitions, &nodes, &edges, &seeds)?;
-        if roots.is_some() {
-            let mut sources = HashMap::new();
-            for (i, node) in nodes.iter().enumerate().filter(|(i, _)| reachable[*i]) {
-                let _ = i;
-                if let Some(first) = sources.insert(node.key.clone(), node.source) {
-                    return Err(BuildError::DuplicateBinding {
-                        key: node.key.clone(),
-                        first,
-                        second: node.source,
-                    });
-                }
-            }
-            let selected: Vec<_> = nodes
-                .iter()
-                .enumerate()
-                .filter(|(i, _)| reachable[*i])
-                .map(|(_, n)| n.clone())
-                .collect();
-            validate_primary(&selected)?;
-        }
-        detect_errors_and_cycles(&nodes, &edges, &reachable, &diagnostics)?;
-        let order = stable_topology(&nodes, &edges, &reachable);
-        Ok(Self {
-            definitions,
-            order,
-            resolved,
-            diagnostics,
-        })
-    }
-}
+pub(crate) use internal::binding_location::BindingLocation;
+use internal::edge::Edge;
+use internal::node::Node;
+pub(crate) use internal::resolved_dependency::ResolvedDependency;
+pub(crate) use internal::validated_graph::ValidatedGraph;
 
 /// Keeps the first registered index for each key while root reachability is
 /// still being established.

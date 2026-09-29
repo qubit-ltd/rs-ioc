@@ -5,9 +5,10 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
+//! Graph model types separated from validation algorithms.
 
-mod construction;
-pub(super) mod replacement;
-pub(super) mod validation;
-
-pub(super) use construction::Construction;
+pub(in crate::graph) mod binding_location;
+pub(in crate::graph) mod edge;
+pub(in crate::graph) mod node;
+pub(in crate::graph) mod resolved_dependency;
+pub(in crate::graph) mod validated_graph;

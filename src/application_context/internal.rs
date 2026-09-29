@@ -8,5 +8,7 @@
 //! Private metadata retained by the application context.
 
 mod built_binding;
+mod query_index;
 
 pub(crate) use built_binding::BuiltBinding;
+pub(crate) use query_index::QueryIndex;

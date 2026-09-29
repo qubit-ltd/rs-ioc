@@ -5,11 +5,13 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-//! Factory failures and configuration read context.
+//! Factory failures and configuration read reporting.
 
 use std::error::Error;
 
 use thiserror::Error;
+
+use super::internal::ConfigReadContext;
 
 /// A concrete wrapper retaining the original user factory error as its source.
 ///
@@ -29,15 +31,6 @@ pub struct FactoryError {
     source: Box<dyn Error + Send + Sync + 'static>,
     /// Extra target information for generated configuration reads.
     config_read: Option<ConfigReadContext>,
-}
-
-/// Path and destination retained for a generated configuration read.
-#[derive(Debug)]
-struct ConfigReadContext {
-    /// Configuration key or subtree prefix that failed to read.
-    path_key: String,
-    /// Generated field, parameter, or properties type being built.
-    target: String,
 }
 
 impl FactoryError {

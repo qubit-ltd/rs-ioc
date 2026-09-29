@@ -5,9 +5,8 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
+//! Private metadata shared by error owners.
 
-mod construction;
-pub(super) mod replacement;
-pub(super) mod validation;
+mod config_read_context;
 
-pub(super) use construction::Construction;
+pub(in crate::error) use config_read_context::ConfigReadContext;

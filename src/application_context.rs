@@ -8,14 +8,13 @@
 //! Read-only queries over a successfully built component graph.
 
 mod internal;
-mod query_index;
 
 use std::any::TypeId;
 use std::sync::Arc;
 use std::sync::Mutex;
 
 pub(crate) use internal::BuiltBinding;
-use query_index::QueryIndex;
+use internal::QueryIndex;
 
 use crate::builder::ContainerBuilder;
 use crate::error::ResolveError;

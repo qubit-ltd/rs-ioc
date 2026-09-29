@@ -5,9 +5,8 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
+//! Binding internals split by staged definition and construction action.
 
-mod construction;
-pub(super) mod replacement;
-pub(super) mod validation;
-
-pub(super) use construction::Construction;
+pub(crate) mod pending_binding;
+pub(crate) mod pending_binding_kind;
+pub(crate) mod pending_definition;

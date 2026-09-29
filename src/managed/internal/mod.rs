@@ -5,9 +5,9 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
+//! Internal action storage for managed component lifecycles.
 
-mod construction;
-pub(super) mod replacement;
-pub(super) mod validation;
-
-pub(super) use construction::Construction;
+pub(crate) mod cleanup_action;
+pub(crate) mod cleanup_entry;
+pub(crate) mod cleanup_journal;
+pub(crate) mod wait;
