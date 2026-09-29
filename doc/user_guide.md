@@ -22,22 +22,6 @@ the graph, and then runs factories in dependency order. `build_all()` constructs
 all active definitions instead of selecting a root closure. Neither method
 publishes a partial context after failure.
 
-## Cross-crate application assembly
-
-A provider crate owns component definitions, while the application chooses which providers to install and which services to build. The repository fixture at `tests/fixtures/ioc_cross_crate/` demonstrates this boundary; it is an executable contract test, not a claim about a production deployment.
-
-The provider crate exports `register_ioc(&mut builder)`. The app fixture's `app/src/discovery.rs` defines `assemble(config, profiles)`: it creates a builder, stages the configuration snapshot and active profiles, then calls the provider registration function. Registration only stages definitions; factories still wait for `build()` or `build_all()`.
-
-For a consuming application, the dependency roles are visible in `tests/fixtures/ioc_cross_crate/app/Cargo.toml`: `qubit-ioc`, `qubit-config`, the provider crate and the contracts crate. The fixture test creates a `Config`, sets `fixture.label`, and then calls `assemble(config, &[])`. It builds the graph and queries `AppService`, a concrete repository by ID, and the primary `dyn Repository` binding. The test verifies that concrete and trait queries share the same allocation, and that a bean in the provider crate reads the staged configuration. Run the contract with:
-
-```bash
-cargo test --manifest-path tests/fixtures/ioc_cross_crate/Cargo.toml
-```
-
-If the configuration subtree is absent, construction returns `BuildError::ConfigReadFailed`; its source chain retains the original `ConfigError`. To activate the optional preview provider, call `assemble(config, &["default", "preview"])`; an inactive provider is absent from the built context. The fixture's integration tests assert both outcomes.
-
-A separate downstream fixture, `rs-execution-services/tests/fixtures/ioc_application_consumer/src/main.rs`, demonstrates the resource lifecycle boundary: it installs managed `ExecutionServices` and `EventBus`, obtains shared services after build, requests stop through `begin_shutdown()`, then awaits `ShutdownHandle::wait()`. These snippets come from different fixtures with different purposes; use them as contract references and keep application-specific configuration and external side effects in the consuming application.
-
 ## Scenario: start a service with a shared setting
 
 An application has a greeting text and a service that needs it. The goal is to
@@ -195,6 +179,22 @@ The macro does not guess that `application::Managed<T>` or a type alias is the
 runtime wrapper; those remain ordinary component outputs. Independent consumer
 workspaces exercise each path in
 [`managed_paths`](../tests/fixtures/managed_paths/).
+
+## Cross-crate application assembly
+
+A provider crate owns component definitions, while the application chooses which providers to install and which services to build. The repository fixture at `tests/fixtures/ioc_cross_crate/` demonstrates this boundary; it is an executable contract test, not a claim about a production deployment.
+
+The provider crate exports `register_ioc(&mut builder)`. The app fixture's `app/src/discovery.rs` defines `assemble(config, profiles)`: it creates a builder, stages the configuration snapshot and active profiles, then calls the provider registration function. Registration only stages definitions; factories still wait for `build()` or `build_all()`.
+
+For a consuming application, the dependency roles are visible in `tests/fixtures/ioc_cross_crate/app/Cargo.toml`: `qubit-ioc`, `qubit-config`, the provider crate and the contracts crate. The fixture test creates a `Config`, sets `fixture.label`, and then calls `assemble(config, &[])`. It builds the graph and queries `AppService`, a concrete repository by ID, and the primary `dyn Repository` binding. The test verifies that concrete and trait queries share the same allocation, and that a bean in the provider crate reads the staged configuration. Run the contract with:
+
+```bash
+cargo test --manifest-path tests/fixtures/ioc_cross_crate/Cargo.toml
+```
+
+If the configuration subtree is absent, construction returns `BuildError::ConfigReadFailed`; its source chain retains the original `ConfigError`. To activate the optional preview provider, call `assemble(config, &["default", "preview"])`; an inactive provider is absent from the built context. The fixture's integration tests assert both outcomes.
+
+A separate downstream fixture, `rs-execution-services/tests/fixtures/ioc_application_consumer/src/main.rs`, demonstrates the resource lifecycle boundary: it installs managed `ExecutionServices` and `EventBus`, obtains shared services after build, requests stop through `begin_shutdown()`, then awaits `ShutdownHandle::wait()`. These snippets come from different fixtures with different purposes; use them as contract references and keep application-specific configuration and external side effects in the consuming application.
 
 Use an async factory when construction itself must await I/O. `#[bean] async fn` and `register_async_factory` both create async definitions; choose `build_async()` or `build_all_async()` and drive the returned future with the application's executor. Calling synchronous `build()` on a selected async definition returns `BuildError::AsyncRequired` before any factory runs. The app owns executor choice and cancellation policy.
 

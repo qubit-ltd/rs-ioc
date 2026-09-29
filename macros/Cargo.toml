@@ -7,6 +7,7 @@ authors = ["Haixing Hu <starfish.hu@gmail.com>"]
 license = "Apache-2.0"
 repository = "https://github.com/qubit-ltd/rs-ioc"
 description = "Procedural macros for qubit-ioc"
+readme = "README.md"
 
 [lib]
 proc-macro = true

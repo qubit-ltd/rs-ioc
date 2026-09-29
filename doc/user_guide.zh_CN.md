@@ -18,22 +18,6 @@
 构建器先筛选生效的 profile，再解析根节点和依赖、验证依赖图，最后按依赖顺序执行
 工厂。`build_all()` 则构建所有生效的定义。构建失败时不会发布部分上下文。
 
-## 跨 crate 装配：应用选择 provider
-
-provider crate 负责组件定义；应用负责决定安装哪些 provider、构建哪些服务。仓库的 `tests/fixtures/ioc_cross_crate/` 展示了这个边界。这是可运行的契约测试，不代表已有生产部署采用该方案。
-
-provider crate 导出 `register_ioc(&mut builder)`。应用夹具的 `app/src/discovery.rs` 提供 `assemble(config, profiles)`：创建 builder，登记配置快照并选择 profile，再调用 provider 的注册入口。登记只暂存定义；工厂要等到 `build()` 或 `build_all()` 才会运行。
-
-消费方依赖关系见 `tests/fixtures/ioc_cross_crate/app/Cargo.toml`：应用直接依赖 `qubit-ioc`、`qubit-config`、provider crate 和 contracts crate。集成测试先创建 `Config` 并设置 `fixture.label`，再调用 `assemble(config, &[])` 构图，查询 `AppService`、按 ID 查询具体 repository，并查询 primary 的 `dyn Repository`。测试验证具体类型和 trait alias 指向同一份实例，也验证 provider crate 中的 bean 能读取应用登记的配置。运行这组契约测试：
-
-```bash
-cargo test --manifest-path tests/fixtures/ioc_cross_crate/Cargo.toml
-```
-
-若配置子树缺失，构造返回 `BuildError::ConfigReadFailed`，source 链保留原始 `ConfigError`。需要启用可选 preview provider 时，调用 `assemble(config, &["default", "preview"])`；未激活的定义不会出现在 context 中。夹具集成测试覆盖了这两种结果。
-
-另一个下游夹具 `rs-execution-services/tests/fixtures/ioc_application_consumer/src/main.rs` 展示托管资源生命周期：安装托管的 `ExecutionServices` 与 `EventBus`，构建后取得共享服务，在退出时调用 `begin_shutdown()` 请求停止，再等待 `ShutdownHandle::wait()` 完成。这些片段来自不同夹具、承担不同验证目标；应用仍需自行处理配置来源和外部副作用。
-
 ## 场景：用共享配置启动服务
 
 一个应用有问候文本，服务启动时需要读取它。目标是在启动阶段构建服务，看到输出，
@@ -172,6 +156,22 @@ fn replace_for_test() -> Result<(), Box<dyn Error>> {
 `application::Managed<T>` 或类型别名就是运行时封装；它们仍按普通组件输出处理。
 独立消费 workspace 在
 [`managed_paths`](../tests/fixtures/managed_paths/) 中覆盖了每种路径。
+
+## 跨 crate 装配：应用选择 provider
+
+provider crate 负责组件定义；应用负责决定安装哪些 provider、构建哪些服务。仓库的 `tests/fixtures/ioc_cross_crate/` 展示了这个边界。这是可运行的契约测试，不代表已有生产部署采用该方案。
+
+provider crate 导出 `register_ioc(&mut builder)`。应用夹具的 `app/src/discovery.rs` 提供 `assemble(config, profiles)`：创建 builder，登记配置快照并选择 profile，再调用 provider 的注册入口。登记只暂存定义；工厂要等到 `build()` 或 `build_all()` 才会运行。
+
+消费方依赖关系见 `tests/fixtures/ioc_cross_crate/app/Cargo.toml`：应用直接依赖 `qubit-ioc`、`qubit-config`、provider crate 和 contracts crate。集成测试先创建 `Config` 并设置 `fixture.label`，再调用 `assemble(config, &[])` 构图，查询 `AppService`、按 ID 查询具体 repository，并查询 primary 的 `dyn Repository`。测试验证具体类型和 trait alias 指向同一份实例，也验证 provider crate 中的 bean 能读取应用登记的配置。运行这组契约测试：
+
+```bash
+cargo test --manifest-path tests/fixtures/ioc_cross_crate/Cargo.toml
+```
+
+若配置子树缺失，构造返回 `BuildError::ConfigReadFailed`，source 链保留原始 `ConfigError`。需要启用可选 preview provider 时，调用 `assemble(config, &["default", "preview"])`；未激活的定义不会出现在 context 中。夹具集成测试覆盖了这两种结果。
+
+另一个下游夹具 `rs-execution-services/tests/fixtures/ioc_application_consumer/src/main.rs` 展示托管资源生命周期：安装托管的 `ExecutionServices` 与 `EventBus`，构建后取得共享服务，在退出时调用 `begin_shutdown()` 请求停止，再等待 `ShutdownHandle::wait()` 完成。这些片段来自不同夹具、承担不同验证目标；应用仍需自行处理配置来源和外部副作用。
 
 只有构造过程需要等待 I/O 时才使用异步工厂。可以声明 `#[bean] async fn`，也可调用 `register_async_factory`；之后用 `build_async()` 或 `build_all_async()`，并由应用执行器驱动 future。若选中图里有异步定义却调用同步 `build()`，会在工厂运行前返回 `BuildError::AsyncRequired`。执行器选择和取消策略由应用负责。
 
