@@ -40,6 +40,7 @@ impl ShutdownError {
     /// # Returns
     ///
     /// An error that can be cloned without cloning its original error sources.
+    #[must_use]
     pub fn new(failures: Vec<ShutdownFailure>) -> Self {
         Self {
             failures: Arc::from(failures),
@@ -48,6 +49,7 @@ impl ShutdownError {
 
     /// Returns every recorded cleanup failure in action order.
     #[must_use]
+    #[inline]
     pub fn failures(&self) -> &[ShutdownFailure] {
         &self.failures
     }

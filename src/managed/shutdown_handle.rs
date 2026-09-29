@@ -28,7 +28,9 @@ use crate::store::InstanceStore;
 /// Dropping an [`ApplicationContext`](crate::ApplicationContext) does not run
 /// managed stop actions. Call [`crate::ApplicationContext::begin_shutdown`] to
 /// request stops explicitly, then keep this handle and await [`Self::wait`].
-/// Dropping the returned handle abandons unfinished waits.
+/// Explicitly dropping the returned handle abandons unfinished waits and
+/// observation of cleanup errors. It does not start pending wait callbacks or
+/// poll retained wait futures, and it does not repeat stop actions.
 ///
 /// # Examples
 ///
@@ -50,6 +52,7 @@ use crate::store::InstanceStore;
 /// # let _ = wait_for_shutdown(shutdown);
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
+#[must_use = "await shutdown.wait() to observe termination and cleanup errors, or explicitly drop the handle to abandon waiting"]
 pub struct ShutdownHandle {
     /// Keeps managed values alive until shutdown waiting finishes or is
     /// dropped.

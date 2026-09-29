@@ -731,3 +731,54 @@ fn test_dropping_context_does_not_stop_managed_components() {
     drop(context);
     assert_eq!(stops.load(Ordering::SeqCst), 0);
 }
+
+#[test]
+fn test_explicit_drop_shutdown_stops_without_waiting() {
+    let stops = Arc::new(AtomicUsize::new(0));
+    let wait_callbacks = Arc::new(AtomicUsize::new(0));
+    let waits = Arc::new(AtomicUsize::new(0));
+    let stop_count = Arc::clone(&stops);
+    let wait_callback_count = Arc::clone(&wait_callbacks);
+    let wait_count = Arc::clone(&waits);
+    let mut builder = ContainerBuilder::new();
+    builder
+        .register_managed_factory::<First, _>(&[], move |_| {
+            Ok(Managed::new(Arc::new(First), move |_| {
+                stop_count.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            })
+            .with_wait(move |_| {
+                wait_callback_count.fetch_add(1, Ordering::SeqCst);
+                Box::pin(async move {
+                    wait_count.fetch_add(1, Ordering::SeqCst);
+                    Ok(())
+                })
+            }))
+        })
+        .expect("register managed component");
+
+    drop(builder.build_all().expect("build managed component").begin_shutdown());
+    assert_eq!(stops.load(Ordering::SeqCst), 1);
+    assert_eq!(wait_callbacks.load(Ordering::SeqCst), 0);
+    assert_eq!(waits.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn test_explicit_drop_untransferred_managed_does_not_run_cleanup() {
+    let stops = Arc::new(AtomicUsize::new(0));
+    let waits = Arc::new(AtomicUsize::new(0));
+    let stop_count = Arc::clone(&stops);
+    let wait_count = Arc::clone(&waits);
+    let managed = Managed::new(Arc::new(First), move |_| {
+        stop_count.fetch_add(1, Ordering::SeqCst);
+        Ok(())
+    })
+    .with_wait(move |_| {
+        wait_count.fetch_add(1, Ordering::SeqCst);
+        Box::pin(async { Ok(()) })
+    });
+
+    drop(managed);
+    assert_eq!(stops.load(Ordering::SeqCst), 0);
+    assert_eq!(waits.load(Ordering::SeqCst), 0);
+}

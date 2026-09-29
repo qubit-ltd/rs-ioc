@@ -23,6 +23,9 @@ use crate::store::ErasedInstance;
 /// explicit asynchronous shutdown or a returned asynchronous build failure.
 /// Dropping a context does not invoke either callback; applications begin
 /// shutdown explicitly through [`crate::ApplicationContext::begin_shutdown`].
+/// Return this value from a managed factory so its actions can be tracked.
+/// Dropping a managed value before handing it to the container drops its
+/// callbacks without invoking either cleanup action.
 ///
 /// # Type Parameters
 ///
@@ -36,9 +39,15 @@ use crate::store::ErasedInstance;
 ///
 /// let _worker = Managed::new(Arc::new("worker"), |_| Ok(()));
 /// ```
+#[must_use = "return or register this managed value so its cleanup actions can be tracked"]
 pub struct Managed<T: ?Sized + Send + Sync + 'static> {
+    /// Shared component transferred to container storage alongside its actions.
     value: Arc<T>,
+    /// One-shot stop callback invoked only after container ownership transfer;
+    /// dropping an untransferred managed value does not call it.
     stop: Box<dyn FnOnce(Arc<T>) -> Result<(), CleanupError> + Send + 'static>,
+    /// Optional wait callback invoked during explicit asynchronous cleanup;
+    /// dropping an untransferred managed value does not call it.
     wait: Option<Box<dyn FnOnce(Arc<T>) -> CleanupFuture + Send + 'static>>,
 }
 
@@ -46,7 +55,9 @@ impl<T: ?Sized + Send + Sync + 'static> Managed<T> {
     /// Creates a managed value with a synchronous stop action.
     ///
     /// The stop closure runs once during explicit shutdown or when an
-    /// asynchronous build future is cancelled after construction.
+    /// asynchronous build future is cancelled after the factory returns this
+    /// value to the container. Dropping it before that transfer does not call
+    /// the stop action.
     ///
     /// # Type Parameters
     ///
@@ -80,7 +91,9 @@ impl<T: ?Sized + Send + Sync + 'static> Managed<T> {
     ///
     /// # Parameters
     ///
-    /// `wait` runs after stop actions during asynchronous shutdown.
+    /// `wait` runs after stop actions during asynchronous shutdown. Dropping
+    /// this value before transfer to the container does not call it; dropping
+    /// the shutdown handle abandons waiting without starting pending callbacks.
     ///
     /// # Returns
     ///

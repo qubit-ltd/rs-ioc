@@ -1,0 +1,16 @@
+error: unused `Managed` that must be used
+  --> tests/ui/lifecycle/ignored_managed.rs:15:5
+   |
+15 |     Managed::new(Arc::new(1_u8), |_| Ok(()));
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: return or register this managed value so its cleanup actions can be tracked
+note: the lint level is defined here
+  --> tests/ui/lifecycle/ignored_managed.rs:8:9
+   |
+ 8 | #![deny(unused_must_use)]
+   |         ^^^^^^^^^^^^^^^
+help: use `let _ = ...` to ignore the resulting value
+   |
+15 |     let _ = Managed::new(Arc::new(1_u8), |_| Ok(()));
+   |     +++++++

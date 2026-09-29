@@ -24,11 +24,14 @@ use crate::options::DefinitionSource;
 pub(crate) struct CleanupJournal {
     /// Successfully constructed managed values in construction order.
     pub(in crate::managed) entries: Vec<CleanupEntry>,
-    /// Whether dropping the journal should stop and await during build abort.
+    /// Whether dropping the journal should run stop actions without awaiting
+    /// during build abort.
     abort_on_drop: bool,
 }
 
 impl Default for CleanupJournal {
+    /// Creates an empty journal with cancellation cleanup armed.
+    #[inline]
     fn default() -> Self {
         Self {
             entries: Vec::new(),
@@ -39,6 +42,7 @@ impl Default for CleanupJournal {
 
 impl CleanupJournal {
     /// Disables build-cancellation cleanup after ownership moves to a context.
+    #[inline]
     pub(crate) fn disarm_abort(&mut self) {
         self.abort_on_drop = false;
     }
@@ -110,6 +114,10 @@ impl CleanupJournal {
 }
 
 impl Drop for CleanupJournal {
+    /// Stops constructed resources when build ownership was not published.
+    ///
+    /// Stop failures and panics are discarded; asynchronous waits are never
+    /// polled from `Drop`.
     fn drop(&mut self) {
         if self.abort_on_drop {
             self.abort();
