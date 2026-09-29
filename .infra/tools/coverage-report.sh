@@ -8,7 +8,7 @@ cargo llvm-cov report --json --output-path coverage.json
 cargo llvm-cov report --lcov --output-path lcov.info
 cargo llvm-cov report --cobertura --output-path target/llvm-cov/cobertura.xml
 cargo llvm-cov report --text --output-path coverage.txt
-cargo llvm-cov report --html --output-dir target/llvm-cov
+cargo llvm-cov report --html --output-dir target/llvm-cov/html
 jq -e '.data | type == "array" and length > 0' coverage.json >/dev/null
 jq '
   reduce .data[] as $item (
