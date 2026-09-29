@@ -5,6 +5,7 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
+//! Private validation, replacement, and construction helpers.
 
 mod construction;
 pub(super) mod replacement;
