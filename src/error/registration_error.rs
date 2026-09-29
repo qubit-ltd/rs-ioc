@@ -32,6 +32,7 @@ use crate::options::DefinitionSource;
 /// assert!(matches!(result, Err(RegistrationError::InvalidBindingId { .. })));
 /// ```
 #[derive(Debug, Error)]
+#[must_use = "registration errors must be handled or explicitly discarded"]
 pub enum RegistrationError {
     /// An interface alias attempted to use a different activation profile.
     #[error("{definition}: alias profile {alias:?} differs from concrete profile {concrete:?}")]

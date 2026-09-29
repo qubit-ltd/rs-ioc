@@ -21,7 +21,10 @@ use crate::error::InvalidBindingId;
 /// # Ok::<(), qubit_ioc::InvalidBindingId>(())
 /// ```
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct BindingId(String);
+pub struct BindingId(
+    /// Validated identifier text, preserving the caller's original spelling.
+    String,
+);
 
 impl BindingId {
     /// Validates `value` and returns an owned identifier.
@@ -69,6 +72,8 @@ impl std::fmt::Display for BindingId {
 }
 
 /// Checks one dot-delimited segment against the binding ID grammar.
+#[must_use]
+#[inline]
 fn valid_segment(segment: &str) -> bool {
     let mut bytes = segment.bytes();
     matches!(bytes.next(), Some(b'A'..=b'Z' | b'a'..=b'z'))

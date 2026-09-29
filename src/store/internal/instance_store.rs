@@ -46,17 +46,28 @@ impl InstanceStore {
 
     /// Returns a clone of the stored `Arc<T>`, or `None` when absent or
     /// mistyped.
+    #[must_use]
+    #[inline]
     pub(crate) fn get<T: ?Sized + Send + Sync + 'static>(&self, key: &BindingKey) -> Option<Arc<T>> {
         self.get_erased(key)?.downcast_ref::<Arc<T>>().cloned()
     }
 
     /// Borrows the erased value for alias projection, or `None` if absent.
+    #[must_use]
+    #[inline]
     pub(crate) fn get_erased(&self, key: &BindingKey) -> Option<&ErasedInstance> {
         self.values.get(key)
     }
 
     /// Clones one erased value so a factory can retain only its resolved
     /// dependencies.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Some` with a shared clone when `key` is present, or `None`
+    /// when no value is stored under that exact key.
+    #[must_use]
+    #[inline]
     pub(crate) fn get_erased_cloned(&self, key: &BindingKey) -> Option<ErasedInstance> {
         self.values.get(key).cloned()
     }

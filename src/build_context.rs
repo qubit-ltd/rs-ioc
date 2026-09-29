@@ -72,10 +72,6 @@ impl BuildContext {
     /// `T` identifies the declared concrete or trait-object dependency and
     /// must be thread-safe and `'static`.
     ///
-    /// # Parameters
-    ///
-    /// `id` is the exact identifier of the declared required request.
-    ///
     /// # Returns
     ///
     /// A shared handle to the component selected for the declared request.
@@ -127,10 +123,6 @@ impl BuildContext {
     /// `T` identifies the declared concrete or trait-object dependency and
     /// must be thread-safe and `'static`.
     ///
-    /// # Parameters
-    ///
-    /// `id` is the exact identifier of the declared required request.
-    ///
     /// # Returns
     ///
     /// `Some` contains the selected component; `None` means the declared
@@ -178,7 +170,8 @@ impl BuildContext {
         Ok(keys.first().map(|key| self.read::<T>(key)))
     }
 
-    /// Clones every selected `Arc<T>` in graph order for a declared collection.
+    /// Clones every selected `Arc<T>` for a declared collection, sorted by
+    /// binding order, ID, and definition source location.
     ///
     /// An empty declared collection returns an empty vector; an undeclared
     /// collection returns [`BuildAccessError`].
@@ -190,7 +183,8 @@ impl BuildContext {
     ///
     /// # Returns
     ///
-    /// Every selected component in graph order; an empty declaration result
+    /// Every selected component in ascending binding order, ID, and source
+    /// location; ties preserve registration order. An empty declaration result
     /// is an empty vector.
     ///
     /// # Errors

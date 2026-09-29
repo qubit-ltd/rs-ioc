@@ -30,6 +30,7 @@ use crate::options::DefinitionSource;
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Debug, Error)]
+#[must_use = "dependency access errors must be handled or explicitly discarded"]
 pub enum BuildAccessError {
     /// The factory requested a dependency absent from its declaration.
     #[error("factory at {definition} did not declare dependency {dependency:?}")]

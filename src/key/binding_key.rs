@@ -69,6 +69,8 @@ impl BindingKey {
     /// # Returns
     ///
     /// A key combining `T`'s runtime type identity with `id`.
+    #[must_use]
+    #[inline]
     pub fn of<T: ?Sized + 'static>(id: Option<BindingId>) -> Self {
         Self {
             type_id: TypeId::of::<T>(),

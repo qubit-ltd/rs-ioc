@@ -15,8 +15,14 @@ pub(crate) enum PathOrigin {
     /// The binding was selected directly by a root request or synthetic seed.
     Root,
     /// The binding was selected through a declared dependency or alias target.
-    Dependency(BindingLocation),
+    Dependency(
+        /// Requesting binding that selected this dependency or alias target.
+        BindingLocation,
+    ),
     /// The binding was included because another binding selected its
     /// definition.
-    DefinitionMember(BindingLocation),
+    DefinitionMember(
+        /// Binding that caused the shared definition to enter the closure.
+        BindingLocation,
+    ),
 }

@@ -45,6 +45,8 @@ impl DefinitionSource {
     /// # Returns
     ///
     /// A source location suitable for diagnostics and stable ordering.
+    #[must_use]
+    #[inline]
     pub const fn new(
         package: &'static str,
         module_path: &'static str,

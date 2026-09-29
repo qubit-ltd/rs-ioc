@@ -25,6 +25,7 @@ use crate::key::BindingKey;
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Debug, Error)]
+#[must_use = "resolution errors must be handled or explicitly discarded"]
 pub enum ResolveError {
     /// No built binding satisfies the requested type and ID.
     #[error("missing component {request:?}; available: {available:?}")]
@@ -44,5 +45,9 @@ pub enum ResolveError {
     },
     /// The caller supplied an invalid ID at lookup time.
     #[error(transparent)]
-    InvalidBindingId(#[from] InvalidBindingId),
+    InvalidBindingId(
+        /// Parse failure retaining the caller's invalid lookup ID.
+        #[from]
+        InvalidBindingId,
+    ),
 }

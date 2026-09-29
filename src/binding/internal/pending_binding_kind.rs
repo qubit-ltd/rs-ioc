@@ -18,15 +18,31 @@ use crate::key::BindingKey;
 /// Deferred construction or projection action for a binding.
 pub(crate) enum PendingBindingKind {
     /// A shared instance supplied before graph construction.
-    Instance(ErasedInstance),
+    Instance(
+        /// Shared value erased while retaining the contained `Arc` type.
+        ErasedInstance,
+    ),
     /// A one-shot synchronous factory.
-    SyncFactory(SyncFactory),
+    SyncFactory(
+        /// Callback consumed to construct the binding synchronously.
+        SyncFactory,
+    ),
     /// A one-shot asynchronous factory.
-    AsyncFactory(AsyncFactory),
+    AsyncFactory(
+        /// Callback consumed to construct the binding asynchronously.
+        AsyncFactory,
+    ),
     /// A one-shot synchronous factory returning a managed component.
-    ManagedSyncFactory(ManagedSyncFactory),
+    ManagedSyncFactory(
+        /// Callback consumed to construct the binding with cleanup actions.
+        ManagedSyncFactory,
+    ),
     /// A one-shot asynchronous factory returning a managed component.
-    ManagedAsyncFactory(ManagedAsyncFactory),
+    ManagedAsyncFactory(
+        /// Async callback consumed to construct the binding with cleanup
+        /// actions.
+        ManagedAsyncFactory,
+    ),
     /// A projection from a previously constructed concrete binding.
     Alias {
         /// Key of the concrete binding to project.

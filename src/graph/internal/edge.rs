@@ -13,11 +13,25 @@ use crate::key::BindingKey;
 /// A resolved edge or a failure delayed until its root path is known.
 pub(in crate::graph) enum Edge {
     /// A dependency or alias target selected by validation.
-    Target(usize),
+    Target(
+        /// Flattened index of the selected graph node.
+        usize,
+    ),
     /// A required request with no matching key.
-    MissingDependency(Dependency),
+    MissingDependency(
+        /// Required request that could not select a binding.
+        Dependency,
+    ),
     /// A single-value request with multiple candidates.
-    AmbiguousDependency(Dependency, Vec<BindingKey>),
+    AmbiguousDependency(
+        /// Single-value request that could not select a unique binding.
+        Dependency,
+        /// Matching binding keys in deterministic candidate order.
+        Vec<BindingKey>,
+    ),
     /// An alias refers to a key absent from active definitions.
-    MissingAliasTarget(BindingKey),
+    MissingAliasTarget(
+        /// Exact concrete key required by the alias.
+        BindingKey,
+    ),
 }

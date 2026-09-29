@@ -69,6 +69,8 @@ impl Dependency {
     /// # Returns
     ///
     /// A required request for any binding in `T`'s type namespace.
+    #[must_use]
+    #[inline]
     pub fn of<T: ?Sized + 'static>() -> Self {
         Self::make::<T>(None, DependencyCardinality::Required)
     }
@@ -89,6 +91,7 @@ impl Dependency {
     /// # Returns
     ///
     /// A required request for a binding with the exact raw identifier.
+    #[must_use]
     pub fn with_id<T: ?Sized + 'static>(id: &str) -> Self {
         Self::make::<T>(Some(id), DependencyCardinality::Required)
     }
@@ -105,6 +108,8 @@ impl Dependency {
     /// # Returns
     ///
     /// An optional request for any binding in `T`'s type namespace.
+    #[must_use]
+    #[inline]
     pub fn optional<T: ?Sized + 'static>() -> Self {
         Self::make::<T>(None, DependencyCardinality::Optional)
     }
@@ -125,6 +130,7 @@ impl Dependency {
     /// # Returns
     ///
     /// An optional request for a binding with the exact raw identifier.
+    #[must_use]
     pub fn optional_with_id<T: ?Sized + 'static>(id: &str) -> Self {
         Self::make::<T>(Some(id), DependencyCardinality::Optional)
     }
@@ -141,6 +147,8 @@ impl Dependency {
     /// # Returns
     ///
     /// A collection request for every matching binding in collection order.
+    #[must_use]
+    #[inline]
     pub fn all<T: ?Sized + 'static>() -> Self {
         Self::make::<T>(None, DependencyCardinality::All)
     }
@@ -157,6 +165,10 @@ impl Dependency {
     }
 
     /// Returns the type name used for diagnostics.
+    ///
+    /// # Returns
+    ///
+    /// The compiler-provided name captured for the requested Rust type.
     #[must_use]
     #[inline]
     pub fn type_name(&self) -> &'static str {
@@ -164,6 +176,11 @@ impl Dependency {
     }
 
     /// Returns the original ID text, or `None` for candidate selection.
+    ///
+    /// # Returns
+    ///
+    /// `Some` borrows the unvalidated ID with its original spelling; `None`
+    /// leaves binding selection unconstrained by ID.
     #[must_use]
     #[inline]
     pub fn id(&self) -> Option<&str> {
@@ -171,6 +188,11 @@ impl Dependency {
     }
 
     /// Returns the requested number of matching bindings.
+    ///
+    /// # Returns
+    ///
+    /// The required, optional, or collection cardinality captured at
+    /// construction.
     #[must_use]
     #[inline]
     pub fn cardinality(&self) -> DependencyCardinality {
@@ -179,6 +201,7 @@ impl Dependency {
 
     /// Creates a normalized request while keeping its ID unvalidated until
     /// registration.
+    #[must_use]
     fn make<T: ?Sized + 'static>(id: Option<&str>, cardinality: DependencyCardinality) -> Self {
         Self {
             type_id: TypeId::of::<T>(),

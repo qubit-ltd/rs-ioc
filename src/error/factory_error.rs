@@ -35,6 +35,7 @@ pub struct FactoryError {
 
 impl FactoryError {
     /// Wraps a user error without discarding its source chain.
+    #[must_use]
     pub fn new<E: Error + Send + Sync + 'static>(source: E) -> Self {
         Self {
             source: Box::new(source),
@@ -46,8 +47,9 @@ impl FactoryError {
     ///
     /// The path is the Config lookup key; `target` names the field, parameter,
     /// or properties type being constructed. Construction uses both to report
-    /// [`BuildError::ConfigReadFailed`].
+    /// [`crate::error::BuildError::ConfigReadFailed`].
     #[cfg(feature = "config")]
+    #[must_use]
     pub(crate) fn config_read<E: Error + Send + Sync + 'static>(source: E, path_key: &str, target: &str) -> Self {
         Self {
             source: Box::new(source),
@@ -60,8 +62,14 @@ impl FactoryError {
 
     /// Returns the generated read's path and destination, when one failed.
     ///
+    /// This query borrows the stored text without allocating.
+    ///
+    /// # Returns
+    ///
     /// `None` indicates an ordinary factory error; `Some` borrows the stored
     /// configuration key and target name.
+    #[must_use]
+    #[inline]
     pub(crate) fn config_read_context(&self) -> Option<(&str, &str)> {
         self.config_read
             .as_ref()

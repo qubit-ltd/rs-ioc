@@ -30,6 +30,7 @@ use crate::options::DefinitionSource;
 /// assert!(matches!(error, BuildError::NoRootsSelected));
 /// ```
 #[derive(Debug, Error)]
+#[must_use = "build errors must be handled or explicitly discarded"]
 pub enum BuildError {
     /// A factory failed and one or more managed components also failed to clean
     /// up.

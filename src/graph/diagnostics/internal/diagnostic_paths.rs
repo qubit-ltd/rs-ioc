@@ -26,6 +26,7 @@ pub(crate) struct DiagnosticPaths {
 
 impl DiagnosticPaths {
     /// Creates empty provenance slots matching all active binding locations.
+    #[must_use]
     pub(crate) fn new(definitions: &[PendingDefinition]) -> Self {
         let mut keys = Vec::with_capacity(definitions.len());
         let mut origins = Vec::with_capacity(definitions.len());
@@ -75,16 +76,21 @@ impl DiagnosticPaths {
     }
 
     /// Returns the flattened index used by iterative validation walks.
+    #[must_use]
+    #[inline]
     pub(crate) fn node_index(&self, location: BindingLocation) -> usize {
         self.indices[location.definition][location.binding]
     }
 
     /// Returns diagnostic roots in the order they were selected.
+    #[must_use]
+    #[inline]
     pub(crate) fn roots(&self) -> &[BindingLocation] {
         &self.roots
     }
 
     /// Reconstructs the first root path to a selected binding.
+    #[must_use]
     pub(crate) fn path_to(&self, location: BindingLocation) -> Vec<BindingKey> {
         let mut path = Vec::new();
         let mut current = location;
