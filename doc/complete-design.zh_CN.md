@@ -23,7 +23,7 @@ workspace 包含运行时 `qubit-ioc` 与过程宏 `qubit-ioc-macros`。Edition 
 
 **定义**是一次组件或工厂注册；**绑定**由 Rust 类型和可选 ID 唯一标识。ID 区分大小写，以点分段；每段以 ASCII 字母开头，后续可含字母、数字和下划线。一个具体实例可通过显式 `bind = dyn Trait` 暴露 trait 绑定；独立 `impl Trait for Type` 不会自动产生绑定。具体键和其接口别名共享同一底层 `Arc`。
 
-宏支持具名字段结构体和单元结构体，以及同步/异步自由函数工厂。组件字段或 bean 参数显式声明依赖；支持单值、精确 ID、可选和集合请求。对其他数据形状，使用手动工厂。字段与工厂的 `cfg` 激活条件会同步投影到宏生成的依赖请求和构造代码；嵌套 `cfg_attr(..., cfg(...))` 转换为等价条件。`inject`、`value` 等 helper 属性必须直接写在字段上，放进 `cfg_attr` 会得到明确诊断。配置宏需要 `config` feature 和已登记的配置快照。
+宏支持具名字段结构体和单元结构体，以及同步/异步自由函数工厂。组件字段或 bean 参数显式声明依赖；支持单值、精确 ID、可选和集合请求。对其他数据形状，使用手动工厂。字段和 bean 参数的 `cfg` 激活条件会同步投影到宏生成的依赖请求、构造代码和函数调用实参；嵌套 `cfg_attr(..., cfg(...))` 转换为等价条件。被禁用字段上的不支持注入类型不会拒绝该配置；启用字段时会产生带字段 span 的编译错误。`inject`、`value` 等 helper 属性必须直接写在组件字段或 bean 参数上，放进 `cfg_attr` 会得到明确诊断。配置宏需要 `config` feature 和已登记的配置快照。
 
 应用可以用 `BindingOptions` 指定 ID、primary、order 和 profile。profile 在冲突与依赖验证前筛选；无 profile 定义始终生效。每次 `active_profiles` 都替换之前的集合；空集合激活 `default` 与无 profile 定义。多个同类型候选只有在恰有一个 `primary` 时才能满足未指定 ID 的单值请求；指定 ID 时精确匹配，primary 不参与。alias 的 primary/order 不改变具体类型绑定的选择元数据。
 
@@ -43,7 +43,7 @@ workspace 包含运行时 `qubit-ioc` 与过程宏 `qubit-ioc-macros`。Edition 
 
 图验证先解析请求候选，再检查缺失、歧义、重复 primary 和环路；同步构建还会预检整个选中图是否包含异步工厂。图验证与适用的同步预检全部通过后，才会运行工厂或 alias projector。可选依赖无候选时解析为 `None`，集合依赖无候选时为空；命中的依赖仍参与图验证。构造顺序保证依赖先于消费者。独立定义按注册和依赖声明顺序稳定排序；构建串行执行。构建成功才发布 context，失败不暴露部分容器。
 
-`BuildContext` 只允许工厂访问其声明并由图解析出的依赖。未声明访问返回 `BuildAccessError`。`ApplicationContext` 查询已构造实例，不会重跑工厂。发布时建立不可变的类型与精确键索引；单值候选选择和集合排序仍在每次查询时完成。`BuildContext::get_all` 和 `ApplicationContext::get_all` 都按 `order`、ID、来源位置升序排列，完全相同的项保留注册顺序。错误中的候选和可用绑定保留注册顺序。
+`BuildContext` 只允许工厂访问其声明并由图解析出的依赖。未声明访问返回 `BuildAccessError`。`ApplicationContext` 查询已构造实例，不会重跑工厂。发布时建立不可变的精确键索引和按类型索引；每个类型索引按 binding order、ID、来源位置和注册位置排序一次。单值与 ID 查询直接遍历该索引，集合查询复用其顺序。`BuildContext::get_all` 和 `ApplicationContext::get_all` 都按 `order`、ID、来源位置升序排列，完全相同的项保留注册顺序。错误候选和可用绑定保留注册顺序。
 
 ## 5. 配置与上下游边界
 

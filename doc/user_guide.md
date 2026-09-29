@@ -190,9 +190,10 @@ definition with `builder.install::<T>()?`, or call a provider crate's
 The `macros` and `config` features can be enabled independently. Component and
 bean declarations need `macros`. `#[value]` and `#[ConfigurationProperties]`
 need both `macros` and `config`; enabling `config` alone does not export those
-macros. Field `cfg` and nested `cfg_attr(..., cfg(...))` conditions also
-control generated dependency requests and initialization. Put `inject` and
-`value` helpers directly on fields; nested helpers inside `cfg_attr` are
+macros. Field and bean-parameter `cfg` conditions, including nested
+`cfg_attr(..., cfg(...))`, also control generated dependency requests,
+initialization, and factory call arguments. Put `inject` and
+`value` helpers directly on component fields or bean parameters; nested helpers inside `cfg_attr` are
 rejected with a diagnostic. With `default-features = false`, manual
 registration needs neither feature.
 
@@ -210,6 +211,14 @@ start with a letter and contain only letters, digits, or underscores.
 `get_by_id::<T>()`, `try_get::<T>()`, and `get_all::<T>()` support exact,
 optional, and collection queries after construction. `get_all()` orders
 results by `order`, ID, and source location.
+
+`register_instance_with` validates its own ID and profile when staging the
+instance. Collisions with other definitions are checked at build time after
+inactive profiles have been filtered. Factory panics propagate with Rust's
+normal panic behavior. On a later construction failure, synchronous builds
+stop managed values already returned by factories but do not wait for them;
+asynchronous builds stop and wait before returning the build error with any
+cleanup failures.
 
 ### Replace one complete definition
 

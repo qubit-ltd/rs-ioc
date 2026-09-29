@@ -55,9 +55,12 @@ Macros support named-field and unit structs, plus synchronous and asynchronous
 free-function factories. Fields and parameters declare required, exact-ID,
 optional, or collection requests. Unsupported data shapes can use manual
 factories. `cfg` and supported nested `cfg_attr(..., cfg(...))` activation
-conditions are projected to generated registration and factory code. A helper
-attribute such as `inject` or `value` inside `cfg_attr` is rejected; apply the
-helper directly to the field.
+conditions are projected to generated registration, dependency, construction,
+and bean-call argument code. An unsupported injection type on a disabled field
+does not reject that configuration; enabling the field produces a
+span-targeted compile error. A helper attribute such as `inject` or `value`
+inside `cfg_attr` is rejected; apply the helper directly to the component field
+or bean parameter.
 
 `BindingOptions` can specify ID, `primary`, `order`, and `profile`. Profiles
 filter definitions before duplicate and dependency validation. An unprofiled
@@ -116,8 +119,10 @@ definition is selected as a unit retain a definition-member provenance in the
 path. `BuildContext` grants access only to requests declared and resolved by
 the graph; an undeclared query returns `BuildAccessError`.
 
-The published context builds immutable type and exact-key indexes. Single-value
-selection and collection sorting still take place during each query.
+The published context builds immutable exact-key and per-type indexes; each
+per-type index is ordered once by binding order, ID, source location, and
+registration position. Single-value and ID queries iterate that index
+directly, while collection queries reuse its order.
 `BuildContext::get_all` and `ApplicationContext::get_all` order collections by
 ascending `order`, ID, and source location; complete ties retain registration
 order. Diagnostic candidate and available-binding lists retain registration

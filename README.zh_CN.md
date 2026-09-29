@@ -105,8 +105,10 @@ cargo +1.94.0 run --example readme_beans --no-default-features --features macros
 重命名依赖和 raw keyword crate 名也受支持，例如 `ioc::Managed` / `::ioc::Managed`
 以及 `r#type::Managed` / `::r#type::Managed`；这些路径也适用于
 `Result<Managed<T>, E>`。`application::Managed` 等无关路径和类型别名仍按普通组件类型处理。
-宏会把 `cfg` 激活条件应用到生成的依赖请求和注册代码。`inject`、`value` 等 helper
-属性必须直接写在字段上；放进 `cfg_attr` 会收到明确诊断。
+宏会把 `cfg` 激活条件应用到生成的依赖请求、注册代码和工厂实参，确保带条件编译的
+bean 参数与生成调用保持一致。`inject`、`value` 等 helper 属性必须直接写在组件字段或 bean 参数上；
+放进 `cfg_attr` 会收到明确诊断。跨定义键冲突会在 profile 过滤后的构建阶段检查，
+而不是在 `register_instance_with` 暂存实例时检查。
 托管资源应在图验证通过后由托管工厂创建。装配前已启动的外部资源使用
 `register_instance(Arc<T>)` 注入，并由应用负责关闭；不要在工厂闭包中捕获已创建的
 `Managed<T>`。
@@ -117,6 +119,8 @@ cargo +1.94.0 run --example readme_beans --no-default-features --features macros
 `#[value]` 与 `ConfigurationProperties` 读取保存的原始值，不会自动插值。
 结构化反序列化默认拒绝未知字段。需要插值时，可在工厂中显式调用
 `Config::get_interpolated`。
+工厂 panic 遵循 Rust 的 panic 语义并向外传播。后续工厂失败时，同步构建会 stop 已成功
+返回给容器的托管资源但不等待；异步构建会 stop 并等待，再连同清理错误返回构建错误。
 
 ### 手动组装
 

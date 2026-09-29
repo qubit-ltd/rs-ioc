@@ -116,9 +116,12 @@ supported too: `ioc::Managed` / `::ioc::Managed` and `r#type::Managed` /
 `::r#type::Managed`. These spellings also work inside `Result<Managed<T>, E>`.
 Unrelated paths such as `application::Managed` and type aliases remain ordinary
 component types.
-The macros apply `cfg` activation to generated dependency and registration
-code. Write `inject` and `value` helper attributes directly on fields; putting
-them inside `cfg_attr` produces a focused diagnostic.
+The macros apply `cfg` activation to generated dependency, registration, and
+factory argument code, so conditionally compiled bean parameters stay aligned
+with their generated calls. Write `inject` and `value` helper attributes
+directly on component fields or bean parameters; putting them inside `cfg_attr`
+produces a focused diagnostic. Cross-definition key collisions are checked during build after
+profile filtering, not when `register_instance_with` stages an instance.
 Create each managed resource inside its managed factory, after graph
 validation. Register an already-running external resource with
 `register_instance(Arc<T>)` and keep its shutdown responsibility in the
@@ -131,6 +134,10 @@ Config reads from `#[value]` and `ConfigurationProperties` preserve stored
 values without interpolation. Structured deserialization rejects unknown
 fields by default. When interpolation is required, call
 `Config::get_interpolated` explicitly in a factory.
+Factory panics follow Rust's panic behavior and propagate. If a later factory
+fails, synchronous build stops managed values already returned to the
+container without waiting; asynchronous build stops and waits before returning
+the build error together with cleanup failures.
 
 ### Manual assembly
 

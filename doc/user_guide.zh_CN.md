@@ -172,8 +172,9 @@ shutdown.wait().await?;
 自动生成绑定。`macros` 与 `config` 可独立启用：组件和 bean 声明需要 `macros`；
 `#[value]`、`#[ConfigurationProperties]` 同时需要 `macros` 和 `config`，只开
 `config` 不会导出这些宏。关闭默认 feature 后，手动注册不需要这两个 feature。
-字段上的 `cfg` 与嵌套 `cfg_attr(..., cfg(...))` 会同步控制生成的依赖请求和字段初始化。
-`inject`、`value` 等 helper 必须直接写在字段上；嵌在 `cfg_attr` 中会产生清晰诊断。
+字段和 bean 参数上的 `cfg` 与嵌套 `cfg_attr(..., cfg(...))` 会同步控制生成的依赖请求、
+字段初始化和函数调用实参。
+`inject`、`value` 等 helper 必须直接写在组件字段或 bean 参数上；嵌在 `cfg_attr` 中会产生清晰诊断。
 
 `root::<T>()` 选择未指定 ID 的根节点；`root_by_id::<T>("some.id")?` 精确
 选择绑定。`build()` 至少需要一个根节点，只构建它的传递依赖；`build_all()` 会
@@ -184,7 +185,13 @@ shutdown.wait().await?;
 `primary`，否则返回歧义错误。精确选择需要有效 ID：各段以点分隔，首字符为
 ASCII 字母，后续只能使用 ASCII 字母、数字或下划线。构建后可用
 `get_by_id::<T>()`、`try_get::<T>()`、`get_all::<T>()` 分别进行精确、可选或
-集合查询。`get_all()` 按 `order`、ID 和来源位置排序。
+集合查询。`get_all()` 按 `order`、ID 和来源位置排序。字段和 bean 参数上的 `cfg`（包括嵌套
+`cfg_attr(..., cfg(...))`）会同步控制生成的依赖请求、字段初始化和工厂调用实参。
+
+`register_instance_with` 暂存实例时会校验自身的 ID 和 profile；与其他定义的键冲突会在
+构建时、过滤非活跃 profile 后检查。工厂 panic 按 Rust 的常规 panic 语义传播。后续构造
+失败时，同步构建会 stop 工厂已成功返回给容器的托管资源，但不等待；异步构建会 stop 并
+等待，然后连同清理错误返回构建错误。
 
 定义可以指定生效的 `profile`。每次调用 `active_profiles` 都会替换此前的集合；空集合
 激活 `default`，无 profile 定义始终生效。通过 `#[value]` 或
