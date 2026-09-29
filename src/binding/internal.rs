@@ -10,3 +10,4 @@
 pub(crate) mod pending_binding;
 pub(crate) mod pending_binding_kind;
 pub(crate) mod pending_definition;
+pub(crate) mod profile;

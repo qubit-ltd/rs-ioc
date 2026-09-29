@@ -144,6 +144,55 @@ fn test_inactive_replacement_keeps_the_original_definition() {
 }
 
 #[test]
+fn test_replacement_uses_default_and_explicit_profile_selection() {
+    let cases: [(&[&str], &str, u32); 4] = [
+        (&[], "default", 2),
+        (&[], "prod", 1),
+        (&["prod"], "default", 1),
+        (&["prod"], "prod", 2),
+    ];
+    for (active_profiles, replacement_profile, expected) in cases {
+        let mut builder = ContainerBuilder::new()
+            .active_profiles(active_profiles)
+            .expect("valid active profiles");
+        let original =
+            DefinitionDraft::<Service>::from_instance(source("Original"), Default::default(), Arc::new(Service(1)))
+                .expect("stage unprofiled original");
+        original.register(&mut builder).expect("register original");
+        builder
+            .replace_definition(BindingKey::of::<Service>(None), |draft| {
+                let replacement = DefinitionDraft::<Service>::from_instance(
+                    source("Replacement"),
+                    BindingOptions {
+                        profile: Some(replacement_profile.to_owned()),
+                        ..Default::default()
+                    },
+                    Arc::new(Service(2)),
+                )?;
+                replacement.register(draft)
+            })
+            .expect("stage profiled replacement");
+
+        let context = builder.build_all().expect("profile selection permits build");
+        assert_eq!(
+            context.get::<Service>().expect("active service").value(),
+            expected,
+            "replacement {replacement_profile}, active {active_profiles:?}"
+        );
+        let (active, replaced) = context
+            .binding_sources(&BindingKey::of::<Service>(None))
+            .expect("active source is retained");
+        if expected == 1 {
+            assert_eq!(active, source("Original"));
+            assert!(replaced.is_empty());
+        } else {
+            assert_eq!(active, source("Replacement"));
+            assert_eq!(replaced, &[source("Original")]);
+        }
+    }
+}
+
+#[test]
 fn test_replacement_reports_ambiguous_active_originals_before_factories() {
     use std::sync::atomic::AtomicUsize;
     use std::sync::atomic::Ordering;

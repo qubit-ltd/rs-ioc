@@ -186,6 +186,31 @@ fn test_graph_optional_and_all_allow_empty_and_add_matched_edges() {
 }
 
 #[test]
+fn test_graph_profile_filter_defaults_and_explicit_selection() {
+    let cases: [(Option<&str>, &[&str], bool); 6] = [
+        (None, &[], true),
+        (Some("default"), &[], true),
+        (Some("prod"), &[], false),
+        (Some("default"), &["prod"], false),
+        (Some("prod"), &["prod"], true),
+        (None, &["prod"], true),
+    ];
+    for (profile, active_profiles, expected) in cases {
+        let active_profiles: Vec<_> = active_profiles.iter().map(|profile| (*profile).to_owned()).collect();
+        let graph = ValidatedGraph::validate(
+            vec![instance("profiled", B, vec![], None, false, 0, profile)],
+            &active_profiles,
+        )
+        .expect("profile filtering validates");
+        assert_eq!(
+            !graph.order.is_empty(),
+            expected,
+            "profile {profile:?}, active {active_profiles:?}"
+        );
+    }
+}
+
+#[test]
 fn test_graph_profiles_filter_before_duplicate_check() {
     let definitions = || {
         vec![

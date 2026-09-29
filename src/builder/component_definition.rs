@@ -43,6 +43,7 @@ pub trait ComponentDefinition {
     /// # Returns
     ///
     /// The package, module, file, and item location used in diagnostics.
+    #[must_use]
     fn source() -> DefinitionSource;
 
     /// Registers this definition into `builder`.

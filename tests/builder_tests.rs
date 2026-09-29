@@ -19,6 +19,7 @@ use std::task::Waker;
 use qubit_config::Config;
 #[cfg(feature = "config")]
 use qubit_config::ConfigError;
+use qubit_ioc::BindingKey;
 use qubit_ioc::BindingOptions;
 use qubit_ioc::BuildError;
 use qubit_ioc::ContainerBuilder;
@@ -72,15 +73,52 @@ fn test_build_requires_async_before_running_any_factory() {
         })
         .expect("stage synchronous factory");
     let async_calls = Arc::clone(&calls);
+    let async_line = line!() + 2;
     builder
         .register_async_factory::<u64, _>(&[], move |_| {
             async_calls.fetch_add(1, Ordering::SeqCst);
             Box::pin(async { Ok(Arc::new(2)) })
         })
         .expect("stage asynchronous factory");
+    builder
+        .register_async_factory::<u8, _>(&[], |_| Box::pin(async { Ok(Arc::new(3)) }))
+        .expect("stage later asynchronous factory");
 
-    assert!(matches!(builder.build_all(), Err(BuildError::AsyncRequired { .. })));
+    let error = builder.build_all().err().expect("synchronous build requires async");
+    assert!(matches!(error, BuildError::AsyncRequired { definition, key }
+        if key == BindingKey::of::<u64>(None)
+            && definition.file == file!()
+            && definition.line == async_line
+            && definition.item == std::any::type_name::<u64>()));
     assert_eq!(calls.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn test_build_sync_root_ignores_unselected_async_factory() {
+    let sync_calls = Arc::new(AtomicUsize::new(0));
+    let async_calls = Arc::new(AtomicUsize::new(0));
+    let mut builder = ContainerBuilder::new();
+    let captured = Arc::clone(&sync_calls);
+    builder
+        .register_factory::<u32, _>(&[], move |_| {
+            captured.fetch_add(1, Ordering::SeqCst);
+            Ok(Arc::new(1))
+        })
+        .expect("stage selected synchronous factory");
+    let captured = Arc::clone(&async_calls);
+    builder
+        .register_async_factory::<u64, _>(&[], move |_| {
+            captured.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async { Ok(Arc::new(2)) })
+        })
+        .expect("stage unselected asynchronous factory");
+    builder.root::<u32>();
+
+    let context = builder.build().expect("selected graph only requires sync");
+    assert_eq!(*context.get::<u32>().expect("selected synchronous value"), 1);
+    assert!(context.get_all::<u64>().is_empty());
+    assert_eq!(sync_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(async_calls.load(Ordering::SeqCst), 0);
 }
 
 #[test]

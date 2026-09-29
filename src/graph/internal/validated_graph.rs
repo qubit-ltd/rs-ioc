@@ -10,7 +10,9 @@
 use std::any::TypeId;
 use std::collections::HashMap;
 
+use crate::binding::PendingBindingKind;
 use crate::binding::PendingDefinition;
+use crate::binding::profile_is_active;
 use crate::dependency::Dependency;
 use crate::error::BuildError;
 use crate::graph::DiagnosticPaths;
@@ -29,8 +31,8 @@ use crate::graph::validate_primary;
 
 /// Active definitions, resolved requests, and dependency-first binding order.
 ///
-/// Every binding occurs once in `order`; aliases follow their target, and
-/// concrete bindings follow every selected request of their definition.
+/// Every selected binding occurs once in `order`; aliases follow their target,
+/// and concrete bindings follow every selected request of their definition.
 pub(crate) struct ValidatedGraph {
     /// Definitions remaining after profile filtering.
     pub(crate) definitions: Vec<PendingDefinition>,
@@ -67,15 +69,7 @@ impl ValidatedGraph {
     ) -> Result<Self, BuildError> {
         let definitions: Vec<_> = definitions
             .into_iter()
-            .filter(|definition| {
-                definition.profile.as_deref().is_none_or(|profile| {
-                    if active_profiles.is_empty() {
-                        profile == "default"
-                    } else {
-                        active_profiles.iter().any(|active| active == profile)
-                    }
-                })
-            })
+            .filter(|definition| profile_is_active(definition.profile.as_deref(), active_profiles))
             .collect();
         let nodes = flatten(&definitions);
         let by_key = if roots.is_none() {
@@ -125,5 +119,37 @@ impl ValidatedGraph {
             resolved,
             diagnostics,
         })
+    }
+
+    /// Requires every selected binding to support synchronous construction.
+    ///
+    /// Checks the complete selected order without invoking a factory or alias
+    /// projector, so callers can reject asynchronous construction before any
+    /// component starts.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` when all selected bindings are synchronous.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BuildError::AsyncRequired`] for the first ordinary or managed
+    /// asynchronous factory in dependency-first order, retaining its definition
+    /// source and binding key.
+    pub(crate) fn require_sync(&self) -> Result<(), BuildError> {
+        for location in &self.order {
+            let definition = &self.definitions[location.definition];
+            let binding = &definition.bindings[location.binding];
+            if matches!(
+                binding.kind,
+                PendingBindingKind::AsyncFactory(_) | PendingBindingKind::ManagedAsyncFactory(_)
+            ) {
+                return Err(BuildError::AsyncRequired {
+                    definition: definition.source,
+                    key: binding.key.clone(),
+                });
+            }
+        }
+        Ok(())
     }
 }

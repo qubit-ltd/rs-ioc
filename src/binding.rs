@@ -22,6 +22,7 @@ mod internal;
 pub(crate) use internal::pending_binding::PendingBinding;
 pub(crate) use internal::pending_binding_kind::PendingBindingKind;
 pub(crate) use internal::pending_definition::PendingDefinition;
+pub(crate) use internal::profile::profile_is_active;
 
 /// A sendable future that produces one shared component or a retained factory
 /// error.

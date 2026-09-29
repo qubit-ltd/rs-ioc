@@ -20,8 +20,8 @@ use super::internal::validation::validate_options;
 use crate::FactoryFuture;
 use crate::application_context::ApplicationContext;
 use crate::binding::PendingBinding;
-use crate::binding::PendingBindingKind;
 use crate::binding::PendingDefinition;
+use crate::binding::profile_is_active;
 use crate::build_context::BuildContext;
 use crate::dependency::Dependency;
 use crate::error::BuildError;
@@ -33,15 +33,31 @@ use crate::managed::Managed;
 use crate::managed::ManagedFactoryFuture;
 use crate::options::BindingOptions;
 
+// Implements configuration snapshot registration when integration is enabled.
 #[cfg(feature = "config")]
 mod config;
 
+/// Active definitions after replacement, configured profiles, and build roots.
 type PreparedDefinitions = (Vec<PendingDefinition>, Vec<String>, Vec<Dependency>);
 
 /// Registers component definitions and constructs a validated application.
 ///
 /// The builder collects explicit registrations, validates their dependency
 /// graph, and creates only the components selected for a build.
+///
+/// # Examples
+///
+/// ```
+/// use std::sync::Arc;
+/// use qubit_ioc::ContainerBuilder;
+///
+/// let mut builder = ContainerBuilder::new();
+/// builder.register_instance(Arc::new(7_u8))?;
+/// builder.root::<u8>();
+/// let context = builder.build()?;
+/// assert_eq!(*context.get::<u8>()?, 7);
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 #[derive(Default)]
 pub struct ContainerBuilder {
     /// Definitions staged by generated and explicit registration calls.
@@ -63,6 +79,8 @@ impl ContainerBuilder {
     /// # Returns
     ///
     /// An empty builder ready to receive component definitions.
+    #[must_use]
+    #[inline]
     pub fn new() -> Self {
         Self::default()
     }
@@ -250,19 +268,22 @@ impl ContainerBuilder {
 
     /// Stages a one-shot managed synchronous factory with default options.
     ///
-    /// The factory is invoked only during a successful synchronous build, after
-    /// graph validation. Registering it does not create the managed resource.
+    /// Registering it does not create the managed resource.
+    /// After graph validation, a selected factory may run during either
+    /// synchronous or asynchronous construction. A later factory may still
+    /// fail the build; completed managed resources then participate in
+    /// rollback.
+    ///
+    /// # Type Parameters
+    ///
+    /// `T` is the managed component type. `F` is a sendable one-shot factory
+    /// receiving a [`BuildContext`] and returning [`Managed<T>`].
     ///
     /// # Parameters
     ///
     /// * `dependencies` - Requests made available to the factory at build time.
     /// * `factory` - One-shot closure returning the value and its shutdown
     ///   actions.
-    ///
-    /// # Type Parameters
-    ///
-    /// `T` is the managed component type. `F` is a sendable one-shot factory
-    /// receiving a [`BuildContext`] and returning [`Managed<T>`].
     ///
     /// # Returns
     ///
@@ -287,8 +308,16 @@ impl ContainerBuilder {
 
     /// Stages a one-shot managed synchronous factory with binding options.
     ///
-    /// The factory is invoked only during a successful synchronous build, after
-    /// graph validation. Registering it does not create the managed resource.
+    /// Registering it does not create the managed resource.
+    /// After graph validation, a selected factory may run during either
+    /// synchronous or asynchronous construction. A later factory may still
+    /// fail the build; completed managed resources then participate in
+    /// rollback.
+    ///
+    /// # Type Parameters
+    ///
+    /// `T` is the managed component type. `F` is a sendable one-shot factory
+    /// receiving a [`BuildContext`] and returning [`Managed<T>`].
     ///
     /// # Parameters
     ///
@@ -296,11 +325,6 @@ impl ContainerBuilder {
     /// * `options` - Binding ID, profile, and alias selection metadata.
     /// * `factory` - One-shot closure returning the value and its shutdown
     ///   actions.
-    ///
-    /// # Type Parameters
-    ///
-    /// `T` is the managed component type. `F` is a sendable one-shot factory
-    /// receiving a [`BuildContext`] and returning [`Managed<T>`].
     ///
     /// # Returns
     ///
@@ -331,7 +355,8 @@ impl ContainerBuilder {
     /// Stages a one-shot asynchronous factory with default binding options.
     ///
     /// Its returned future owns its data, is `Send`, and is driven only by
-    /// [`Self::build_async`]; no runtime is chosen by this crate.
+    /// [`Self::build_async`] or [`Self::build_all_async`]; no runtime is chosen
+    /// by this crate.
     ///
     /// # Type Parameters
     ///
@@ -405,19 +430,19 @@ impl ContainerBuilder {
 
     /// Stages a managed asynchronous factory with default options.
     ///
-    /// The factory is invoked only by [`Self::build_async`] after graph
-    /// validation. Registration does not create the resource, and this crate
-    /// does not select an async runtime.
-    ///
-    /// # Parameters
-    ///
-    /// * `dependencies` - Requests made available to the factory at build time.
-    /// * `factory` - One-shot closure creating a managed factory future.
+    /// The factory is invoked by [`Self::build_async`] or
+    /// [`Self::build_all_async`] after graph validation. Registration does not
+    /// create the resource, and this crate does not select an async runtime.
     ///
     /// # Type Parameters
     ///
     /// `T` is the managed component type. `F` creates a sendable future
     /// yielding [`Managed<T>`].
+    ///
+    /// # Parameters
+    ///
+    /// * `dependencies` - Requests made available to the factory at build time.
+    /// * `factory` - One-shot closure creating a managed factory future.
     ///
     /// # Returns
     ///
@@ -442,20 +467,20 @@ impl ContainerBuilder {
 
     /// Stages a managed asynchronous factory with binding options.
     ///
-    /// The factory is invoked only by [`Self::build_async`] after graph
-    /// validation. Registration does not create the resource, and this crate
-    /// does not select an async runtime.
+    /// The factory is invoked by [`Self::build_async`] or
+    /// [`Self::build_all_async`] after graph validation. Registration does not
+    /// create the resource, and this crate does not select an async runtime.
+    ///
+    /// # Type Parameters
+    ///
+    /// `T` is the managed component type. `F` creates a sendable future
+    /// yielding [`Managed<T>`].
     ///
     /// # Parameters
     ///
     /// * `dependencies` - Requests made available to the factory at build time.
     /// * `options` - Binding ID, profile, and alias selection metadata.
     /// * `factory` - One-shot closure creating a managed factory future.
-    ///
-    /// # Type Parameters
-    ///
-    /// `T` is the managed component type. `F` creates a sendable future
-    /// yielding [`Managed<T>`].
     ///
     /// # Returns
     ///
@@ -591,9 +616,9 @@ impl ContainerBuilder {
     /// Builds the components selected by one or more calls to [`Self::root`]
     /// or [`Self::root_by_id`].
     ///
-    /// An active asynchronous factory yields `AsyncRequired` before any factory
-    /// runs. Factory failures retain their source and no partial context
-    /// escapes.
+    /// A selected active asynchronous factory yields `AsyncRequired` before any
+    /// factory runs. Factory failures retain their source and no partial
+    /// context escapes.
     ///
     /// # Returns
     ///
@@ -609,19 +634,7 @@ impl ContainerBuilder {
         }
         let (definitions, profiles, roots) = self.prepare_definitions()?;
         let graph = ValidatedGraph::validate_roots(definitions, &profiles, Some(&roots))?;
-        for location in &graph.order {
-            let definition = &graph.definitions[location.definition];
-            let binding = &definition.bindings[location.binding];
-            if matches!(
-                binding.kind,
-                PendingBindingKind::AsyncFactory(_) | PendingBindingKind::ManagedAsyncFactory(_)
-            ) {
-                return Err(BuildError::AsyncRequired {
-                    definition: definition.source,
-                    key: binding.key.clone(),
-                });
-            }
-        }
+        graph.require_sync()?;
         Construction::new(graph).run_sync()
     }
 
@@ -642,19 +655,7 @@ impl ContainerBuilder {
     pub fn build_all(self) -> Result<ApplicationContext, BuildError> {
         let (definitions, profiles, _) = self.prepare_definitions()?;
         let graph = ValidatedGraph::validate_roots(definitions, &profiles, None)?;
-        for location in &graph.order {
-            let definition = &graph.definitions[location.definition];
-            let binding = &definition.bindings[location.binding];
-            if matches!(
-                binding.kind,
-                PendingBindingKind::AsyncFactory(_) | PendingBindingKind::ManagedAsyncFactory(_)
-            ) {
-                return Err(BuildError::AsyncRequired {
-                    definition: definition.source,
-                    key: binding.key.clone(),
-                });
-            }
-        }
+        graph.require_sync()?;
         Construction::new(graph).run_sync()
     }
 
@@ -662,8 +663,11 @@ impl ContainerBuilder {
     /// or [`Self::root_by_id`], including their transitive dependencies.
     /// The future is `Send` and uses the caller's executor.
     ///
-    /// Dropping it stops unstarted factories; completed external side effects
-    /// remain the factory's responsibility. A failure publishes no context.
+    /// Dropping it prevents remaining factories from starting and requests stop
+    /// for managed resources already returned to the container, without
+    /// waiting. Side effects created before a factory returns a managed
+    /// value remain that factory's responsibility. A failure publishes no
+    /// context.
     ///
     /// # Returns
     ///
@@ -713,15 +717,7 @@ impl ContainerBuilder {
         let mut active: Vec<_> = definitions
             .into_iter()
             .enumerate()
-            .filter(|(_, definition)| {
-                definition.profile.as_deref().is_none_or(|profile| {
-                    if active_profiles.is_empty() {
-                        profile == "default"
-                    } else {
-                        active_profiles.iter().any(|active| active == profile)
-                    }
-                })
-            })
+            .filter(|(_, definition)| profile_is_active(definition.profile.as_deref(), &active_profiles))
             .collect();
         for replacement in replacements {
             // An inactive replacement does not affect bindings in active profiles.
