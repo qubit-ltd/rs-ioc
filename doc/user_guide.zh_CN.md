@@ -313,9 +313,9 @@ cargo test --manifest-path tests/fixtures/ioc_cross_crate/Cargo.toml
 记录，其他 wait 仍会执行。`panic = "abort"` 和 future 析构时的 panic 不会被捕获。
 构造工厂 panic 仍会传播。
 
-`register_managed_instance` 和 `DefinitionDraft::from_managed_instance` 已移除。资源应在
-`register_managed_factory` 或 `DefinitionDraft::new_managed_sync` 中创建；若资源必须在
-注册前创建，则通过 `register_instance(Arc<T>)` 注入，并由应用自行处理关闭。
+旧的托管实例注册入口已移除。资源应在 `register_managed_factory` 或对应的托管
+`#[bean]` 工厂中创建；若资源必须在注册前创建，则通过 `register_instance(Arc<T>)`
+注入，并由应用自行处理关闭。
 
 当前不提供原型或请求作用域、热更新、未托管组件的自动生命周期管理、循环代理和动态库发现。
 结构体宏支持具名字段和单元结构体；其他形状可使用手动工厂。组件构造不使用运行时

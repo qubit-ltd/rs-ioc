@@ -361,11 +361,10 @@ failures, and remaining waits still run. `panic = "abort"` and panics while
 dropping a cleanup future cannot be caught. Factory panics during construction
 also propagate.
 
-The old `register_managed_instance` and
-`DefinitionDraft::from_managed_instance` entry points have been removed.
-Create the resource in `register_managed_factory` or `new_managed_sync`; if it
-must exist before registration, use `register_instance` and let the
-application own its shutdown actions.
+The former managed-instance registration entry points have been removed.
+Create managed resources inside `register_managed_factory` (or the equivalent
+managed `#[bean]` factory); if a resource must exist before registration, use
+`register_instance` and let the application own its shutdown actions.
 
 There are no prototype or request scopes, hot reload, automatic lifecycle
 management for unmanaged components, circular proxies, or dynamic-library discovery. Struct macros support named
