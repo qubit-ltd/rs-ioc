@@ -15,6 +15,7 @@ use syn::Ident;
 use syn::LitStr;
 use syn::Result;
 
+use crate::conditions::activation_attributes;
 use crate::expand::ExpansionContext;
 use crate::expand::value;
 use crate::ir::BindingOptions;
@@ -24,6 +25,8 @@ use crate::ir::DependencyKind;
 
 /// Emits the original struct, a typed factory and its linked registration
 /// entry.
+///
+/// Returns a span-aware error if an activation attribute cannot be normalized.
 pub(crate) fn expand(value: ComponentIr, context: &ExpansionContext) -> Result<TokenStream> {
     let ComponentIr {
         item,
@@ -32,6 +35,7 @@ pub(crate) fn expand(value: ComponentIr, context: &ExpansionContext) -> Result<T
         source,
         ..
     } = value;
+    let conditions = activation_attributes(&item.attrs)?;
     let runtime = &context.runtime;
     let ident = &item.ident;
     let item_name = &source.item;
@@ -92,6 +96,7 @@ pub(crate) fn expand(value: ComponentIr, context: &ExpansionContext) -> Result<T
     }
 
     let generated = quote! {
+        #(#conditions)*
         impl #runtime::ComponentDefinition for #ident {
             fn source() -> #runtime::DefinitionSource {
                 #source_expr
@@ -181,5 +186,131 @@ fn optional_string(value: &Option<LitStr>) -> TokenStream {
     match value {
         Some(value) => quote!(::std::option::Option::Some(#value.to_owned())),
         None => quote!(::std::option::Option::None),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use proc_macro2::Span;
+    use quote::quote;
+    use syn::Expr;
+    use syn::File;
+    use syn::Item;
+    use syn::ItemStruct;
+    use syn::Lit;
+    use syn::Meta;
+    use syn::parse_quote;
+    use syn::parse2;
+    use syn::punctuated::Punctuated;
+    use syn::token::Comma;
+
+    use crate::expand::ExpansionContext;
+    use crate::ir::BindingOptions;
+    use crate::ir::ComponentIr;
+    use crate::ir::SourceIr;
+
+    /// Checks a feature predicate structurally, preserving the exact feature
+    /// name.
+    fn assert_feature(predicate: &Meta, expected: &str) {
+        let Meta::NameValue(condition) = predicate else {
+            panic!("expected feature predicate")
+        };
+        assert!(condition.path.is_ident("feature"));
+        let Expr::Lit(literal) = &condition.value else {
+            panic!("expected literal feature name")
+        };
+        let Lit::Str(feature) = &literal.lit else {
+            panic!("expected string feature name")
+        };
+        assert_eq!(feature.value(), expected);
+    }
+
+    #[test]
+    fn test_component_propagates_cfg_to_registration_impl() {
+        let item: ItemStruct = parse_quote! {
+            #[cfg(feature = "enabled")]
+            #[cfg_attr(feature = "filtered", cfg(feature = "extra"), derive(Clone))]
+            struct FooBar;
+        };
+        let source = SourceIr {
+            item: item.ident.clone(),
+            span: Span::call_site(),
+        };
+        let value = ComponentIr {
+            item,
+            options: BindingOptions {
+                id: None,
+                binds: Vec::new(),
+                primary: false,
+                order: 0,
+                profile: None,
+            },
+            fields: Vec::new(),
+            source,
+        };
+        let context = ExpansionContext {
+            runtime: quote!(::qubit_ioc),
+        };
+        let tokens = super::expand(value, &context).expect("component expansion should succeed");
+        let generated: File = parse2(tokens).expect("generated component should be valid Rust AST");
+        assert_eq!(generated.items.len(), 2);
+        let Item::Struct(definition) = &generated.items[0] else {
+            panic!("expected original component struct");
+        };
+        let Item::Impl(registration) = &generated.items[1] else {
+            panic!("expected registration impl");
+        };
+        let (_, trait_path, _) = registration
+            .trait_
+            .as_ref()
+            .expect("expected ComponentDefinition trait");
+        assert_eq!(
+            trait_path
+                .segments
+                .last()
+                .expect("trait path should not be empty")
+                .ident,
+            "ComponentDefinition"
+        );
+        for attributes in [&definition.attrs, &registration.attrs] {
+            assert_eq!(
+                attributes.len(),
+                2,
+                "definition and registration must have the same activation conditions"
+            );
+            assert!(attributes[0].path().is_ident("cfg"));
+            assert_feature(
+                &attributes[0].parse_args::<Meta>().expect("cfg predicate should parse"),
+                "enabled",
+            );
+        }
+        assert!(
+            definition.attrs[1].path().is_ident("cfg_attr"),
+            "original cfg_attr must be retained"
+        );
+        assert!(
+            registration.attrs[1].path().is_ident("cfg"),
+            "only activation should be propagated to the impl"
+        );
+        let Meta::List(activation) = registration.attrs[1]
+            .parse_args::<Meta>()
+            .expect("normalized cfg should parse")
+        else {
+            panic!("expected conditional activation predicate");
+        };
+        assert!(activation.path.is_ident("any"));
+        let alternatives = activation
+            .parse_args_with(Punctuated::<Meta, Comma>::parse_terminated)
+            .expect("activation alternatives should parse");
+        assert_eq!(alternatives.len(), 2);
+        let Meta::List(inactive) = &alternatives[0] else {
+            panic!("expected negated cfg_attr condition")
+        };
+        assert!(inactive.path.is_ident("not"));
+        assert_feature(
+            &inactive.parse_args::<Meta>().expect("cfg_attr condition should parse"),
+            "filtered",
+        );
+        assert_feature(&alternatives[1], "extra");
     }
 }

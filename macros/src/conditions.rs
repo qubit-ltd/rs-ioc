@@ -43,6 +43,26 @@ pub(crate) fn activation_attributes(attributes: &[Attribute]) -> Result<Vec<Attr
     Ok(result)
 }
 
+/// Appends normalized activation attributes under an inherited condition.
+///
+/// Nested `cfg_attr` predicates are recursively conjoined with `condition`;
+/// each nested `cfg` becomes an implication from that combined condition to
+/// its predicate. Other attributes are ignored without changing `result`.
+///
+/// # Parameters
+///
+/// `result` receives normalized `cfg` attributes, `meta` is one nested
+/// attribute, and `condition` contains all enclosing activation predicates.
+///
+/// # Returns
+///
+/// Returns `Ok(())` after normalizing or ignoring the nested attribute.
+///
+/// # Errors
+///
+/// Returns a syntax error for non-list `cfg`/`cfg_attr`, missing or unparseable
+/// nested `cfg_attr` metadata, or nested `inject`/`value` helpers. Attributes
+/// appended before an error remain in `result`.
 fn append_nested(result: &mut Vec<Attribute>, meta: Meta, condition: TokenStream) -> Result<()> {
     let path = meta.path();
     if path.is_ident("inject") || path.is_ident("value") {

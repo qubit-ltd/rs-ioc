@@ -275,3 +275,99 @@ fn dependency_access(
     };
     quote!(#request.map_err(#runtime::FactoryError::new)?)
 }
+
+#[cfg(test)]
+mod tests {
+    use proc_macro2::Span;
+    use quote::quote;
+    use syn::File;
+    use syn::Ident;
+    use syn::Item;
+    use syn::ItemFn;
+    use syn::Type;
+    use syn::parse_quote;
+    use syn::parse2;
+
+    use crate::expand::ExpansionContext;
+    use crate::ir::BeanIr;
+    use crate::ir::BindingOptions;
+    use crate::ir::OutputIr;
+    use crate::ir::OutputShape;
+    use crate::ir::SourceIr;
+
+    /// Expands a callable bean with the selected marker through the real
+    /// expander.
+    fn expand_bean(marker: Option<Ident>) -> File {
+        let item: ItemFn = parse_quote! {
+            pub fn foo_bar() -> u8 { 1 }
+        };
+        let source = SourceIr {
+            item: item.sig.ident.clone(),
+            span: Span::call_site(),
+        };
+        let value = BeanIr {
+            item,
+            options: BindingOptions {
+                id: None,
+                binds: Vec::new(),
+                primary: false,
+                order: 0,
+                profile: None,
+            },
+            marker,
+            params: Vec::new(),
+            output: OutputIr {
+                shape: OutputShape::Bare,
+                managed: false,
+                component_type: parse_quote!(u8),
+            },
+            source,
+        };
+        let context = ExpansionContext {
+            runtime: quote!(::qubit_ioc),
+        };
+        let tokens = super::expand(value, &context).expect("bean expansion should succeed");
+        parse2(tokens).expect("generated bean should be valid Rust AST")
+    }
+
+    /// Checks both the marker definition and the target of its registration
+    /// impl.
+    fn assert_marker(generated: &File, expected: &str) {
+        let Item::Fn(function) = &generated.items[0] else {
+            panic!("expected original bean function")
+        };
+        assert_eq!(function.sig.ident, "foo_bar");
+        let markers = generated
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                Item::Struct(marker) => Some(marker),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(markers.len(), 1, "exactly one registration marker must be emitted");
+        assert_eq!(markers[0].ident, expected);
+        let registration = generated
+            .items
+            .iter()
+            .find_map(|item| match item {
+                Item::Impl(implementation) if implementation.trait_.is_some() => Some(implementation),
+                _ => None,
+            })
+            .expect("expected registration trait impl");
+        let Type::Path(target) = registration.self_ty.as_ref() else {
+            panic!("expected marker impl target")
+        };
+        assert!(target.path.is_ident(expected));
+    }
+
+    #[test]
+    fn test_bean_emits_default_pascal_case_marker() {
+        assert_marker(&expand_bean(None), "FooBarBean");
+    }
+
+    #[test]
+    fn test_bean_emits_marker_override() {
+        assert_marker(&expand_bean(Some(parse_quote!(CustomFactory))), "CustomFactory");
+    }
+}

@@ -111,3 +111,183 @@ fn add_profile(attribute: &mut Attribute, profile: &LitStr) {
     };
     *attribute = parse_quote!(#[#path(#tokens)]);
 }
+
+#[cfg(test)]
+mod tests {
+    use proc_macro2::Span;
+    use quote::quote;
+    use syn::Expr;
+    use syn::File;
+    use syn::GenericArgument;
+    use syn::Item;
+    use syn::ItemFn;
+    use syn::ItemMod;
+    use syn::Lit;
+    use syn::LitStr;
+    use syn::Meta;
+    use syn::Stmt;
+    use syn::Type;
+    use syn::Visibility;
+    use syn::parse_quote;
+    use syn::parse2;
+    use syn::punctuated::Punctuated;
+    use syn::token::Comma;
+
+    use crate::expand::ExpansionContext;
+    use crate::ir::ConfigurationIr;
+    use crate::ir::SourceIr;
+
+    /// Expands an inline group and returns its actual generated child items.
+    fn expand_group(item: ItemMod, profile: Option<LitStr>) -> Vec<Item> {
+        let source = SourceIr {
+            item: item.ident.clone(),
+            span: Span::call_site(),
+        };
+        let value = ConfigurationIr { item, profile, source };
+        let context = ExpansionContext {
+            runtime: quote!(::qubit_ioc),
+        };
+        let tokens = super::expand(value, &context).expect("configuration expansion should succeed");
+        let generated: File = parse2(tokens).expect("generated configuration should be valid Rust AST");
+        let Item::Mod(module) = generated
+            .items
+            .into_iter()
+            .next()
+            .expect("expected configuration module")
+        else {
+            panic!("expected module");
+        };
+        let (_, children) = module.content.expect("expected inline module");
+        children
+    }
+
+    #[test]
+    fn test_configuration_emits_registration_in_declaration_order() {
+        let children = expand_group(
+            parse_quote! {
+                mod group {
+                    #[cfg(feature = "enabled")]
+                    #[qubit_ioc::bean]
+                    fn foo_bar() -> u8 { 1 }
+
+                    fn helper() -> u8 { 2 }
+
+                    mod nested {
+                        #[qubit_ioc::bean]
+                        fn ignored() -> u8 { 3 }
+                    }
+
+                    #[qubit_ioc::bean(marker = SelectedFactory)]
+                    fn second() -> u8 { 4 }
+                }
+            },
+            None,
+        );
+        let registrations = children
+            .iter()
+            .filter_map(|item| match item {
+                Item::Fn(function) if function.sig.ident == "register_ioc" => Some(function),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(registrations.len(), 1, "one manual registration entry must be emitted");
+        let register = registrations[0];
+        assert!(matches!(register.vis, Visibility::Public(_)));
+        assert_eq!(
+            register.block.stmts.len(),
+            3,
+            "only direct beans should be installed before returning Ok"
+        );
+        let mut markers = Vec::new();
+        for (index, statement) in register.block.stmts[..2].iter().enumerate() {
+            let Stmt::Expr(Expr::Try(installation), Some(_)) = statement else {
+                panic!("expected fallible installation")
+            };
+            assert_eq!(
+                installation.attrs.len(),
+                usize::from(index == 0),
+                "bean activation should gate its install call"
+            );
+            if index == 0 {
+                assert!(installation.attrs[0].path().is_ident("cfg"));
+            }
+            let Expr::MethodCall(call) = installation.expr.as_ref() else {
+                panic!("expected install method call")
+            };
+            assert_eq!(call.method, "install");
+            let Expr::Path(receiver) = call.receiver.as_ref() else {
+                panic!("expected builder receiver")
+            };
+            assert!(receiver.path.is_ident("builder"));
+            assert!(call.args.is_empty());
+            let arguments = &call.turbofish.as_ref().expect("install must name a marker").args;
+            assert_eq!(arguments.len(), 1);
+            let GenericArgument::Type(Type::Path(marker)) = &arguments[0] else {
+                panic!("expected marker type")
+            };
+            markers.push(
+                marker
+                    .path
+                    .get_ident()
+                    .expect("expected unqualified marker")
+                    .to_string(),
+            );
+        }
+        assert_eq!(markers, ["FooBarBean", "SelectedFactory"]);
+    }
+
+    /// Reads one bean's generated profile as a parsed attribute argument.
+    fn bean_profile(function: &ItemFn) -> Option<String> {
+        let bean = function
+            .attrs
+            .iter()
+            .find(|attribute| {
+                attribute
+                    .path()
+                    .segments
+                    .last()
+                    .is_some_and(|segment| segment.ident == "bean")
+            })
+            .expect("expected bean attribute");
+        let options = bean
+            .parse_args_with(Punctuated::<Meta, Comma>::parse_terminated)
+            .expect("bean options should be valid attribute arguments");
+        options.into_iter().find_map(|option| {
+            let Meta::NameValue(option) = option else { return None };
+            if !option.path.is_ident("profile") {
+                return None;
+            }
+            let Expr::Lit(literal) = option.value else {
+                panic!("expected profile literal")
+            };
+            let Lit::Str(profile) = literal.lit else {
+                panic!("expected profile string")
+            };
+            Some(profile.value())
+        })
+    }
+
+    #[test]
+    fn test_configuration_inherits_profile_and_preserves_override() {
+        let children = expand_group(
+            parse_quote! {
+                mod group {
+                    #[qubit_ioc::bean(marker = FirstFactory,)]
+                    fn first() -> u8 { 1 }
+
+                    #[qubit_ioc::bean(profile = "child")]
+                    fn second() -> u8 { 2 }
+                }
+            },
+            Some(parse_quote!("group")),
+        );
+        let profiles = children
+            .iter()
+            .filter_map(|item| match item {
+                Item::Fn(function) if function.sig.ident != "register_ioc" => bean_profile(function),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(profiles, ["group", "child"]);
+    }
+}
