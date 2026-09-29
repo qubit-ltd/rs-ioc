@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 jobs:
-  execution-services-consumer:
+  execution-services-consumer-baseline:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
@@ -46,10 +46,62 @@ jobs:
           git -C rs-event-bus rev-parse HEAD
           git -C rs-config rev-parse HEAD
           git -C rs-fs-registry rev-parse HEAD
+          rustc +1.94.0 --version
           sha256sum rs-ioc/tests/fixtures/application_consumer/Cargo.lock
       - name: Check downstream consumer against this IoC revision
         working-directory: rs-ioc
         run: cargo +1.94.0 check --manifest-path tests/fixtures/application_consumer/Cargo.toml --locked
+      - name: Test downstream consumer against this IoC revision
+        working-directory: rs-ioc
+        run: cargo +1.94.0 test --manifest-path tests/fixtures/application_consumer/Cargo.toml --locked
       - name: Run downstream consumer against this IoC revision
         working-directory: rs-ioc
         run: cargo +1.94.0 run --manifest-path tests/fixtures/application_consumer/Cargo.toml --locked
+
+  execution-services-consumer-current:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          path: rs-ioc
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          repository: qubit-ltd/rs-execution-services
+          ref: a7eb8bd6c1d0845c81fa6a447f9be043bb88766d
+          path: rs-execution-services
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          repository: qubit-ltd/rs-event-bus
+          ref: 96e7422af3fc5c12ddc46ac623d3218b75a0c7f4
+          path: rs-event-bus
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          repository: qubit-ltd/rs-config
+          ref: 80d80b0d3c282bcc441b2c1cff1539941f501594
+          path: rs-config
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          repository: qubit-ltd/rs-fs-registry
+          ref: 8e8940cc295b0e277241c397bea559214a272fb5
+          path: rs-fs-registry
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: 1.94.0
+      - name: Record exact source revisions
+        run: |
+          git -C rs-ioc rev-parse HEAD
+          git -C rs-execution-services rev-parse HEAD
+          git -C rs-event-bus rev-parse HEAD
+          git -C rs-config rev-parse HEAD
+          git -C rs-fs-registry rev-parse HEAD
+          rustc +1.94.0 --version
+          sha256sum rs-ioc/tests/fixtures/application_consumer_current/Cargo.lock
+      - name: Check downstream consumer against this IoC revision
+        working-directory: rs-ioc
+        run: cargo +1.94.0 check --manifest-path tests/fixtures/application_consumer_current/Cargo.toml --locked
+      - name: Test downstream consumer against this IoC revision
+        working-directory: rs-ioc
+        run: cargo +1.94.0 test --manifest-path tests/fixtures/application_consumer_current/Cargo.toml --locked
+      - name: Run downstream consumer against this IoC revision
+        working-directory: rs-ioc
+        run: cargo +1.94.0 run --manifest-path tests/fixtures/application_consumer_current/Cargo.toml --locked

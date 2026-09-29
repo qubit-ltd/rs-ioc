@@ -32,6 +32,8 @@ jobs:
         env:
           CARGO_INCREMENTAL: "1"
         run: cargo +1.94.0 llvm-cov -p qubit-ioc-macros --all-features --locked --json --output-path target/qubit-ioc-macros-coverage.json
+      - name: Check proc macro coverage minimums
+        run: bash .infra/tools/check-macro-coverage.sh target/qubit-ioc-macros-coverage.json
       - name: Print coverage totals
         run: |
           ruby -rjson -e '
@@ -70,6 +72,20 @@ jobs:
         run: cargo +1.94.0 test --manifest-path tests/fixtures/macro_contracts/Cargo.toml --features "$CONSUMER_FEATURES" --locked
       - name: Run same-package declarative example
         run: cargo +1.94.0 run --example readme_declarative --no-default-features --features macros --locked
+
+  managed-paths:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        path-kind: [canonical, renamed, keyword]
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: 1.94
+      - name: Test managed paths
+        run: cargo +1.94.0 test --manifest-path tests/fixtures/managed_paths/${{ matrix.path-kind }}/Cargo.toml --locked
 
   assembly-boundaries:
     runs-on: ubuntu-latest
