@@ -73,6 +73,96 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 组件的 `Arc` 句柄。仓库还提供启动与关闭示例，可在仓库目录运行
 `cargo run --example app_lifecycle`。
 
+## 场景：函数 bean 与配置组
+
+provider 通过自由函数创建值时，可以用 `#[bean]` 为函数生成可安装的定义。
+下面的入门练习展示默认 marker、自定义 marker，以及按模块组织的配置组。
+它使用 Rust 2024、Rust 1.94，只需启用 `macros`：
+
+```toml
+qubit-ioc = { version = "0.2", path = "../rs-ioc", default-features = false, features = ["macros"] }
+```
+
+```rust
+use std::sync::Arc;
+
+use qubit_ioc::ContainerBuilder;
+use qubit_ioc::bean;
+
+struct DefaultValue(u8);
+struct CustomValue(u8);
+
+#[bean]
+fn default_value() -> DefaultValue {
+    DefaultValue(1)
+}
+
+#[bean(marker = CustomFactory)]
+fn custom_value() -> Arc<CustomValue> {
+    Arc::new(CustomValue(2))
+}
+
+#[qubit_ioc::Configuration]
+mod grouped {
+    #[qubit_ioc::bean]
+    fn label() -> String {
+        "ready".to_owned()
+    }
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut builder = ContainerBuilder::new();
+    builder.install::<DefaultValueBean>()?;
+    builder.install::<CustomFactory>()?;
+    grouped::register_ioc(&mut builder)?;
+    builder.root::<DefaultValue>();
+    builder.root::<CustomValue>();
+    builder.root::<String>();
+    let context = builder.build()?;
+    assert_eq!(context.get::<DefaultValue>()?.0, 1);
+    assert_eq!(context.get::<CustomValue>()?.0, 2);
+    assert_eq!(context.get::<String>()?.as_str(), "ready");
+    Ok(())
+}
+```
+
+默认 marker 名称由函数名转成 PascalCase 后追加 `Bean`：`default_value` 对应
+`DefaultValueBean`。`marker = CustomFactory` 可覆盖默认名称。返回
+`Arc<CustomValue>` 时，容器保存的组件类型是 `CustomValue`，因此根节点和查询也用
+`CustomValue`。`#[Configuration]` 模块导出 `register_ioc`；调用它只安装模块中的
+bean，不执行工厂。这个分组功能不依赖 `config`，而通过 `#[value]` 或
+`#[ConfigurationProperties]` 读取配置时，才需要同时启用 `macros` 和 `config`。
+
+三个根节点选中相应定义；构建后的断言验证 `1`、`2` 和 `"ready"`。在仓库根目录运行
+同一份[完整示例](../examples/readme_beans.rs)：
+
+```bash
+cargo +1.94.0 run --example readme_beans --no-default-features --features macros --locked
+```
+
+实际 provider crate 应导出注册入口，由消费应用在启动时调用。只有构造过程需要等待时，
+才将 bean 声明为 `async fn`，并用应用执行器驱动 `builder.build_async().await?`。
+选中图含异步工厂却调用同步构建时，会在运行任何工厂或 alias projector 前返回
+`BuildError::AsyncRequired`；图验证失败同样不会启动构造。后续工厂仍可能失败，
+此时先前完成的托管工厂所移交的资源会参与回滚。
+
+bean 需要启动 worker 时，在工厂内部创建它，并返回带 stop 回调的 `Managed<T>`；
+需要等待终止时再追加 `.with_wait(...)`。应用退出时先释放共享 context 句柄、取回唯一
+所有者，然后在异步函数里执行以下片段：
+
+```rust,ignore
+let mut shutdown = context.begin_shutdown();
+shutdown.wait().await?;
+```
+
+`begin_shutdown()` 返回前已经发送全部 stop 请求；`wait()` 用来等待终止并观察清理
+错误。`Managed` 和 `ShutdownHandle` 都有 `must_use` 提示：将托管值返回给容器，
+并处理关闭句柄。若确实只请求停止而不等待，请显式写
+`drop(context.begin_shutdown())`。单纯丢弃 context 不会停止 worker。构建取消时，
+容器只为已成功返回 `Managed` 的资源请求 stop；尚未完成的工厂所产生的副作用由
+工厂自行收尾。完整实现见[生命周期说明](lifecycle.zh_CN.md)和
+[托管 worker 示例](../examples/app_lifecycle.rs)。
+
 ## 选择定义与构建范围
 
 启用默认 feature 时，可以用 `#[Component]`、`#[Service]`、`#[Repository]` 声明
@@ -186,8 +276,9 @@ cargo test --manifest-path tests/fixtures/ioc_cross_crate/Cargo.toml
 | `BuildError::FactoryFailed` 或 `ConfigReadFailed` | 原始错误及构建路径 | 修复工厂或配置输入。 |
 | `ResolveError::MissingComponent` 或 `AmbiguousBinding` | 查询类型及候选绑定 | 查询已构建的根节点，或使用 `get_by_id()`。 |
 
-依赖图错误会在用户工厂运行前返回。工厂失败前已经发生的外部副作用不会自动撤销；
-可沿 `FactoryFailed` 保留的错误来源检查原因。工厂只能读取登记时声明的依赖，
+依赖图错误会在用户工厂运行前返回。后续工厂失败时，容器会清理已移交的托管资源；
+其余外部副作用由工厂或应用自行处理。可沿 `FactoryFailed` 保留的错误来源检查原因。
+工厂只能读取登记时声明的依赖，
 否则会得到 `BuildAccessError::UndeclaredDependency`。
 
 ## 生命周期与限制
@@ -209,10 +300,10 @@ cargo test --manifest-path tests/fixtures/ioc_cross_crate/Cargo.toml
 `Managed::new` 接收同步 stop 请求，`.with_wait` 可添加异步终止等待。
 `begin_shutdown(self)` 在返回前按实际构建顺序的逆序调用所有 stop。返回的
 `ShutdownHandle::wait(&mut self)` 按同一顺序等待并返回所有清理错误。若 wait future
-被取消，保留句柄并再次调用 `wait()` 可继续同一个 future。同步 `build()` 失败时只停止已完成的托管资源，不会等待；
+被取消，保留句柄并再次调用 `wait()` 可继续同一个 future。同步 `build()` 失败时只停止已成功返回 `Managed` 的资源，不会等待；
 异步 `build_async()` 失败时先 stop 再 wait，并把清理错误与原始构建错误一起保留。
 若构建失败时也必须等已有资源终止，即使所有工厂同步，也使用 `build_async()`。
-异步构建 future 被取消时只调用 stop，
+异步构建 future 被取消时只对已成功返回 `Managed` 的资源调用 stop，
 不等待；此时调用方已无法接收清理错误。工厂在返回 `Managed<T>` 前产生的副作用
 由工厂自身负责收尾。
 

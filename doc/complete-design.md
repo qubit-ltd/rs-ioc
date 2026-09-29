@@ -74,13 +74,21 @@ definition, including aliases; the replacement must re-declare any aliases it
 still needs. A callback or validation error leaves the original builder
 unchanged.
 
+Function beans generate a default PascalCase function-name marker with a
+`Bean` suffix; `#[bean(marker = CustomFactory)]` can override it. A
+`#[Configuration]` module exposes `register_ioc(&mut builder)`, which stages
+its beans and needs only `macros`. The
+[function bean example](../examples/readme_beans.rs) shows installation, roots,
+and reads; configuration-value reads still require both features.
+
 ## 4. Registration, graph validation, and construction
 
 The build lifecycle is:
 
 ```text
 registration → active definitions and root closure → graph validation
-             → construction → context publication → explicit shutdown
+             → sync-build async preflight → construction
+             → context publication → explicit shutdown
 ```
 
 Registration does not call user factories. `build()` constructs the closure
@@ -93,7 +101,8 @@ async factories can coexist in an async build.
 
 Validation resolves roots and requests after profile filtering, then checks
 missing or ambiguous dependencies, duplicate active keys, primary selection,
-and cycles. No factory runs until the complete selected graph validates.
+and cycles. Neither a factory nor an alias projector runs until the complete selected
+graph validates and, for synchronous construction, the async preflight passes.
 Absent optional requests resolve to `None`, and absent collection requests to
 an empty vector; matching requests still participate in validation. Factories
 run serially with dependencies before consumers, preserving registration and
@@ -107,8 +116,12 @@ definition is selected as a unit retain a definition-member provenance in the
 path. `BuildContext` grants access only to requests declared and resolved by
 the graph; an undeclared query returns `BuildAccessError`.
 
-The published context reuses immutable type and exact-key indexes for queries.
-Collection results are sorted by `order`, ID, and source location.
+The published context builds immutable type and exact-key indexes. Single-value
+selection and collection sorting still take place during each query.
+`BuildContext::get_all` and `ApplicationContext::get_all` order collections by
+ascending `order`, ID, and source location; complete ties retain registration
+order. Diagnostic candidate and available-binding lists retain registration
+order.
 
 ## 5. Configuration and integration boundaries
 
@@ -144,7 +157,9 @@ source chain; graph and construction errors retain binding sources and
 dependency paths when available.
 
 Create managed resources inside a managed factory, which only runs after graph
-validation. `Managed<T>` records a synchronous stop callback and optional async
+validation. A selected synchronous managed factory can run in a synchronous or
+asynchronous build; a later factory failure rolls back resources already
+returned to the container. `Managed<T>` records a synchronous stop callback and optional async
 wait callback. Applications explicitly call `context.begin_shutdown()` and
 then await `ShutdownHandle::wait()`. Stops run in reverse construction order,
 followed by waits in that order. Stop errors and unwind panics are recorded and
@@ -152,12 +167,17 @@ do not prevent later callbacks. Panics while creating or polling a wait future
 are recorded as wait failures. `panic = "abort"` and panics while dropping a
 cleanup future cannot be caught.
 
+`Managed<T>` and `ShutdownHandle` carry type-level `must_use` guidance.
+Return managed values to the container; dropping an untransferred `Managed`
+does not invoke cleanup. Await the shutdown handle, or explicitly use
+`drop(context.begin_shutdown())` to abandon waiting after stop requests run.
+
 If a wait is cancelled, keep the handle and call `wait()` again to resume the
 same future. Dropping the handle abandons unfinished waits after stops have
-run. A synchronous build failure stops already-created resources but does not
+run. A synchronous build failure stops resources already returned as `Managed` but does not
 wait. An async build failure stops and waits, preserving cleanup failures with
-the original build error. Cancelling an async build stops already-created
-resources but does not wait. Side effects made by a factory before it returns a
+the original build error. Cancelling an async build calls stop once per resource already returned as
+`Managed`, in reverse construction order, without waiting. Side effects made by a factory before it returns a
 `Managed<T>` remain that factory's responsibility. Dropping a context does not
 automatically stop managed resources, and external `Arc` clones can outlive
 shutdown.
@@ -173,3 +193,14 @@ replacement, diagnostic paths, sync and async construction, cancellation,
 shared trait aliases, configuration error sources, and managed shutdown order
 and recovery. Exact public signatures are defined by the generated Rust API
 documentation.
+
+
+Downstream verification keeps separate manifests and locks:
+`tests/fixtures/application_consumer/` fixes the historical dependency snapshot;
+`tests/fixtures/application_consumer_current/` holds a reviewed current snapshot.
+Both CI lanes run `check --locked`, `test --locked`, and `run --locked`, recording
+actual checkout SHAs, the Rust version, and the lock's SHA256. The current lane
+must pin an accepted commit containing the latest lifecycle fixture. The
+historical lane only proves contracts present in its selected source, rather
+than inclusion of new tests. Upgrade dependency constraints, SHAs, and locks
+together; neither lane follows a floating branch automatically.

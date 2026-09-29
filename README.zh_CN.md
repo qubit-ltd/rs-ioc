@@ -81,6 +81,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 断言能观察到选中的实现。构建器会在创建组件前验证该服务的依赖链。
 
+### 函数 bean 与配置组
+
+函数 bean 会生成注册 marker：`default_value` 默认生成 `DefaultValueBean`，
+`#[bean(marker = CustomFactory)]` 则使用指定名称。安装这些 marker，再调用
+`#[Configuration]` 模块的 `grouped::register_ioc(&mut builder)?`，选好根节点后
+构建并读取组件。[函数 bean 示例](examples/readme_beans.rs) 通过断言验证 `1`、`2`
+和 `"ready"`，只需启用 `macros`：
+
+```bash
+cargo +1.94.0 run --example readme_beans --no-default-features --features macros --locked
+```
+
+完整代码、异步构建和托管关闭步骤见[用户手册的函数 bean 场景](doc/user_guide.zh_CN.md#场景函数-bean-与配置组)。
+
 ## 核心能力
 
 字段和 bean 参数可使用 `#[inject(id = "...")]` 精确选择绑定；

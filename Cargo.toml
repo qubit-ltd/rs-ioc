@@ -21,6 +21,7 @@ include = [
     "/CHANGELOG.md",
     "/examples/readme_declarative.rs",
     "/examples/readme_manual.rs",
+    "/examples/readme_beans.rs",
     "/examples/app_lifecycle.rs",
     "/examples/config_contract.rs",
     "/examples/context_sharing.rs",
@@ -35,6 +36,10 @@ name = "qubit_ioc"
 
 [[example]]
 name = "readme_declarative"
+required-features = ["macros"]
+
+[[example]]
+name = "readme_beans"
 required-features = ["macros"]
 
 [[example]]

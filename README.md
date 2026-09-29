@@ -87,6 +87,22 @@ the complete registered graph.
 The assertion observes the selected implementation. The builder checks the
 selected service's dependency graph before constructing either component.
 
+### Function beans and configuration groups
+
+A function bean generates a registration marker: `default_value` becomes
+`DefaultValueBean`, while `#[bean(marker = CustomFactory)]` selects an explicit
+marker. Install the markers, call `grouped::register_ioc(&mut builder)?` for a
+`#[Configuration]` module, then select roots and query the built context.
+The [function bean example](examples/readme_beans.rs) produces `1`, `2`, and
+`"ready"` through assertions and needs only `macros`:
+
+```bash
+cargo +1.94.0 run --example readme_beans --no-default-features --features macros --locked
+```
+
+Follow the [function bean scenario in the user guide](doc/user_guide.md#scenario-function-beans-and-configuration-groups)
+for the complete code, async construction, and managed shutdown.
+
 ## What it provides
 
 For exact selection, use `#[inject(id = "...")]` on an `Arc<T>` field or bean

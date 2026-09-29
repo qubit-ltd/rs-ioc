@@ -29,15 +29,21 @@ workspace 包含运行时 `qubit-ioc` 与过程宏 `qubit-ioc-macros`。Edition 
 
 `replace_definition(anchor, callback)` 在临时 builder 中登记一个完整替代定义。替代定义必须恰好一次声明 anchor；成功后原定义的所有绑定（包含 alias）都会被替换，所需 alias 必须由新定义重新声明。callback 失败或声明不满足约束时原 builder 不变。
 
+函数 bean 的默认 marker 名称由函数名转成 PascalCase 后追加 `Bean`；
+`#[bean(marker = CustomFactory)]` 可指定名称。`#[Configuration]` 模块导出
+`register_ioc(&mut builder)`，只负责登记组内 bean，只需启用 `macros`。
+[函数 bean 示例](../examples/readme_beans.rs) 展示安装、根节点与读取；读取配置值
+仍需要同时启用两个 feature。
+
 ## 4. 注册、验证与构造
 
-生命周期阶段为“注册 → 活跃定义与根闭包 → 图验证 → 构造 → 发布 context → 显式关闭”。推荐的装配顺序是：创建 `ContainerBuilder`，登记配置和外部实例，调用 provider 的显式注册入口或逐个 `install::<D>()`，设置 roots/profile，然后构建。注册阶段不运行用户工厂。
+生命周期阶段为“注册 → 活跃定义与根闭包 → 图验证 → 同步构建的异步工厂预检 → 构造 → 发布 context → 显式关闭”。推荐的装配顺序是：创建 `ContainerBuilder`，登记配置和外部实例，调用 provider 的显式注册入口或逐个 `install::<D>()`，设置 roots/profile，然后构建。注册阶段不运行用户工厂。
 
 `build()` 从一个或多个 `root` 构造所选定义的依赖闭包；至少需要一个 root。`build_all()` 构造所有生效定义，并允许空图。异步对应方法为 `build_async()` 与 `build_all_async()`。若选中图含异步工厂，同步 build 会在运行任何工厂前返回 `AsyncRequired`。异步构建由应用提供执行器，且可以混合同步和异步工厂。
 
-图验证先解析请求候选，再检查缺失、歧义、重复 primary 和环路；全部通过后才运行第一个工厂。可选依赖无候选时解析为 `None`，集合依赖无候选时为空；命中的依赖仍参与图验证。构造顺序保证依赖先于消费者。独立定义按注册和依赖声明顺序稳定排序；构建串行执行。构建成功才发布 context，失败不暴露部分容器。
+图验证先解析请求候选，再检查缺失、歧义、重复 primary 和环路；同步构建还会预检整个选中图是否包含异步工厂。图验证与适用的同步预检全部通过后，才会运行工厂或 alias projector。可选依赖无候选时解析为 `None`，集合依赖无候选时为空；命中的依赖仍参与图验证。构造顺序保证依赖先于消费者。独立定义按注册和依赖声明顺序稳定排序；构建串行执行。构建成功才发布 context，失败不暴露部分容器。
 
-`BuildContext` 只允许工厂访问其声明并由图解析出的依赖。未声明访问返回 `BuildAccessError`。`ApplicationContext` 查询已构造实例，不会重跑工厂；集合结果按 `order`、ID、来源位置排序。
+`BuildContext` 只允许工厂访问其声明并由图解析出的依赖。未声明访问返回 `BuildAccessError`。`ApplicationContext` 查询已构造实例，不会重跑工厂。发布时建立不可变的类型与精确键索引；单值候选选择和集合排序仍在每次查询时完成。`BuildContext::get_all` 和 `ApplicationContext::get_all` 都按 `order`、ID、来源位置升序排列，完全相同的项保留注册顺序。错误中的候选和可用绑定保留注册顺序。
 
 ## 5. 配置与上下游边界
 
@@ -56,10 +62,20 @@ provider crate 应导出显式 `register_ioc(&mut builder)`，由应用决定纳
 
 错误按阶段表达：`RegistrationError` 表示 ID、profile、重复依赖声明等登记问题；`BuildError` 表示 roots、候选、重复活跃绑定、图、异步要求、配置或工厂问题；`ResolveError` 表示 context 查询问题；`ShutdownError` 聚合资源关闭失败。工厂和配置错误保留 source 链，构建错误尽可能包含完整依赖路径和定义来源。多个 root 保留声明顺序；cycle 诊断包含 root 前缀和实际环路后缀，定义成员补全也保留对应来源关系。
 
-托管资源只能由托管工厂在依赖图验证通过后创建，再通过 `Managed<T>` 注册 stop 和可选的异步 wait。已有外部资源应作为普通实例注册，并由应用自行负责关闭。应用显式调用 `context.begin_shutdown()`，再对返回句柄调用 `wait().await`。关闭会先按逆构建顺序执行全部 stop，再按该顺序执行 wait；stop 返回错误或 unwind panic 会记录为 `ShutdownFailure` 并继续后续动作。wait 回调创建和 wait future 轮询中的 unwind panic 也会记录为 `ShutdownPhase::Wait` 失败，并继续等待其他组件。`panic = "abort"` 和清理 future 析构时的 panic 无法由此机制捕获。取消 wait 后保留句柄并再次调用 `wait()`，会继续同一个 future。
+托管资源只能由托管工厂在依赖图验证通过后创建，再通过 `Managed<T>` 注册 stop 和可选的异步 wait。已有外部资源应作为普通实例注册，并由应用自行负责关闭。同步托管工厂可在同步或异步构建中执行，后续工厂失败时已成功移交的资源会参与回滚。应用显式调用 `context.begin_shutdown()`，再对返回句柄调用 `wait().await`。关闭会先按逆构建顺序执行全部 stop，再按该顺序执行 wait；stop 返回错误或 unwind panic 会记录为 `ShutdownFailure` 并继续后续动作。wait 回调创建和 wait future 轮询中的 unwind panic 也会记录为 `ShutdownPhase::Wait` 失败，并继续等待其他组件。`panic = "abort"` 和清理 future 析构时的 panic 无法由此机制捕获。取消 wait 后保留句柄并再次调用 `wait()`，会继续同一个 future。
 
-同步构建失败会 stop 已创建资源但不能 wait；异步构建失败会 stop、wait，并将清理错误与原构建错误一起返回。取消异步构建会 stop 已构造资源但不 wait。工厂在返回 `Managed<T>` 之前已产生的副作用由工厂负责回收。普通 context drop 不会自动关闭资源，外部 `Arc` 克隆可以在关闭后继续持有对象。
+`Managed<T>` 和 `ShutdownHandle` 使用类型级 `must_use` 提示。托管值应返回给容器；直接丢弃未移交的 `Managed` 不会调用清理。关闭句柄应等待，若有意放弃等待，可显式 `drop(context.begin_shutdown())`，此时 stop 已经执行。
+
+同步构建失败会 stop 已成功返回 `Managed` 的资源但不能 wait；异步构建失败会 stop、wait，并将清理错误与原构建错误一起返回。取消异步构建会按逆构建顺序对已成功返回 `Managed` 的资源各执行一次 stop，但不 wait。工厂在返回 `Managed<T>` 之前已产生的副作用由工厂负责回收。普通 context drop 不会自动关闭资源，外部 `Arc` 克隆可以在关闭后继续持有对象。
 
 ## 7. 当前验收依据
 
 当前契约由 `tests/`、宏 crate 测试和跨 crate fixture 验证，重点包括：显式安装和未安装 root 诊断；候选、ID、profile、替换及完整路径；同步/异步构造和取消；trait alias 的共享身份；配置 source 保留；托管 stop/wait 顺序、错误聚合和取消恢复；独立 feature 组合。公共 API 的精确签名以生成的 Rust API 文档为准。完整 worker 启停示例见[生命周期说明](lifecycle.zh_CN.md)与[可运行程序](../examples/app_lifecycle.rs)。
+
+
+下游验证保留两套独立 manifest/lock：`tests/fixtures/application_consumer/` 固定历史
+依赖快照，`tests/fixtures/application_consumer_current/` 使用经审查更新的当前快照。
+两条 CI lane 均运行 `check --locked`、`test --locked` 和 `run --locked`，并记录
+实际 checkout SHA、Rust 版本和 lock 的 SHA256。当前 lane 应固定包含最新生命周期
+夹具的已接受提交；历史 lane 只证明其所选旧源码的契约，不代表包含当前新增测试。
+升级快照时应一起更新依赖约束、SHA 和 lock，不使用浮动分支自动更新。

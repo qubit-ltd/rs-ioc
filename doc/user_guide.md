@@ -80,6 +80,105 @@ construction. The two queries clone handles to the same stored component.
 For a repository example with explicit startup and shutdown calls, run
 `cargo run --example app_lifecycle` from this repository.
 
+## Scenario: function beans and configuration groups
+
+When a provider constructs values with free functions, use `#[bean]` to turn
+those functions into installable definitions. This runnable introductory
+example verifies a default marker, a custom marker, and a module containing
+related beans. It uses Rust 2024, Rust 1.94, and only the `macros` feature:
+
+```toml
+qubit-ioc = { version = "0.2", path = "../rs-ioc", default-features = false, features = ["macros"] }
+```
+
+```rust
+use std::sync::Arc;
+
+use qubit_ioc::ContainerBuilder;
+use qubit_ioc::bean;
+
+struct DefaultValue(u8);
+struct CustomValue(u8);
+
+#[bean]
+fn default_value() -> DefaultValue {
+    DefaultValue(1)
+}
+
+#[bean(marker = CustomFactory)]
+fn custom_value() -> Arc<CustomValue> {
+    Arc::new(CustomValue(2))
+}
+
+#[qubit_ioc::Configuration]
+mod grouped {
+    #[qubit_ioc::bean]
+    fn label() -> String {
+        "ready".to_owned()
+    }
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut builder = ContainerBuilder::new();
+    builder.install::<DefaultValueBean>()?;
+    builder.install::<CustomFactory>()?;
+    grouped::register_ioc(&mut builder)?;
+    builder.root::<DefaultValue>();
+    builder.root::<CustomValue>();
+    builder.root::<String>();
+    let context = builder.build()?;
+    assert_eq!(context.get::<DefaultValue>()?.0, 1);
+    assert_eq!(context.get::<CustomValue>()?.0, 2);
+    assert_eq!(context.get::<String>()?.as_str(), "ready");
+    Ok(())
+}
+```
+
+A function's default marker is its PascalCase name followed by `Bean`:
+`default_value` generates `DefaultValueBean`. `marker = CustomFactory`
+overrides that name. Returning `Arc<CustomValue>` stores the inner component
+as `CustomValue`, so roots and queries use `CustomValue`. A
+`#[Configuration]` module exports `register_ioc`; calling it installs the
+module's beans without running them. This grouping attribute needs no
+`config` feature. Reading configuration with `#[value]` or
+`#[ConfigurationProperties]` needs both `macros` and `config`.
+
+The three roots select the definitions; the assertions observe `1`, `2`, and
+`"ready"` after construction. Run the identical
+[repository example](../examples/readme_beans.rs) from this checkout:
+
+```bash
+cargo +1.94.0 run --example readme_beans --no-default-features --features macros --locked
+```
+
+In a provider crate, export a registration entry point and let the consuming
+application call it during startup. Add `async` to a bean only when its
+construction needs to await work; drive `builder.build_async().await?` with
+the application's executor. A synchronous build rejects a selected async
+factory with `BuildError::AsyncRequired` before any factory or alias projector
+runs. A graph-validation error likewise prevents construction. A later
+factory failure can still roll back resources from earlier managed factories.
+
+For a bean that starts a worker, create the worker inside the factory and
+return `Managed<T>` with a stop action and, when needed, `.with_wait(...)`.
+At application exit, release shared context handles, obtain its single owner,
+then use this fragment inside an async function:
+
+```rust,ignore
+let mut shutdown = context.begin_shutdown();
+shutdown.wait().await?;
+```
+
+`begin_shutdown()` sends every stop request before returning; `wait()` observes
+termination and cleanup errors. `Managed` and `ShutdownHandle` are `must_use`:
+return managed values to the container and observe the shutdown handle. To
+request stop while deliberately abandoning waits, explicitly write
+`drop(context.begin_shutdown())`. Dropping the context alone does not stop
+workers. Cancellation only requests stop for resources already returned as
+`Managed`; effects from an unfinished factory stay that factory's
+responsibility. Follow the [lifecycle guide](lifecycle.md) and
+[managed worker example](../examples/app_lifecycle.rs) for a full implementation.
+
 ## Choosing definitions and build scope
 
 With default features, `#[Component]`, `#[Service]`, and `#[Repository]`
@@ -210,8 +309,9 @@ Use an async factory when construction itself must await I/O. `#[bean] async fn`
 | `ResolveError::MissingComponent` or `AmbiguousBinding` | Query type and candidates | Query a built root or use `get_by_id()`. |
 
 Graph errors are returned before user factories run. A factory can still fail
-after earlier factories have performed external work; inspect the preserved
-source chain of `FactoryFailed`. A factory may only read dependencies declared
+after earlier factories have performed external work. The container cleans up
+managed resources already transferred to it; factories or the application own
+other side effects. Inspect the preserved source chain of `FactoryFailed`. A factory may only read dependencies declared
 at registration, or it receives `BuildAccessError::UndeclaredDependency`.
 
 ## Lifetime and limits
@@ -243,13 +343,13 @@ asynchronous termination wait. `begin_shutdown(self)` calls all stop actions
 in reverse construction order before returning a `ShutdownHandle`.
 `wait(&mut self)` awaits waits in that same order and returns every failure.
 If a wait future is cancelled, keep the handle and call `wait()` again to
-resume that same future. A synchronous `build()` failure stops completed
-managed resources but cannot await them. An asynchronous `build_async()`
+resume that same future. A synchronous `build()` failure stops resources already
+returned as `Managed` but cannot await them. An asynchronous `build_async()`
 failure calls stop and then waits, preserving cleanup failures alongside the
 original build error. If failed construction must wait for already-created
 resources before returning, use `build_async()` even when every factory is
 synchronous. Cancelling an asynchronous build calls
-stop without waiting, because the caller no longer has a future to receive
+stop for resources already returned as `Managed`, without waiting, because the caller no longer has a future to receive
 errors from. Effects created inside a factory before it returns `Managed<T>`
 remain the factory's responsibility.
 
