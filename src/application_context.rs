@@ -154,9 +154,9 @@ impl ApplicationContext {
     #[must_use = "handle the component lookup result"]
     pub fn get<T: ?Sized + Send + Sync + 'static>(&self) -> Result<Arc<T>, ResolveError> {
         let request = BindingKey::of::<T>(None);
-        let candidates = self.candidates(TypeId::of::<T>());
-        let selected = self.select(&request, &candidates)?;
-        Ok(self.read::<T>(&selected.key))
+        let candidates = self.query_index.by_type(TypeId::of::<T>());
+        let selected = self.select(&request, candidates)?;
+        Ok(self.read::<T>(&self.bindings[selected].key))
     }
 
     /// Returns the `T` bound to the exact, case-sensitive `id`.
@@ -187,9 +187,9 @@ impl ApplicationContext {
         if let Some(index) = self.query_index.by_key(&request) {
             return Ok(self.read::<T>(&self.bindings[index].key));
         }
-        let candidates = self.candidates(TypeId::of::<T>());
-        let selected = self.select(&request, &candidates)?;
-        Ok(self.read::<T>(&selected.key))
+        let candidates = self.query_index.by_type(TypeId::of::<T>());
+        let selected = self.select(&request, candidates)?;
+        Ok(self.read::<T>(&self.bindings[selected].key))
     }
 
     /// Returns `Some` for a unique selected `T`, `None` when absent, or an
@@ -211,12 +211,12 @@ impl ApplicationContext {
     #[must_use = "handle the optional component lookup result"]
     pub fn try_get<T: ?Sized + Send + Sync + 'static>(&self) -> Result<Option<Arc<T>>, ResolveError> {
         let request = BindingKey::of::<T>(None);
-        let candidates = self.candidates(TypeId::of::<T>());
+        let candidates = self.query_index.by_type(TypeId::of::<T>());
         if candidates.is_empty() {
             return Ok(None);
         }
-        self.select(&request, &candidates)
-            .map(|binding| Some(self.read::<T>(&binding.key)))
+        self.select(&request, candidates)
+            .map(|index| Some(self.read::<T>(&self.bindings[index].key)))
     }
 
     /// Returns all built `T` values sorted by order, ID and source location.
@@ -234,56 +234,54 @@ impl ApplicationContext {
     /// source location. An absent type produces an empty vector.
     #[must_use]
     pub fn get_all<T: ?Sized + Send + Sync + 'static>(&self) -> Vec<Arc<T>> {
-        let mut candidates = self.candidates(TypeId::of::<T>());
-        candidates.sort_by(|left, right| {
-            left.order
-                .cmp(&right.order)
-                .then_with(|| left.key.id().cmp(&right.key.id()))
-                .then_with(|| left.source.cmp(&right.source))
-        });
-        candidates.iter().map(|binding| self.read::<T>(&binding.key)).collect()
-    }
-
-    /// Lists active bindings for one Rust type in registration order.
-    fn candidates(&self, type_id: TypeId) -> Vec<&BuiltBinding> {
         self.query_index
-            .by_type(type_id)
+            .by_type_collection(TypeId::of::<T>())
             .iter()
-            .map(|&index| &self.bindings[index])
+            .map(|&index| self.read::<T>(&self.bindings[index].key))
             .collect()
     }
 
     /// Resolves one named or unnamed query from candidates already in this
     /// context.
-    fn select<'binding>(
-        &self,
-        request: &BindingKey,
-        candidates: &[&'binding BuiltBinding],
-    ) -> Result<&'binding BuiltBinding, ResolveError> {
-        let matching: Vec<_> = candidates
-            .iter()
-            .copied()
-            .filter(|binding| request.id().is_none() || binding.key.id() == request.id())
-            .collect();
-        match matching.as_slice() {
-            [] => Err(ResolveError::MissingComponent {
-                request: request.clone(),
-                available: candidates.iter().map(|binding| binding.key.clone()).collect(),
-            }),
-            [only] => Ok(only),
-            many if request.id().is_none() => {
-                let primaries: Vec<_> = many.iter().copied().filter(|binding| binding.primary).collect();
-                match primaries.as_slice() {
-                    [only] => Ok(only),
-                    _ => Err(ResolveError::AmbiguousBinding {
-                        request: request.clone(),
-                        candidates: many.iter().map(|binding| binding.key.clone()).collect(),
-                    }),
-                }
+    fn select(&self, request: &BindingKey, candidates: &[usize]) -> Result<usize, ResolveError> {
+        let mut matching_count = 0;
+        let mut selected = None;
+        let mut primary_count = 0;
+        let mut primary = None;
+        for &index in candidates {
+            let binding = &self.bindings[index];
+            if request.id().is_some_and(|id| binding.key.id() != Some(id)) {
+                continue;
             }
-            many => Err(ResolveError::AmbiguousBinding {
+            matching_count += 1;
+            selected = Some(index);
+            if binding.primary {
+                primary_count += 1;
+                primary = Some(index);
+            }
+        }
+
+        match matching_count {
+            0 => Err(ResolveError::MissingComponent {
                 request: request.clone(),
-                candidates: many.iter().map(|binding| binding.key.clone()).collect(),
+                available: candidates
+                    .iter()
+                    .map(|&index| self.bindings[index].key.clone())
+                    .collect(),
+            }),
+            1 => Ok(selected.expect("one match must have an index")),
+            _ if request.id().is_none() && primary_count == 1 => {
+                Ok(primary.expect("one primary match must have an index"))
+            }
+            _ => Err(ResolveError::AmbiguousBinding {
+                request: request.clone(),
+                candidates: candidates
+                    .iter()
+                    .filter_map(|&index| {
+                        let binding = &self.bindings[index];
+                        (request.id().is_none() || binding.key.id() == request.id()).then(|| binding.key.clone())
+                    })
+                    .collect(),
             }),
         }
     }
