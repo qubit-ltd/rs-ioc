@@ -26,6 +26,8 @@ pub(crate) enum MacroKind {
 
 impl MacroKind {
     /// Returns the user's attribute spelling for diagnostic messages.
+    #[must_use]
+    #[inline]
     pub(crate) const fn name(self) -> &'static str {
         match self {
             Self::Component => "Component",

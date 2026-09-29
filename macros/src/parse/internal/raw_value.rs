@@ -17,7 +17,10 @@ pub(crate) enum RawValue {
     /// A marker option with no assigned value.
     Flag,
     /// A string literal option value.
-    String(LitStr),
+    String(
+        /// String literal before option-specific semantic validation.
+        LitStr,
+    ),
     /// An integer literal with its source sign tracked separately.
     Integer {
         /// Integer token before semantic range checking.
@@ -26,7 +29,13 @@ pub(crate) enum RawValue {
         negative: bool,
     },
     /// A Rust type value such as `dyn Trait`.
-    Type(Type),
+    Type(
+        /// Parsed Rust type before validating the option's supported shape.
+        Type,
+    ),
     /// An identifier value such as a generated marker name.
-    Ident(Ident),
+    Ident(
+        /// Identifier token retained for generated names and diagnostics.
+        Ident,
+    ),
 }

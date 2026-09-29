@@ -18,5 +18,8 @@ pub(crate) enum DependencyKind {
     /// All matching bindings are collected in order.
     All,
     /// A value is read from the configuration snapshot at the given path.
-    Value { path: LitStr },
+    Value {
+        /// Configuration lookup path retained with its diagnostic source span.
+        path: LitStr,
+    },
 }

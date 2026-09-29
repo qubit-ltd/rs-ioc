@@ -7,6 +7,10 @@
 // =============================================================================
 //! Declaration macro intermediate representation.
 
+use std::fmt::Debug;
+use std::fmt::Formatter;
+use std::fmt::Result;
+
 use crate::ir::BeanIr;
 use crate::ir::ComponentIr;
 use crate::ir::ConfigurationIr;
@@ -15,19 +19,33 @@ use crate::ir::ConfigurationPropertiesIr;
 /// A declaration after syntax and local semantic validation.
 pub(crate) enum Declaration {
     /// Validated component, service, or repository struct.
-    Component(ComponentIr),
+    Component(
+        /// Checked struct, injection fields, and binding options.
+        ComponentIr,
+    ),
     /// Validated factory function.
-    Bean(Box<BeanIr>),
+    Bean(
+        /// Checked factory signature, parameters, output, and binding options.
+        Box<BeanIr>,
+    ),
     /// Validated inline configuration module.
-    Configuration(ConfigurationIr),
+    Configuration(
+        /// Checked inline module, optional default profile, and source
+        /// identity.
+        ConfigurationIr,
+    ),
     /// Validated configuration-backed properties struct.
-    ConfigurationProperties(ConfigurationPropertiesIr),
+    ConfigurationProperties(
+        /// Checked properties struct, configuration prefix, and binding
+        /// options.
+        ConfigurationPropertiesIr,
+    ),
 }
 
-impl std::fmt::Debug for Declaration {
+impl Debug for Declaration {
     /// Displays only the variant because `syn` syntax trees do not enable extra
     /// debug traits.
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> Result {
         let kind = match self {
             Self::Component(_) => "Component",
             Self::Bean(_) => "Bean",

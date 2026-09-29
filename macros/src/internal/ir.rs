@@ -7,33 +7,33 @@
 // =============================================================================
 //! Macro IR declarations split by normalized owner type.
 
-#[path = "ir/bean.rs"]
+#[path = "ir/bean_ir.rs"]
 pub(crate) mod bean;
 #[path = "ir/binding_options.rs"]
 pub(crate) mod binding_options;
-#[path = "ir/component.rs"]
+#[path = "ir/component_ir.rs"]
 pub(crate) mod component;
-#[path = "ir/configuration.rs"]
+#[path = "ir/configuration_ir.rs"]
 pub(crate) mod configuration;
-#[path = "ir/configuration_properties.rs"]
+#[path = "ir/configuration_properties_ir.rs"]
 pub(crate) mod configuration_properties;
 #[path = "ir/declaration.rs"]
 pub(crate) mod declaration;
-#[path = "ir/dependency.rs"]
+#[path = "ir/dependency_ir.rs"]
 pub(crate) mod dependency;
 #[path = "ir/dependency_kind.rs"]
 pub(crate) mod dependency_kind;
-#[path = "ir/field.rs"]
+#[path = "ir/field_ir.rs"]
 pub(crate) mod field;
 #[path = "ir/macro_kind.rs"]
 pub(crate) mod macro_kind;
-#[path = "ir/output.rs"]
+#[path = "ir/output_ir.rs"]
 pub(crate) mod output;
 #[path = "ir/output_shape.rs"]
 pub(crate) mod output_shape;
-#[path = "ir/param.rs"]
+#[path = "ir/param_ir.rs"]
 pub(crate) mod param;
-#[path = "ir/source.rs"]
+#[path = "ir/source_ir.rs"]
 pub(crate) mod source;
 
 pub(crate) use bean::BeanIr;

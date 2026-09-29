@@ -37,6 +37,8 @@ pub(in crate::validate) struct ValidatedOptions {
 
 impl ValidatedOptions {
     /// Moves common binding values into their stable IR representation.
+    #[must_use]
+    #[inline]
     pub(in crate::validate) fn binding(self) -> BindingOptions {
         BindingOptions {
             id: self.id,

@@ -13,9 +13,11 @@ use proc_macro2::Span;
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::AngleBracketedGenericArguments;
+use syn::Error;
 use syn::GenericArgument;
 use syn::Ident;
 use syn::PathArguments;
+use syn::Result;
 use syn::Type;
 use syn::ext::IdentExt;
 
@@ -35,7 +37,7 @@ impl RuntimePath {
     }
 
     /// Resolves the runtime crate name from the consumer's Cargo manifest.
-    pub(crate) fn resolve() -> syn::Result<Self> {
+    pub(crate) fn resolve() -> Result<Self> {
         match crate_name("qubit-ioc") {
             Ok(FoundCrate::Itself) => Ok(Self {
                 root: Ident::new("qubit_ioc", Span::call_site()),
@@ -43,7 +45,7 @@ impl RuntimePath {
             Ok(FoundCrate::Name(name)) => Ok(Self {
                 root: Ident::new_raw(&name, Span::call_site()),
             }),
-            Err(error) => Err(syn::Error::new(
+            Err(error) => Err(Error::new(
                 Span::call_site(),
                 format!("cannot locate `qubit-ioc` runtime dependency: {error}"),
             )),
@@ -51,6 +53,7 @@ impl RuntimePath {
     }
 
     /// Returns the absolute token path used by generated code.
+    #[must_use]
     pub(crate) fn tokens(&self) -> TokenStream {
         let root = &self.root;
         quote!(::#root)
@@ -60,6 +63,7 @@ impl RuntimePath {
     ///
     /// Bare `Managed<T>` is accepted because it may be explicitly imported.
     /// Unrelated qualified paths are left as ordinary component types.
+    #[must_use]
     pub(crate) fn managed_argument<'a>(&self, ty: &'a Type) -> Option<&'a Type> {
         let Type::Path(type_path) = ty else { return None };
         if type_path.qself.is_some() {
@@ -92,14 +96,17 @@ impl RuntimePath {
 
 #[cfg(test)]
 mod tests {
+    use proc_macro2::Span;
+    use syn::Ident;
     use syn::Type;
+    use syn::parse_str;
 
     use super::RuntimePath;
 
     /// Creates a resolver for an explicitly selected consumer alias.
     fn runtime(root: &str) -> RuntimePath {
         RuntimePath {
-            root: syn::Ident::new_raw(root, proc_macro2::Span::call_site()),
+            root: Ident::new_raw(root, Span::call_site()),
         }
     }
 
@@ -108,7 +115,7 @@ mod tests {
     fn recognizes_exact_managed_paths() {
         let runtime = runtime("ioc");
         for source in ["Managed<u32>", "ioc::Managed<u32>", "::ioc::Managed<u32>"] {
-            let ty = syn::parse_str::<Type>(source).unwrap();
+            let ty = parse_str::<Type>(source).unwrap();
             assert!(runtime.managed_argument(&ty).is_some(), "{source}");
         }
         for source in [
@@ -116,7 +123,7 @@ mod tests {
             "ioc::nested::Managed<u32>",
             "ioc::Other<u32>",
         ] {
-            let ty = syn::parse_str::<Type>(source).unwrap();
+            let ty = parse_str::<Type>(source).unwrap();
             assert!(runtime.managed_argument(&ty).is_none(), "{source}");
         }
     }
