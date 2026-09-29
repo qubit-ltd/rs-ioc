@@ -8,24 +8,29 @@
 //! Managed component value with explicit stop and wait actions.
 
 use std::any::Any;
+use std::panic::AssertUnwindSafe;
+use std::panic::catch_unwind;
 use std::sync::Arc;
 
 use crate::managed::CleanupAction;
 use crate::managed::CleanupError;
 use crate::managed::CleanupFuture;
 use crate::managed::ErasedWait;
+use crate::managed::internal::cleanup_action::ErasedStop;
 use crate::store::ErasedInstance;
+
+/// One-shot synchronous stop request for a managed component.
+type StopCallback<T> = Box<dyn FnOnce(Arc<T>) -> Result<(), CleanupError> + Send + 'static>;
 
 /// A component value paired with explicit application shutdown actions.
 ///
-/// `stop` is synchronous so an in-progress asynchronous build can request
-/// shutdown if its future is cancelled. `wait` is optional and runs during an
-/// explicit asynchronous shutdown or a returned asynchronous build failure.
-/// Dropping a context does not invoke either callback; applications begin
-/// shutdown explicitly through [`crate::ApplicationContext::begin_shutdown`].
-/// Return this value from a managed factory so its actions can be tracked.
-/// Dropping a managed value before handing it to the container drops its
-/// callbacks without invoking either cleanup action.
+/// The abort action is synchronous so an in-progress asynchronous build can
+/// request shutdown if its future is cancelled. `wait` is optional and runs
+/// during an explicit asynchronous shutdown or a returned asynchronous build
+/// failure. Return this value from a managed factory so its actions can be
+/// tracked. Dropping a managed value before handing it to the container
+/// requests abort once, contains any abort panic, and never starts its wait
+/// callback.
 ///
 /// # Type Parameters
 ///
@@ -42,22 +47,24 @@ use crate::store::ErasedInstance;
 #[must_use = "return or register this managed value so its cleanup actions can be tracked"]
 pub struct Managed<T: ?Sized + Send + Sync + 'static> {
     /// Shared component transferred to container storage alongside its actions.
-    value: Arc<T>,
-    /// One-shot stop callback invoked only after container ownership transfer;
-    /// dropping an untransferred managed value does not call it.
-    stop: Box<dyn FnOnce(Arc<T>) -> Result<(), CleanupError> + Send + 'static>,
+    value: Option<Arc<T>>,
+    /// One-shot abort callback consumed by ownership transfer or drop.
+    stop: Option<StopCallback<T>>,
+    /// Optional one-shot request to stop accepting work and drain this
+    /// component.
+    graceful: Option<StopCallback<T>>,
     /// Optional wait callback invoked during explicit asynchronous cleanup;
     /// dropping an untransferred managed value does not call it.
     wait: Option<Box<dyn FnOnce(Arc<T>) -> CleanupFuture + Send + 'static>>,
 }
 
 impl<T: ?Sized + Send + Sync + 'static> Managed<T> {
-    /// Creates a managed value with a synchronous stop action.
+    /// Creates a managed value with a synchronous abort action.
     ///
-    /// The stop closure runs once during explicit shutdown or when an
-    /// asynchronous build future is cancelled after the factory returns this
-    /// value to the container. Dropping it before that transfer does not call
-    /// the stop action.
+    /// The abort closure runs at most once during immediate shutdown, rollback,
+    /// cancellation, or drop before ownership transfer. It must only request
+    /// cancellation: it must not join, block on a future, wait on a condition
+    /// variable, invoke business handlers, or perform unbounded I/O.
     ///
     /// # Type Parameters
     ///
@@ -66,21 +73,49 @@ impl<T: ?Sized + Send + Sync + 'static> Managed<T> {
     ///
     /// # Parameters
     ///
-    /// `value` is the shared component exposed to lookups. `stop` releases its
-    /// external resources and may return a [`CleanupError`].
+    /// `value` is the shared component exposed to lookups. `abort` requests its
+    /// immediate termination and may return a [`CleanupError`]. Without a wait
+    /// callback, returning success means resource termination is complete.
     ///
     /// # Returns
     ///
     /// A managed component with no asynchronous wait action.
-    pub fn new<F>(value: Arc<T>, stop: F) -> Self
+    pub fn new<F>(value: Arc<T>, abort: F) -> Self
     where
         F: FnOnce(Arc<T>) -> Result<(), CleanupError> + Send + 'static,
     {
         Self {
-            value,
-            stop: Box::new(stop),
+            value: Some(value),
+            stop: Some(Box::new(abort)),
+            graceful: None,
             wait: None,
         }
+    }
+
+    /// Adds a synchronous request for this component to stop accepting work
+    /// and drain its existing work during graceful shutdown.
+    ///
+    /// # Type Parameters
+    ///
+    /// `F` is a sendable one-shot callback receiving this component's handle.
+    ///
+    /// # Parameters
+    ///
+    /// `request` must only request draining of this component, without closing
+    /// its dependencies or waiting for termination. It may return a
+    /// [`CleanupError`]; shutdown then falls back to abort. Without this
+    /// callback, graceful shutdown uses abort for this component.
+    ///
+    /// # Returns
+    ///
+    /// This managed component with its graceful request replaced. Drop before
+    /// container transfer still invokes only abort and never this callback.
+    pub fn with_graceful_stop<F>(mut self, request: F) -> Self
+    where
+        F: FnOnce(Arc<T>) -> Result<(), CleanupError> + Send + 'static,
+    {
+        self.graceful = Some(Box::new(request));
+        self
     }
 
     /// Adds an asynchronous action that waits for this component to terminate.
@@ -108,21 +143,36 @@ impl<T: ?Sized + Send + Sync + 'static> Managed<T> {
     }
 
     /// Converts the value and cleanup actions to type-erased internal storage.
-    pub(crate) fn into_parts(self) -> (ErasedInstance, CleanupAction) {
-        let value = Arc::clone(&self.value);
+    pub(crate) fn into_parts(mut self) -> (ErasedInstance, CleanupAction) {
+        let value = self.value.take().expect("managed value has not been transferred");
         let stop_value = Arc::clone(&value);
-        let stop = self.stop;
+        let stop = self.stop.take().expect("managed abort has not been transferred");
         let erased_stop = Box::new(move || stop(stop_value));
-        let wait = self.wait.map(|wait| {
-            let wait_value = value;
+        let graceful = self.graceful.take().map(|request| {
+            let graceful_value = Arc::clone(&value);
+            Box::new(move || request(graceful_value)) as ErasedStop
+        });
+        let wait = self.wait.take().map(|wait| {
+            let wait_value = Arc::clone(&value);
             Box::new(move || wait(wait_value)) as ErasedWait
         });
         (
-            Arc::new(self.value) as Arc<dyn Any + Send + Sync>,
+            Arc::new(value) as Arc<dyn Any + Send + Sync>,
             CleanupAction {
                 stop: Some(erased_stop),
+                graceful,
                 wait,
             },
         )
+    }
+}
+
+impl<T: ?Sized + Send + Sync + 'static> Drop for Managed<T> {
+    /// Requests abort once before ownership transfer, suppressing callback
+    /// errors and panics because drop cannot report them. Never starts waiting.
+    fn drop(&mut self) {
+        if let (Some(value), Some(abort)) = (self.value.take(), self.stop.take()) {
+            let _ = catch_unwind(AssertUnwindSafe(|| abort(value)));
+        }
     }
 }

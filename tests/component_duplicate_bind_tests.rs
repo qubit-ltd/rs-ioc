@@ -25,7 +25,8 @@ fn test_component_macro_rejects_repeated_interface_key_atomically() {
         builder.install::<DuplicateAlias>(),
         Err(RegistrationError::DuplicateDefinitionKey { .. })
     ));
-    let context = builder.build_all().expect("rejected definition did not stage bindings");
+    let application = builder.build_all().expect("rejected definition did not stage bindings");
+    let context = application.context();
     assert!(
         context
             .try_get::<DuplicateAlias>()

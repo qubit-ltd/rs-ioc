@@ -79,6 +79,26 @@ impl BindingKey {
         }
     }
 
+    /// Creates an internal lookup key from runtime type metadata and a
+    /// validated optional identifier.
+    ///
+    /// # Parameters
+    ///
+    /// `type_id` identifies the Rust type namespace. `type_name` is the
+    /// corresponding readable Rust type name, retained only for diagnostics.
+    /// The caller must ensure both describe the same Rust type.
+    /// `id` is a validated exact identifier, or `None` for an unnamed binding.
+    ///
+    /// # Returns
+    ///
+    /// A key whose equality and hashing use `type_id` and `id`, preserving
+    /// `type_name` for diagnostic output without revalidating the identifier.
+    #[must_use]
+    #[inline]
+    pub(crate) fn from_parts(type_id: TypeId, type_name: &'static str, id: Option<BindingId>) -> Self {
+        Self { type_id, type_name, id }
+    }
+
     /// Returns the Rust type identity used for equality.
     ///
     /// # Returns

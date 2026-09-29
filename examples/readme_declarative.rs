@@ -7,7 +7,7 @@
 // =============================================================================
 use std::sync::Arc;
 
-use qubit_ioc::ApplicationContext;
+use qubit_ioc::Application;
 use qubit_ioc::Component;
 use qubit_ioc::Service;
 
@@ -30,11 +30,12 @@ struct Greeter {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut builder = ApplicationContext::builder();
+    let mut builder = Application::builder();
     builder.install::<English>()?;
     builder.install::<Greeter>()?;
     builder.root::<Greeter>();
-    let context = builder.build()?;
+    let application = builder.build()?;
+    let context = application.context();
     assert_eq!(context.get::<Greeter>()?.greeting.text(), "hello");
     Ok(())
 }

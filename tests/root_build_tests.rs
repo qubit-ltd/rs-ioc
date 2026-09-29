@@ -48,7 +48,9 @@ fn test_build_all_runs_every_staged_factory_even_when_a_root_is_registered() {
         .expect("stage unused factory");
     builder.root::<Wanted>();
 
-    let context = builder.build_all().expect("full graph builds");
+    let application = builder.build_all().expect("full graph builds");
+
+    let context = application.context();
     assert_eq!(wanted_calls.load(Ordering::SeqCst), 1);
     assert_eq!(unused_calls.load(Ordering::SeqCst), 1);
     assert!(context.get::<Unused>().is_ok());
@@ -66,7 +68,7 @@ fn test_build_requires_at_least_one_root_before_running_factories() {
         })
         .expect("stage wanted factory");
 
-    assert!(matches!(builder.build(), Err(BuildError::NoRootsSelected)));
+    assert!(matches!(builder.build(), Err(failure) if matches!(failure.cause(), BuildError::NoRootsSelected)));
     assert_eq!(calls.load(Ordering::SeqCst), 0);
 }
 
@@ -81,7 +83,8 @@ fn test_root_by_id_rejects_invalid_id_at_registration() {
 
 #[test]
 fn test_build_all_accepts_an_empty_graph() {
-    let context = ContainerBuilder::new().build_all().expect("empty full graph builds");
+    let application = ContainerBuilder::new().build_all().expect("empty full graph builds");
+    let context = application.context();
     assert!(context.get_all::<Wanted>().is_empty());
 }
 
@@ -99,7 +102,9 @@ fn test_root_build_constructs_only_the_selected_definition_closure() {
         .expect("unused factory");
     builder.root::<Wanted>();
 
-    let context = builder.build().expect("root closure builds");
+    let application = builder.build().expect("root closure builds");
+
+    let context = application.context();
     assert!(context.get::<Wanted>().is_ok());
     assert!(context.get::<Unused>().is_err());
     assert_eq!(calls.load(Ordering::SeqCst), 0);
@@ -110,7 +115,7 @@ fn test_missing_root_reports_available_bindings() {
     let mut builder = ContainerBuilder::new();
     builder.register_instance(Arc::new(Unused)).expect("unused instance");
     builder.root::<Wanted>();
-    assert!(matches!(builder.build(), Err(BuildError::MissingRoot { .. })));
+    assert!(matches!(builder.build(), Err(failure) if matches!(failure.cause(), BuildError::MissingRoot { .. })));
 }
 
 #[test]
@@ -131,7 +136,7 @@ fn test_root_build_missing_dependency_reports_complete_path() {
         Ok(_) => panic!("missing nested dependency must fail"),
         Err(error) => error,
     };
-    match error {
+    match error.cause() {
         BuildError::MissingDependency { path, .. } => {
             assert_eq!(path.len(), 2);
             assert_eq!(path[0].type_name(), std::any::type_name::<RootService>());
@@ -167,7 +172,7 @@ fn test_root_build_factory_failure_ignores_unselected_consumers() {
         Ok(_) => panic!("dependency factory must fail"),
         Err(error) => error,
     };
-    match error {
+    match error.cause() {
         BuildError::FactoryFailed { path, .. } => {
             assert_eq!(path.len(), 2);
             assert_eq!(path[0].type_name(), std::any::type_name::<SelectedConsumer>());
@@ -194,7 +199,7 @@ fn test_root_build_duplicate_binding_reports_both_definition_sources() {
         Err(error) => error,
     };
     assert!(matches!(
-        error,
+        error.cause(),
         BuildError::DuplicateBinding { first, second, .. }
             if first.file == file!()
                 && second.file == file!()

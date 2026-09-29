@@ -17,6 +17,7 @@ use syn::Result;
 
 use crate::conditions::activation_attributes;
 use crate::expand::ExpansionContext;
+use crate::expand::internal_ident;
 use crate::expand::value;
 use crate::ir::BindingOptions;
 use crate::ir::ComponentIr;
@@ -39,6 +40,10 @@ pub(crate) fn expand(value: ComponentIr, context: &ExpansionContext) -> Result<T
     let runtime = &context.runtime;
     let ident = &item.ident;
     let item_name = &source.item;
+    let dependencies_ident = internal_ident("dependencies", 0);
+    let request_ident = internal_ident("request", 0);
+    let context_ident = internal_ident("context", 0);
+    let definition_ident = internal_ident("definition", 0);
     let source_expr = quote_spanned! {source.span=>
         #runtime::DefinitionSource::new(
             ::core::env!("CARGO_PKG_NAME"), ::core::module_path!(), ::core::file!(),
@@ -70,13 +75,13 @@ pub(crate) fn expand(value: ComponentIr, context: &ExpansionContext) -> Result<T
         };
         dependencies.push(quote! {
             #(#conditions)* {
-                let __qubit_ioc_request = #request;
-                if !__qubit_ioc_dependencies.contains(&__qubit_ioc_request) {
-                    __qubit_ioc_dependencies.push(__qubit_ioc_request);
+                let #request_ident = #request;
+                if !#dependencies_ident.contains(&#request_ident) {
+                    #dependencies_ident.push(#request_ident);
                 }
             }
         });
-        let expression = field_expression(dependency, field_ident, runtime);
+        let expression = field_expression(dependency, field_ident, runtime, &context_ident);
         let expression = if matches!(dependency.kind, DependencyKind::Value { .. }) {
             quote!(#runtime::__private::require_config! { #expression })
         } else {
@@ -100,10 +105,10 @@ pub(crate) fn expand(value: ComponentIr, context: &ExpansionContext) -> Result<T
     for bind in &options.binds {
         let alias_options = options_tokens(&options, runtime, true);
         aliases.push(quote! {
-            __qubit_ioc_draft.bind::<#bind, _>(#alias_options, |concrete| {
+            .bind::<#bind, _>(#alias_options, |concrete| {
                 let alias: ::std::sync::Arc<#bind> = concrete;
                 alias
-            })?;
+            })
         });
     }
 
@@ -119,19 +124,18 @@ pub(crate) fn expand(value: ComponentIr, context: &ExpansionContext) -> Result<T
             fn register(
                 builder: &mut #runtime::ContainerBuilder,
             ) -> ::std::result::Result<(), #runtime::RegistrationError> {
-                let mut __qubit_ioc_dependencies = ::std::vec::Vec::<#runtime::Dependency>::new();
+                let mut #dependencies_ident = ::std::vec::Vec::<#runtime::Dependency>::new();
                 #(#dependencies)*
-                let mut __qubit_ioc_draft =
-                    #runtime::__private::codegen_v1::DefinitionDraft::<#ident>::new_sync(
-                        <#ident as #runtime::ComponentDefinition>::source(),
-                        &__qubit_ioc_dependencies,
-                        #concrete_options,
-                        |__qubit_ioc_context| {
-                            ::std::result::Result::Ok(::std::sync::Arc::new(#construct))
-                        },
-                    )?;
-                #(#aliases)*
-                __qubit_ioc_draft.register(builder)
+                let #definition_ident = #runtime::Definition::<#ident>::builder()
+                    .source(<#ident as #runtime::ComponentDefinition>::source())
+                    .binding(#concrete_options)
+                    .dependencies(&#dependencies_ident)
+                    .factory(|#context_ident| {
+                        ::std::result::Result::Ok(::std::sync::Arc::new(#construct))
+                    })
+                    #(#aliases)*
+                    .build()?;
+                builder.register_definition(#definition_ident)
             }
         }
 
@@ -159,9 +163,14 @@ fn dependency_tokens(dependency: &DependencyIr, runtime: &TokenStream) -> TokenS
 }
 
 /// Builds one field from the exact request registered above or a Config read.
-fn field_expression(dependency: &DependencyIr, field_ident: &Ident, runtime: &TokenStream) -> TokenStream {
+fn field_expression(
+    dependency: &DependencyIr,
+    field_ident: &Ident,
+    runtime: &TokenStream,
+    context: &Ident,
+) -> TokenStream {
     let requested_type = &dependency.requested_type;
-    let context = quote!(__qubit_ioc_context);
+    let context = quote!(#context);
     let access = match (&dependency.kind, &dependency.id) {
         (DependencyKind::Required, Some(id)) => {
             quote!(#context.get_by_id::<#requested_type>(#id))

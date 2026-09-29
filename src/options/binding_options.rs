@@ -22,7 +22,7 @@
 /// let options = BindingOptions { primary: true, order: 2, ..BindingOptions::default() };
 /// let mut builder = ContainerBuilder::new();
 /// builder.register_instance_with(Arc::new(7_u32), options)?;
-/// assert_eq!(*builder.build_all()?.get::<u32>()?, 7);
+/// assert_eq!(*builder.build_all()?.context().get::<u32>()?, 7);
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Clone, Debug, Default, Eq, PartialEq)]

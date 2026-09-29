@@ -11,79 +11,67 @@ mod internal;
 
 use std::any::TypeId;
 use std::sync::Arc;
-use std::sync::Mutex;
+use std::sync::atomic::Ordering;
 
 pub(crate) use internal::BuiltBinding;
-use internal::QueryIndex;
+use internal::ContextInner;
 
-use crate::builder::ContainerBuilder;
+use crate::application_state::ApplicationState;
 use crate::error::ResolveError;
 use crate::key::BindingId;
 use crate::key::BindingKey;
-use crate::managed::CleanupJournal;
-use crate::managed::ShutdownHandle;
 use crate::options::DefinitionSource;
 use crate::store::InstanceStore;
 
-/// Shared, read-only component context after successful construction.
+/// Cloneable, read-only queries over an application's constructed components.
 ///
-/// Cloning an `Arc<ApplicationContext>` permits concurrent queries from
-/// multiple threads. Shutdown remains a single-owner operation: release all
-/// shared context handles, recover the context with `Arc::try_unwrap`, then
-/// call [`Self::begin_shutdown`].
-///
-/// Every successful query clones an existing `Arc`; factories never run again.
+/// Clones share immutable values and lifecycle state. Keeping a clone alive
+/// does not prevent the application owner from shutting down resources.
+/// Queries remain available after shutdown; they do not guarantee that a
+/// component still accepts work.
 ///
 /// # Examples
 ///
 /// ```
 /// use std::sync::Arc;
-/// use qubit_ioc::ApplicationContext;
+/// use qubit_ioc::Application;
 ///
-/// let mut builder = ApplicationContext::builder();
+/// let mut builder = Application::builder();
 /// builder.register_instance(Arc::new(String::from("hello")))?;
-/// let context = builder.build_all()?;
+/// let application = builder.build_all()?;
+/// let context = application.context().clone();
 /// assert_eq!(context.get::<String>()?.as_str(), "hello");
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
+#[derive(Clone)]
 pub struct ApplicationContext {
-    /// Immutable constructed instances shared with lookup callers.
-    store: InstanceStore,
-    /// Active binding metadata used to resolve and order queries.
-    bindings: Vec<BuiltBinding>,
-    /// Immutable indexes for exact-key and same-type metadata lookup.
-    query_index: QueryIndex,
-    /// Explicit lifecycle actions for managed concrete bindings.
-    cleanup: Mutex<CleanupJournal>,
+    /// Immutable query data and shared lifecycle state.
+    inner: Arc<ContextInner>,
 }
 
 impl ApplicationContext {
-    /// Creates a builder for this context.
-    ///
-    /// # Returns
-    ///
-    /// A new builder with the default activation profile.
-    #[inline]
-    #[must_use]
-    pub fn builder() -> ContainerBuilder {
-        ContainerBuilder::new()
+    /// Publishes a successfully constructed store and its exact binding
+    /// metadata.
+    pub(crate) fn new(store: InstanceStore, bindings: Vec<BuiltBinding>) -> Self {
+        Self {
+            inner: Arc::new(ContextInner::new(store, bindings)),
+        }
     }
 
-    /// Creates a context from a fully constructed store and active lookup
-    /// metadata.
-    ///
-    /// The caller must publish only bindings whose keys and erased values
-    /// agree.
-    pub(crate) fn new(store: InstanceStore, bindings: Vec<BuiltBinding>, cleanup: CleanupJournal) -> Self {
-        let query_index = QueryIndex::new(&bindings);
-        let mut cleanup = cleanup;
-        cleanup.disarm_abort();
-        Self {
-            store,
-            bindings,
-            query_index,
-            cleanup: Mutex::new(cleanup),
+    /// Returns the latest lifecycle state published by the unique owner.
+    #[must_use]
+    pub fn state(&self) -> ApplicationState {
+        match self.inner.state.load(Ordering::Acquire) {
+            0 => ApplicationState::Running,
+            1 => ApplicationState::ShuttingDown,
+            2 => ApplicationState::Closed,
+            _ => ApplicationState::Incomplete,
         }
+    }
+
+    /// Publishes a lifecycle transition to all query clones.
+    pub(crate) fn publish_state(&self, state: ApplicationState) {
+        self.inner.state.store(state as u8, Ordering::Release);
     }
 
     /// Returns the active source and earlier sources replaced for one exact
@@ -104,34 +92,11 @@ impl ApplicationContext {
     #[inline]
     #[must_use]
     pub fn binding_sources(&self, key: &BindingKey) -> Option<(DefinitionSource, &[DefinitionSource])> {
-        self.query_index
+        self.inner
+            .query_index
             .by_key(key)
-            .map(|index| &self.bindings[index])
+            .map(|index| &self.inner.bindings[index])
             .map(|binding| (binding.source, binding.replaced_sources.as_slice()))
-    }
-
-    /// Sends every managed stop request and returns a handle for waiting.
-    ///
-    /// Stop actions are attempted in reverse construction order before any wait
-    /// begins. Dropping the context without calling this method does not stop
-    /// components. The returned handle keeps managed values alive while waits
-    /// remain. Cloned component `Arc`s may remain alive after shutdown.
-    ///
-    /// # Returns
-    ///
-    /// Returns a handle that can resume an interrupted wait.
-    ///
-    /// # Errors
-    ///
-    /// This method does not return cleanup errors; [`ShutdownHandle::wait`]
-    /// returns all stop and wait failures after waiting completes.
-    pub fn begin_shutdown(self) -> ShutdownHandle {
-        let mut cleanup = self
-            .cleanup
-            .into_inner()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let failures = cleanup.stop_reverse();
-        ShutdownHandle::new(self.store, cleanup, failures)
     }
 
     /// Returns the only `T`, or the unique primary when several exist.
@@ -154,9 +119,9 @@ impl ApplicationContext {
     #[must_use = "handle the component lookup result"]
     pub fn get<T: ?Sized + Send + Sync + 'static>(&self) -> Result<Arc<T>, ResolveError> {
         let request = BindingKey::of::<T>(None);
-        let candidates = self.query_index.by_type(TypeId::of::<T>());
+        let candidates = self.inner.query_index.by_type(TypeId::of::<T>());
         let selected = self.select(&request, candidates)?;
-        Ok(self.read::<T>(&self.bindings[selected].key))
+        Ok(self.read::<T>(&self.inner.bindings[selected].key))
     }
 
     /// Returns the `T` bound to the exact, case-sensitive `id`.
@@ -184,12 +149,12 @@ impl ApplicationContext {
     #[must_use = "handle the component lookup result"]
     pub fn get_by_id<T: ?Sized + Send + Sync + 'static>(&self, id: &str) -> Result<Arc<T>, ResolveError> {
         let request = BindingKey::of::<T>(Some(BindingId::parse(id)?));
-        if let Some(index) = self.query_index.by_key(&request) {
-            return Ok(self.read::<T>(&self.bindings[index].key));
+        if let Some(index) = self.inner.query_index.by_key(&request) {
+            return Ok(self.read::<T>(&self.inner.bindings[index].key));
         }
-        let candidates = self.query_index.by_type(TypeId::of::<T>());
+        let candidates = self.inner.query_index.by_type(TypeId::of::<T>());
         let selected = self.select(&request, candidates)?;
-        Ok(self.read::<T>(&self.bindings[selected].key))
+        Ok(self.read::<T>(&self.inner.bindings[selected].key))
     }
 
     /// Returns `Some` for a unique selected `T`, `None` when absent, or an
@@ -211,12 +176,12 @@ impl ApplicationContext {
     #[must_use = "handle the optional component lookup result"]
     pub fn try_get<T: ?Sized + Send + Sync + 'static>(&self) -> Result<Option<Arc<T>>, ResolveError> {
         let request = BindingKey::of::<T>(None);
-        let candidates = self.query_index.by_type(TypeId::of::<T>());
+        let candidates = self.inner.query_index.by_type(TypeId::of::<T>());
         if candidates.is_empty() {
             return Ok(None);
         }
         self.select(&request, candidates)
-            .map(|index| Some(self.read::<T>(&self.bindings[index].key)))
+            .map(|index| Some(self.read::<T>(&self.inner.bindings[index].key)))
     }
 
     /// Returns all built `T` values sorted by order, ID and source location.
@@ -234,10 +199,11 @@ impl ApplicationContext {
     /// source location. An absent type produces an empty vector.
     #[must_use]
     pub fn get_all<T: ?Sized + Send + Sync + 'static>(&self) -> Vec<Arc<T>> {
-        self.query_index
+        self.inner
+            .query_index
             .by_type_collection(TypeId::of::<T>())
             .iter()
-            .map(|&index| self.read::<T>(&self.bindings[index].key))
+            .map(|&index| self.read::<T>(&self.inner.bindings[index].key))
             .collect()
     }
 
@@ -249,7 +215,7 @@ impl ApplicationContext {
         let mut primary_count = 0;
         let mut primary = None;
         for &index in candidates {
-            let binding = &self.bindings[index];
+            let binding = &self.inner.bindings[index];
             if request.id().is_some_and(|id| binding.key.id() != Some(id)) {
                 continue;
             }
@@ -266,7 +232,7 @@ impl ApplicationContext {
                 request: request.clone(),
                 available: candidates
                     .iter()
-                    .map(|&index| self.bindings[index].key.clone())
+                    .map(|&index| self.inner.bindings[index].key.clone())
                     .collect(),
             }),
             1 => Ok(selected.expect("one match must have an index")),
@@ -278,7 +244,7 @@ impl ApplicationContext {
                 candidates: candidates
                     .iter()
                     .filter_map(|&index| {
-                        let binding = &self.bindings[index];
+                        let binding = &self.inner.bindings[index];
                         (request.id().is_none() || binding.key.id() == request.id()).then(|| binding.key.clone())
                     })
                     .collect(),
@@ -288,7 +254,8 @@ impl ApplicationContext {
 
     /// Clones an `Arc<T>` that must exist after successful construction.
     fn read<T: ?Sized + Send + Sync + 'static>(&self, key: &BindingKey) -> Arc<T> {
-        self.store
+        self.inner
+            .store
             .get::<T>(key)
             .expect("published binding must exist with its registered type")
     }

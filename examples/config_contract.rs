@@ -45,7 +45,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             .map(Arc::new)
             .map_err(qubit_ioc::FactoryError::new)
     })?;
-    let context = builder.build_all()?;
+    let application = builder.build_all()?;
+    let context = application.context();
     assert_eq!(context.get::<String>()?.as_str(), "localhost:8080");
     Ok(())
 }

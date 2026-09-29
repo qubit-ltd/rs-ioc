@@ -43,7 +43,9 @@ fn test_with_config_shares_one_snapshot_with_factories() {
         })
         .expect("stage config consumer");
 
-    let context = builder.build_all().expect("build configured graph");
+    let application = builder.build_all().expect("build configured graph");
+
+    let context = application.context();
     let configured = context.get::<Config>().expect("published config");
     let injected = context.get::<Arc<Config>>().expect("injected config");
     assert!(Arc::ptr_eq(&configured, injected.as_ref()));
@@ -59,7 +61,9 @@ fn test_with_config_conflicts_with_explicit_config_registration() {
         .register_instance(Arc::new(Config::new()))
         .expect("stage duplicate config");
 
-    assert!(matches!(builder.build_all(), Err(BuildError::DuplicateBinding { .. })));
+    assert!(
+        matches!(builder.build_all(), Err(failure) if matches!(failure.cause(), BuildError::DuplicateBinding { .. }))
+    );
 }
 
 #[test]
@@ -154,7 +158,7 @@ fn test_missing_config_is_reported_before_factory_runs() {
         Ok(_) => panic!("missing config must fail graph validation"),
         Err(error) => error,
     };
-    assert!(matches!(error, BuildError::MissingDependency { dependency, .. }
-        if dependency == Dependency::of::<Config>()));
+    assert!(matches!(error.cause(), BuildError::MissingDependency { dependency, .. }
+        if dependency == &Dependency::of::<Config>()));
     assert_eq!(runs.load(Ordering::SeqCst), 0);
 }

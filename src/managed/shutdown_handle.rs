@@ -5,156 +5,82 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-//! Single-owner handle that completes managed component shutdown.
+//! Unique, resumable application shutdown ownership.
 
-use crate::key::BindingKey;
-use crate::managed::CleanupFuture;
+use std::future::poll_fn;
+
+use crate::ApplicationContext;
+use crate::BindingKey;
+use crate::managed::CleanupJournal;
 use crate::managed::ShutdownError;
-use crate::managed::ShutdownFailure;
-use crate::managed::ShutdownPhase;
-use crate::managed::internal::cleanup_journal::CleanupJournal;
-use crate::managed::internal::wait::poll_wait;
-use crate::managed::internal::wait::start_wait;
-use crate::options::DefinitionSource;
-use crate::store::InstanceStore;
+use crate::managed::ShutdownMode;
+use crate::managed::ShutdownReport;
+use crate::managed::WaitPolicy;
+use crate::managed::internal::shutdown_driver::ShutdownDriver;
 
-/// Owns cleanup after stop requests have been sent and resumes waits safely.
+/// Owns the actions and observations for one application shutdown.
 ///
-/// The handle retains a currently polled wait future. If a caller cancels the
-/// future returned by [`Self::wait`], calling `wait` again resumes that same
-/// future. Dropping the handle drops unfinished waits; stop actions have
-/// already run.
-///
-/// Dropping an [`ApplicationContext`](crate::ApplicationContext) does not run
-/// managed stop actions. Call [`crate::ApplicationContext::begin_shutdown`] to
-/// request stops explicitly, then keep this handle and await [`Self::wait`].
-/// Explicitly dropping the returned handle abandons unfinished waits and
-/// observation of cleanup errors. It does not start pending wait callbacks or
-/// poll retained wait futures, and it does not repeat stop actions.
-///
-/// # Examples
-///
-/// ```
-/// use std::sync::Arc;
-/// use qubit_ioc::{ContainerBuilder, Managed};
-///
-/// let mut builder = ContainerBuilder::new();
-/// builder.register_managed_factory::<String, _>(&[], |_| {
-///     Ok(Managed::new(Arc::new(String::from("worker")), |_| Ok(())))
-/// })?;
-/// builder.root::<String>();
-/// let context = builder.build()?;
-/// let shutdown = context.begin_shutdown();
-/// # async fn wait_for_shutdown(mut shutdown: qubit_ioc::ShutdownHandle)
-/// # -> Result<(), qubit_ioc::ShutdownError> {
-/// shutdown.wait().await?;
-/// # Ok(()) }
-/// # let _ = wait_for_shutdown(shutdown);
-/// # Ok::<(), Box<dyn std::error::Error>>(())
-/// ```
-#[must_use = "await shutdown.wait() to observe termination and cleanup errors, or explicitly drop the handle to abandon waiting"]
+/// Cancelling `wait()` preserves its active component future and deadline.
+/// Dropping this handle requests unfinished aborts without starting any wait;
+/// use `abandon()` to obtain a report of the resulting incomplete termination.
+#[must_use = "await shutdown.wait() or call abandon() to observe shutdown completeness"]
 pub struct ShutdownHandle {
-    /// Keeps managed values alive until shutdown waiting finishes or is
-    /// dropped.
-    _store: InstanceStore,
-    /// Cleanup actions retained until their waits complete.
-    cleanup: CleanupJournal,
-    /// Number of entries whose wait callback has not started.
-    next_wait: usize,
-    /// Wait future retained across cancellation of a `wait` call.
-    active_wait: Option<CleanupFuture>,
-    /// Binding metadata corresponding to `active_wait`.
-    active_binding: Option<(BindingKey, DefinitionSource)>,
-    /// Stop and wait failures accumulated so far.
-    failures: Vec<ShutdownFailure>,
-    /// Final result, set once every wait has completed.
-    result: Option<ShutdownError>,
+    /// Persistent state stays in this owner, never in a borrowing wait future.
+    driver: ShutdownDriver,
 }
 
 impl ShutdownHandle {
-    /// Takes ownership of cleanup after all stop callbacks were attempted.
-    pub(crate) fn new(store: InstanceStore, mut cleanup: CleanupJournal, failures: Vec<ShutdownFailure>) -> Self {
-        cleanup.disarm_abort();
-        let next_wait = cleanup.entries.len();
+    /// Transfers unique cleanup ownership and sends Immediate requests now.
+    pub(crate) fn new(
+        context: ApplicationContext,
+        cleanup: CleanupJournal,
+        policy: WaitPolicy,
+        mode: ShutdownMode,
+    ) -> Self {
         Self {
-            _store: store,
-            cleanup,
-            next_wait,
-            active_wait: None,
-            active_binding: None,
-            failures,
-            result: None,
+            driver: ShutdownDriver::new(context, cleanup, policy, mode),
         }
     }
 
-    /// Waits for managed components in reverse construction order.
+    /// Waits in reverse construction order, resuming any interrupted wait.
     ///
-    /// The future borrows this handle, which must remain available if the
-    /// caller cancels the wait. Repeated calls resume pending work and return
-    /// the same completed result without rerunning callbacks.
-    ///
-    /// # Returns
-    ///
-    /// Returns `Ok(())` when every stop and wait action succeeded.
-    ///
-    /// # Errors
-    ///
-    /// Returns a cloneable [`ShutdownError`] containing all stop and wait
-    /// failures observed after the final wait completes. Panics while creating
-    /// or polling a wait future are recorded as wait failures and do not
-    /// prevent later wait actions from running.
-    pub async fn wait(&mut self) -> Result<(), ShutdownError> {
-        if let Some(result) = &self.result {
-            return Self::clone_result(result);
-        }
-        loop {
-            if self.active_wait.is_none() {
-                while self.next_wait > 0 {
-                    self.next_wait -= 1;
-                    let entry = &mut self.cleanup.entries[self.next_wait];
-                    if let Some(wait) = entry.action.wait.take() {
-                        match start_wait(wait) {
-                            Ok(future) => {
-                                self.active_binding = Some((entry.key.clone(), entry.definition));
-                                self.active_wait = Some(future);
-                                break;
-                            }
-                            Err(error) => self.failures.push(ShutdownFailure {
-                                key: entry.key.clone(),
-                                definition: entry.definition,
-                                phase: ShutdownPhase::Wait,
-                                error,
-                            }),
-                        }
-                    }
-                }
-                if self.active_wait.is_none() {
-                    let result = ShutdownError::new(std::mem::take(&mut self.failures));
-                    self.result = Some(result);
-                    return Self::clone_result(self.result.as_ref().expect("shutdown result was set"));
-                }
-            }
-
-            let result = poll_wait(self.active_wait.as_mut().expect("active wait was initialized")).await;
-            self.active_wait = None;
-            let (key, definition) = self.active_binding.take().expect("active binding was set");
-            if let Err(error) = result {
-                self.failures.push(ShutdownFailure {
-                    key,
-                    definition,
-                    phase: ShutdownPhase::Wait,
-                    error,
-                });
-            }
-        }
-    }
-
-    /// Clones the final result while sharing its retained source errors.
-    fn clone_result(result: &ShutdownError) -> Result<(), ShutdownError> {
-        if result.failures().is_empty() {
-            Ok(())
+    /// Graceful mode confirms each consumer before stopping its dependencies.
+    /// Returns the stable final report, or a [`ShutdownError`] carrying that
+    /// report if callbacks failed or termination could not be confirmed.
+    /// Deadlines require the supplied timer runtime to be driven and cannot
+    /// interrupt blocking callbacks or future polls.
+    pub async fn wait(&mut self) -> Result<ShutdownReport, ShutdownError> {
+        let report = poll_fn(|context| self.driver.poll(context)).await;
+        if report.is_success() {
+            Ok(report)
         } else {
-            Err(result.clone())
+            Err(ShutdownError::new(report))
         }
+    }
+
+    /// Requests abort on all unfinished components without waiting.
+    /// Repeated calls do not repeat requests or reset termination budgets.
+    pub fn abort(&mut self) {
+        self.driver.abort();
+    }
+
+    /// Lists components whose termination has not yet been confirmed.
+    #[must_use]
+    pub fn pending(&self) -> Vec<BindingKey> {
+        self.driver.pending()
+    }
+
+    /// Requests unfinished aborts and reports unconfirmed components.
+    /// Does not create or poll any new wait or deadline.
+    #[must_use]
+    pub fn abandon(mut self) -> ShutdownReport {
+        self.driver.abandon()
+    }
+}
+
+impl Drop for ShutdownHandle {
+    /// Requests remaining aborts and publishes completeness without waiting.
+    fn drop(&mut self) {
+        self.driver.abandon();
     }
 }

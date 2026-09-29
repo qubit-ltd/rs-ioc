@@ -9,7 +9,6 @@
 //! Resolves active bindings and validates their dependency graph before
 //! construction.
 
-use std::any::TypeId;
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 use std::collections::HashMap;
@@ -21,6 +20,7 @@ use crate::binding::PendingDefinition;
 use crate::dependency::Dependency;
 use crate::dependency::DependencyCardinality;
 use crate::error::BuildError;
+use crate::key::BindingId;
 use crate::key::BindingKey;
 
 mod diagnostics;
@@ -30,40 +30,21 @@ use diagnostics::PathOrigin;
 
 mod internal;
 
+use internal::binding_index::BindingIndex;
 pub(crate) use internal::binding_location::BindingLocation;
 use internal::edge::Edge;
 use internal::node::Node;
 pub(crate) use internal::resolved_dependency::ResolvedDependency;
 pub(crate) use internal::validated_graph::ValidatedGraph;
 
-/// Keeps the first registered index for each key while root reachability is
-/// still being established.
-fn first_keys(nodes: &[Node]) -> HashMap<BindingKey, usize> {
-    let mut result = HashMap::new();
-    for (index, node) in nodes.iter().enumerate() {
-        result.entry(node.key.clone()).or_insert(index);
-    }
-    result
-}
-
 /// Resolves each required root and returns the selected binding positions.
 #[allow(clippy::result_large_err)]
-fn select_roots(
-    roots: &[Dependency],
-    nodes: &[Node],
-    by_type: &HashMap<TypeId, Vec<usize>>,
-) -> Result<Vec<usize>, BuildError> {
+fn select_roots(roots: &[Dependency], nodes: &[Node], index: &BindingIndex) -> Result<Vec<usize>, BuildError> {
     let mut selected = Vec::new();
     let mut seen = HashSet::new();
     for request in roots {
-        let candidates = candidates_for(request, nodes, by_type);
-        let available = by_type
-            .get(&request.type_id())
-            .into_iter()
-            .flatten()
-            .map(|&i| nodes[i].key.clone())
-            .collect::<Vec<_>>();
-        match select(request, &candidates, nodes) {
+        let candidates = candidates_for(request, index);
+        match select(request, candidates, nodes) {
             Ok(indices) => {
                 for index in indices {
                     if seen.insert(index) {
@@ -74,7 +55,11 @@ fn select_roots(
             Err(Edge::MissingDependency(_)) => {
                 return Err(BuildError::MissingRoot {
                     request: request.clone(),
-                    available,
+                    available: index
+                        .by_type(request.type_id())
+                        .iter()
+                        .map(|&position| nodes[position].key.clone())
+                        .collect(),
                 });
             }
             Err(Edge::AmbiguousDependency(_, candidates)) => {
@@ -109,6 +94,7 @@ fn close_definitions(
     }
     let mut diagnostics = DiagnosticPaths::new(definitions);
     let mut reachable = vec![false; nodes.len()];
+    let mut definition_expanded = vec![false; definition_count];
     let mut queue = VecDeque::new();
     for &seed in seeds {
         if diagnostics.record_root(nodes[seed].location) {
@@ -152,6 +138,10 @@ fn close_definitions(
                 }
             }
         }
+        if definition_expanded[node.location.definition] {
+            continue;
+        }
+        definition_expanded[node.location.definition] = true;
         for &member in &nodes_by_definition[node.location.definition] {
             let member_location = nodes[member].location;
             if diagnostics.record_from(member_location, PathOrigin::DefinitionMember(node.location)) {
@@ -181,35 +171,42 @@ fn build_all_seeds(nodes: &[Node], edges: &[Vec<Edge>]) -> Vec<usize> {
         .max()
         .map_or(0, |value| value + 1);
     let mut members = vec![Vec::new(); definition_count];
+    let mut definition_expanded = vec![false; definition_count];
     for (index, node) in nodes.iter().enumerate() {
         members[node.location.definition].push(index);
     }
     for (index, incoming) in has_incoming.iter().copied().enumerate() {
         if !incoming {
             seeds.push(index);
-            mark_build_all_closure(index, nodes, edges, &members, &mut selected);
+            mark_build_all_closure(index, nodes, edges, &members, &mut selected, &mut definition_expanded);
         }
     }
     let indices = (0..selected.len()).collect::<Vec<_>>();
     for index in indices {
         if !selected[index] {
-            selected[index] = true;
             seeds.push(index);
-            mark_build_all_closure(index, nodes, edges, &members, &mut selected);
+            mark_build_all_closure(index, nodes, edges, &members, &mut selected, &mut definition_expanded);
         }
     }
     seeds
 }
 
 /// Marks one build-all component, including its dependency and
-/// definition-member closure.
+/// definition-member closure. The shared `selected` and `definition_expanded`
+/// bitmaps ensure each node and definition member list is traversed once
+/// across seeds, while preserving every seed's registration position.
 fn mark_build_all_closure(
     seed: usize,
     nodes: &[Node],
     edges: &[Vec<Edge>],
     members: &[Vec<usize>],
     selected: &mut [bool],
+    definition_expanded: &mut [bool],
 ) {
+    if selected[seed] {
+        return;
+    }
+    selected[seed] = true;
     let mut queue = VecDeque::from([seed]);
     while let Some(index) = queue.pop_front() {
         for edge in &edges[index] {
@@ -220,7 +217,12 @@ fn mark_build_all_closure(
                 queue.push_back(*target);
             }
         }
-        for &member in &members[nodes[index].location.definition] {
+        let definition = nodes[index].location.definition;
+        if definition_expanded[definition] {
+            continue;
+        }
+        definition_expanded[definition] = true;
+        for &member in &members[definition] {
             if !selected[member] {
                 selected[member] = true;
                 queue.push_back(member);
@@ -288,8 +290,7 @@ fn validate_primary(nodes: &[Node]) -> Result<(), BuildError> {
 fn resolve_edges(
     definitions: &[PendingDefinition],
     nodes: &[Node],
-    by_key: &HashMap<BindingKey, usize>,
-    by_type: &HashMap<TypeId, Vec<usize>>,
+    index: &BindingIndex,
 ) -> (Vec<Vec<Edge>>, Vec<Vec<ResolvedDependency>>) {
     let mut edges = Vec::with_capacity(nodes.len());
     let mut resolved = definitions
@@ -309,7 +310,7 @@ fn resolve_edges(
     for node in nodes {
         let binding = &definitions[node.location.definition].bindings[node.location.binding];
         if let PendingBindingKind::Alias { target, .. } = &binding.kind {
-            edges.push(vec![match by_key.get(target) {
+            edges.push(vec![match index.by_key(target).first() {
                 Some(&target_index) => Edge::Target(target_index),
                 None => Edge::MissingAliasTarget(target.clone()),
             }]);
@@ -317,8 +318,8 @@ fn resolve_edges(
         }
         let mut node_edges = Vec::new();
         for (request_index, request) in definitions[node.location.definition].dependencies.iter().enumerate() {
-            let candidates = candidates_for(request, nodes, by_type);
-            match select(request, &candidates, nodes) {
+            let candidates = candidates_for(request, index);
+            match select(request, candidates, nodes) {
                 Ok(selected) => {
                     resolved[node.location.definition][request_index].keys =
                         selected.iter().map(|&index| nodes[index].key.clone()).collect();
@@ -333,19 +334,16 @@ fn resolve_edges(
 }
 
 /// Gets candidate indices for an exact ID or for a Rust type namespace.
-fn candidates_for(request: &Dependency, nodes: &[Node], by_type: &HashMap<TypeId, Vec<usize>>) -> Vec<usize> {
-    let candidates = by_type.get(&request.type_id()).cloned().unwrap_or_default();
+fn candidates_for<'index>(request: &Dependency, index: &'index BindingIndex) -> &'index [usize] {
     match request.id() {
-        Some(id) => candidates
-            .into_iter()
-            .filter(|&index| {
-                nodes[index]
-                    .key
-                    .id()
-                    .is_some_and(|candidate_id| candidate_id.as_str() == id)
-            })
-            .collect(),
-        None => candidates,
+        Some(id) => {
+            let Ok(id) = BindingId::parse(id) else {
+                return &[];
+            };
+            let key = BindingKey::from_parts(request.type_id(), request.type_name(), Some(id));
+            index.by_key(&key)
+        }
+        None => index.by_type(request.type_id()),
     }
 }
 
@@ -506,4 +504,47 @@ fn stable_topology(nodes: &[Node], edges: &[Vec<Edge>], reachable: &[bool]) -> V
         "cycles were checked before sorting"
     );
     order
+}
+
+#[cfg(test)]
+mod tests {
+    use std::any::TypeId;
+
+    use crate::graph::BindingIndex;
+    use crate::graph::BindingLocation;
+    use crate::graph::Node;
+    use crate::key::BindingId;
+    use crate::key::BindingKey;
+    use crate::options::DefinitionSource;
+
+    /// Creates internal graph nodes without invoking public construction.
+    fn node(id: Option<&str>) -> Node {
+        Node {
+            location: BindingLocation {
+                definition: 0,
+                binding: 0,
+            },
+            key: BindingKey::of::<u32>(id.map(|id| BindingId::parse(id).expect("valid test ID"))),
+            source: DefinitionSource::new("ioc", "graph_tests", "graph_tests.rs", 1, 1, "index"),
+            primary: false,
+            order: 0,
+        }
+    }
+
+    #[test]
+    fn test_binding_index_retains_exact_duplicates() {
+        let nodes = [node(Some("duplicate")), node(Some("duplicate"))];
+        let index = BindingIndex::new(&nodes);
+        assert_eq!(index.by_key(&nodes[0].key), &[0, 1]);
+    }
+
+    #[test]
+    fn test_binding_index_preserves_type_registration_order_and_missing_keys() {
+        let nodes = [node(Some("z")), node(None), node(Some("a"))];
+        let index = BindingIndex::new(&nodes);
+        assert_eq!(index.by_type(TypeId::of::<u32>()), &[0, 1, 2]);
+        assert_eq!(index.by_key(&nodes[1].key), &[1]);
+        assert!(index.by_type(TypeId::of::<String>()).is_empty());
+        assert!(index.by_key(&node(Some("missing")).key).is_empty());
+    }
 }

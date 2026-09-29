@@ -19,7 +19,8 @@ mod tests {
 
     #[test]
     fn test_manual_assembly_without_default_features() {
-        let context = build_manual().expect("build explicit graph");
+        let application = build_manual().expect("build explicit graph");
+        let context = application.context();
         assert_eq!(*context.get::<u64>().expect("factory result"), 42);
     }
 }

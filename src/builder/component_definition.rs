@@ -34,7 +34,7 @@ use crate::options::DefinitionSource;
 ///
 /// let mut builder = ContainerBuilder::new();
 /// builder.install::<Message>()?;
-/// assert!(builder.build_all()?.get::<Message>().is_ok());
+/// assert!(builder.build_all()?.context().get::<Message>().is_ok());
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 pub trait ComponentDefinition {

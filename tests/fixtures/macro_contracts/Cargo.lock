@@ -110,7 +110,7 @@ dependencies = [
 
 [[package]]
 name = "qubit-ioc"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "qubit-config",
  "qubit-ioc-macros",
@@ -120,7 +120,7 @@ dependencies = [
 
 [[package]]
 name = "qubit-ioc-macros"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",

@@ -10,11 +10,11 @@
 
 use std::sync::Arc;
 
-use qubit_ioc::__private::codegen_v1::DefinitionDraft;
 use qubit_ioc::BindingKey;
 use qubit_ioc::BindingOptions;
 use qubit_ioc::BuildError;
 use qubit_ioc::ContainerBuilder;
+use qubit_ioc::Definition;
 use qubit_ioc::Dependency;
 use qubit_ioc::RegistrationError;
 use qubit_ioc::options::DefinitionSource;
@@ -39,21 +39,26 @@ fn source(name: &'static str) -> DefinitionSource {
     DefinitionSource::new("tests", "replacement_tests", "replacement_tests.rs", 1, 1, name)
 }
 
+/// Registers the original complete definition and its two aliases.
 fn old_definition(builder: &mut ContainerBuilder) {
-    let mut draft =
-        DefinitionDraft::<Service>::from_instance(source("Service"), Default::default(), Arc::new(Service(1))).unwrap();
-    draft.bind::<dyn Api, _>(Default::default(), |value| value).unwrap();
-    draft
+    let definition = Definition::<Service>::builder()
+        .source(source("Service"))
+        .instance(Arc::new(Service(1)))
+        .bind::<dyn Api, _>(Default::default(), |value| value)
         .bind::<dyn LegacyApi, _>(Default::default(), |value| value)
-        .unwrap();
-    draft.register(builder).unwrap();
+        .build()
+        .expect("valid original definition");
+    builder.register_definition(definition).expect("register original");
 }
 
+/// Registers a replacement with one retained interface alias.
 fn new_definition(builder: &mut ContainerBuilder) -> Result<(), RegistrationError> {
-    let mut draft =
-        DefinitionDraft::<Service>::from_instance(source("Service"), Default::default(), Arc::new(Service(2)))?;
-    draft.bind::<dyn Api, _>(Default::default(), |value| value)?;
-    draft.register(builder)
+    let definition = Definition::<Service>::builder()
+        .source(source("Service"))
+        .instance(Arc::new(Service(2)))
+        .bind::<dyn Api, _>(Default::default(), |value| value)
+        .build()?;
+    builder.register_definition(definition)
 }
 
 #[test]
@@ -64,7 +69,8 @@ fn test_replacement_replaces_the_complete_definition_and_its_aliases() {
         .replace_definition(BindingKey::of::<Service>(None), new_definition)
         .unwrap();
     builder.root::<dyn Api>();
-    let context = builder.build().unwrap();
+    let application = builder.build().unwrap();
+    let context = application.context();
     let interface = context.get::<dyn Api>().unwrap();
     let concrete = context.get::<Service>().unwrap();
     let (active, replaced) = context
@@ -105,7 +111,7 @@ fn test_replacement_callback_errors_and_invalid_drafts_leave_builder_unchanged()
         RegistrationError::ReplacementAnchorCount { count: 0, .. }
     ));
     builder.root::<dyn Api>();
-    assert_eq!(builder.build().unwrap().get::<dyn Api>().unwrap().value(), 1);
+    assert_eq!(builder.build().unwrap().context().get::<dyn Api>().unwrap().value(), 1);
 }
 
 #[test]
@@ -126,9 +132,12 @@ fn test_replacement_requires_exactly_one_staged_definition() {
 #[test]
 fn test_inactive_replacement_keeps_the_original_definition() {
     let mut builder = ContainerBuilder::new();
-    let draft =
-        DefinitionDraft::<Service>::from_instance(source("Service"), Default::default(), Arc::new(Service(1))).unwrap();
-    draft.register(&mut builder).unwrap();
+    let definition = Definition::<Service>::builder()
+        .source(source("Service"))
+        .instance(Arc::new(Service(1)))
+        .build()
+        .unwrap();
+    builder.register_definition(definition).unwrap();
     builder
         .replace_definition(BindingKey::of::<Service>(None), |draft| {
             draft.register_instance_with(
@@ -140,7 +149,10 @@ fn test_inactive_replacement_keeps_the_original_definition() {
             )
         })
         .unwrap();
-    assert_eq!(builder.build_all().unwrap().get::<Service>().unwrap().value(), 1);
+    assert_eq!(
+        builder.build_all().unwrap().context().get::<Service>().unwrap().value(),
+        1
+    );
 }
 
 #[test]
@@ -155,25 +167,29 @@ fn test_replacement_uses_default_and_explicit_profile_selection() {
         let mut builder = ContainerBuilder::new()
             .active_profiles(active_profiles)
             .expect("valid active profiles");
-        let original =
-            DefinitionDraft::<Service>::from_instance(source("Original"), Default::default(), Arc::new(Service(1)))
-                .expect("stage unprofiled original");
-        original.register(&mut builder).expect("register original");
+        let original = Definition::<Service>::builder()
+            .source(source("Original"))
+            .instance(Arc::new(Service(1)))
+            .build()
+            .expect("stage unprofiled original");
+        builder.register_definition(original).expect("register original");
         builder
             .replace_definition(BindingKey::of::<Service>(None), |draft| {
-                let replacement = DefinitionDraft::<Service>::from_instance(
-                    source("Replacement"),
-                    BindingOptions {
+                let replacement = Definition::<Service>::builder()
+                    .source(source("Replacement"))
+                    .binding(BindingOptions {
                         profile: Some(replacement_profile.to_owned()),
                         ..Default::default()
-                    },
-                    Arc::new(Service(2)),
-                )?;
-                replacement.register(draft)
+                    })
+                    .instance(Arc::new(Service(2)))
+                    .build()?;
+                draft.register_definition(replacement)
             })
             .expect("stage profiled replacement");
 
-        let context = builder.build_all().expect("profile selection permits build");
+        let application = builder.build_all().expect("profile selection permits build");
+
+        let context = application.context();
         assert_eq!(
             context.get::<Service>().expect("active service").value(),
             expected,
@@ -212,7 +228,7 @@ fn test_replacement_reports_ambiguous_active_originals_before_factories() {
         .unwrap();
     assert!(matches!(
         builder.build_all(),
-        Err(BuildError::ReplacementOriginalAmbiguous { .. })
+        Err(failure) if matches!(failure.cause(), BuildError::ReplacementOriginalAmbiguous { .. })
     ));
     assert_eq!(calls.load(Ordering::SeqCst), 0);
 }
@@ -226,16 +242,16 @@ fn test_consecutive_replacements_preserve_all_original_sources() {
         .unwrap();
     builder
         .replace_definition(BindingKey::of::<Service>(None), |draft| {
-            let mut definition = DefinitionDraft::<Service>::from_instance(
-                source("ServiceAgain"),
-                Default::default(),
-                Arc::new(Service(3)),
-            )?;
-            definition.bind::<dyn Api, _>(Default::default(), |value| value)?;
-            definition.register(draft)
+            let definition = Definition::<Service>::builder()
+                .source(source("ServiceAgain"))
+                .instance(Arc::new(Service(3)))
+                .bind::<dyn Api, _>(Default::default(), |value| value)
+                .build()?;
+            draft.register_definition(definition)
         })
         .unwrap();
-    let context = builder.build_all().unwrap();
+    let application = builder.build_all().unwrap();
+    let context = application.context();
     assert_eq!(context.get::<Service>().unwrap().value(), 3);
     let (active, replaced) = context.binding_sources(&BindingKey::of::<Service>(None)).unwrap();
     assert_eq!(active.item, "ServiceAgain");
@@ -256,5 +272,5 @@ fn test_replacement_removes_old_aliases_and_dependencies_report_missing_alias() 
         .register_factory::<u32, _>(&[Dependency::of::<dyn LegacyApi>()], |_| Ok(Arc::new(1)))
         .unwrap();
     builder.root::<u32>();
-    assert!(matches!(builder.build(), Err(BuildError::MissingDependency { .. })));
+    assert!(matches!(builder.build(), Err(failure) if matches!(failure.cause(), BuildError::MissingDependency { .. })));
 }

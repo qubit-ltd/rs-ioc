@@ -9,21 +9,22 @@
 
 `qubit-ioc` 帮助 Rust 应用开发者在启动时组装跨 crate 的共享组件。它先验证依赖，
 再执行工厂，让缺失或歧义的服务在启动阶段暴露，而不是留到请求处理时。构建成功后
-可通过只读的 `ApplicationContext` 获取组件；既能用过程宏声明，也能手动注册。
+返回独占生命周期的 `Application`，通过可克隆的只读 `ApplicationContext` 获取组件；
+既能用过程宏声明，也能手动注册。
 
 ## 安装
 
-待 `0.2.0` 正式发布后，可通过注册表添加依赖：
+待 `0.3.0` 正式发布后，可通过注册表添加依赖：
 
 ```toml
 [dependencies]
-qubit-ioc = "0.2"
+qubit-ioc = "0.3"
 ```
 
-当前 checkout 是 `0.2.0` 发布候选，尚未发布到 crates.io。在本地针对源码开发时可使用：
+当前 checkout 是 `0.3.0` 发布候选，尚未发布到 crates.io。在本地针对源码开发时可使用：
 
 ```toml
-qubit-ioc = { version = "0.2", path = "../rs-ioc" }
+qubit-ioc = { version = "0.3", path = "../rs-ioc" }
 ```
 
 默认启用 `macros` 和 `config`；只使用手动注册时，在任一依赖声明中添加
@@ -46,7 +47,7 @@ qubit-ioc = { version = "0.2", path = "../rs-ioc" }
 
 ```rust
 use std::sync::Arc;
-use qubit_ioc::{ApplicationContext, Component, Service};
+use qubit_ioc::{Application, Component, Service};
 
 trait Greeting: Send + Sync {
     fn text(&self) -> &'static str;
@@ -65,11 +66,12 @@ struct Greeter {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut builder = ApplicationContext::builder();
+    let mut builder = Application::builder();
     builder.install::<English>()?;
     builder.install::<Greeter>()?;
     builder.root::<Greeter>();
-    let context = builder.build()?;
+    let application = builder.build()?;
+    let context = application.context();
     assert_eq!(context.get::<Greeter>()?.greeting.text(), "hello");
     Ok(())
 }
@@ -113,14 +115,22 @@ bean 参数与生成调用保持一致。`inject`、`value` 等 helper 属性必
 `register_instance(Arc<T>)` 注入，并由应用负责关闭；不要在工厂闭包中捕获已创建的
 `Managed<T>`。
 
-构建后的上下文支持通过 `Arc` 并发执行只读查询。关闭前先释放共享上下文句柄，
-再用 `Arc::try_unwrap` 取回唯一所有者，调用 `begin_shutdown()` 并等待关闭句柄完成。
+应用保留唯一生命周期所有者，通过 `application.context().clone()` 分发可并发查询的
+上下文句柄；关闭时这些克隆仍可存在，但查询成功不保证组件仍接受工作。集合查询
+顺序在上下文发布时按绑定 order、ID 和源码位置预先计算。正常退出调用
+`application.begin_shutdown(ShutdownMode::Graceful)`，再显式等待返回的句柄。
+Graceful 请求从首次轮询 `wait()` 开始；`ShutdownMode::Immediate` 会在
+`begin_shutdown` 返回前请求全部 abort。
+选中托管定义时必须配置 `WaitPolicy`；实际应用用 `WaitPolicy::bounded` 和由应用驱动的
+计时器。自定义工厂与 trait alias 可使用公开的 `Definition::builder()` 和
+`register_definition`。完整关闭与 0.3 迁移步骤见[生命周期指南](doc/lifecycle.zh_CN.md)。
 
 `#[value]` 与 `ConfigurationProperties` 读取保存的原始值，不会自动插值。
 结构化反序列化默认拒绝未知字段。需要插值时，可在工厂中显式调用
 `Config::get_interpolated`。
-工厂 panic 遵循 Rust 的 panic 语义并向外传播。后续工厂失败时，同步构建会 stop 已成功
-返回给容器的托管资源但不等待；异步构建会 stop 并等待，再连同清理错误返回构建错误。
+工厂 panic 遵循 Rust 的 panic 语义并向外传播。同步和异步构建失败时，都会先为已移交
+资源请求 abort，再立即返回 `BuildFailure`。通过 `cause()` 检查原始错误，再用
+`take_cleanup()` 或 `into_parts()` 取出清理所有者，并显式等待 `wait()` 观察终止与清理错误。
 
 ### 手动组装
 
@@ -138,7 +148,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Ok(Arc::new(message.len()))
     })?;
     builder.root::<usize>();
-    let context = builder.build()?;
+    let application = builder.build()?;
+    let context = application.context();
     assert_eq!(*context.get::<usize>()?, 5);
     Ok(())
 }
@@ -157,15 +168,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 在 `rs-execution-services` 仓库根目录运行
 `cargo run --manifest-path tests/fixtures/ioc_application_consumer/Cargo.toml`。
 该夹具用于验证跨 crate 契约，不代表已有生产应用采用。
+夹具的 EventBus 适配器用 `request_shutdown` 请求关闭，再等待 ticket 的
+`wait_async()`；同步 EventBus `shutdown` 即使选择 Immediate 模式也会等待。
 
 ## 限制
 
 当前只提供应用级共享实例，不提供原型或请求作用域、热更新、未托管组件的自动关闭、
 循环代理和动态库发现。托管工厂可通过 `Managed<T>` 和
-`ApplicationContext::begin_shutdown` 与 `ShutdownHandle::wait` 执行 stop/wait 关闭动作。结构体宏支持具名字段和单元结构体，其他形状可使用手动工厂。
+`Application::begin_shutdown` 与 `ShutdownHandle::wait` 执行关闭动作。结构体宏支持具名字段和单元结构体，其他形状可使用手动工厂。
 组件构造不依赖运行时反射。`qubit-spi` 继续负责 provider 的选择和回退；其注册表或
-选中的服务可作为普通 IoC 组件注册。托管资源需要显式调用 `begin_shutdown()` 和
-`ShutdownHandle::wait()`。完整流程见[生命周期指南](doc/lifecycle.zh_CN.md)与可运行的
+选中的服务可作为普通 IoC 组件注册。要观察托管资源关闭结果，需显式指定关闭模式并等待 `ShutdownHandle::wait()`。
+丢弃 owner、未移交的 `Managed` 或关闭句柄会尽力请求 abort，不会等待；丢弃查询
+上下文不会请求关闭。期限不能杀死阻塞工作，`ShutdownReport::incomplete()` 表示尚未确认终止。完整流程见[生命周期指南](doc/lifecycle.zh_CN.md)与可运行的
 [`app_lifecycle`示例](examples/app_lifecycle.rs)，设计边界见
 [English current design](doc/complete-design.md)和[中文当前设计](doc/complete-design.zh_CN.md)。
 
@@ -201,7 +215,7 @@ Copyright (c) 2025 - 2026. Haixing Hu. All rights reserved.
 ## 贡献
 
 欢迎贡献。请遵循 Rust API 指南，及时更新公共 API 文档与测试，并在提交
-Pull Request 前运行 `./align-ci.sh` 格式化代码，运行 `./ci-check.sh` 对齐 CI 要求。
+Pull Request 前运行 `./align-ci.sh`格式化代码，运行`./ci-check.sh`对齐CI要求。
 
 ## 作者
 

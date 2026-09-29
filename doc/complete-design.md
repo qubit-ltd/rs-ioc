@@ -1,7 +1,7 @@
 # qubit-ioc Current Design
 
 > This document describes the implemented design and public contracts of
-> `qubit-ioc` 0.2.0 release candidate. For usage, see the [English user guide](user_guide.md) or
+> `qubit-ioc` 0.3.0 release candidate. For usage, see the [English user guide](user_guide.md) or
 > [中文用户手册](user_guide.zh_CN.md). Historical design notes remain available
 > in [the kernel draft](design.zh_CN.md) and [the annotation draft](annotation-design.zh_CN.md).
 > The implementation and tests define behavior; this document does not promise
@@ -11,15 +11,15 @@
 
 `qubit-ioc` stages application-wide shared components, resolves and validates
 their dependency graph, and invokes factories in dependency order during
-application startup. A successful build publishes a read-only
-`ApplicationContext`. Definitions can come from attribute macros or explicit
+application startup. A successful build returns an `Application` that owns lifecycle cleanup and
+provides a read-only `ApplicationContext` through `context()`. Definitions can come from attribute macros or explicit
 registration. A macro-generated definition is not installed automatically:
 the application or provider must call `install::<T>()` or its own
 `register_ioc(&mut builder)` function.
 
-The built context supports concurrent read-only queries through `Arc`.
-Shutdown remains a single-owner operation that consumes the context after all
-shared query handles have been released.
+The context is cloneable and supports concurrent read-only queries. The
+unique `Application` owner can initiate shutdown while query clones remain
+alive. Lookup does not prove that a service still admits work.
 
 The runtime handles bindings, dependency selection, construction order,
 diagnostic paths, and explicit managed shutdown. `qubit-spi` handles provider
@@ -44,7 +44,13 @@ These features can be enabled independently. `#[value]` and
 
 ## 3. Definitions and bindings
 
-A **definition** stages one instance or factory. A **binding** is identified
+A **definition** stages one instance or factory. The public
+`Definition::builder()` produces an atomically validated definition with
+`binding`, `dependencies`, instance/sync/async/managed factory choices and
+trait aliases via `bind`. `ContainerBuilder::register_definition` stages it.
+The macros use the same public core; only configuration diagnostics and
+generated-code glue remain under `__private::codegen_v1`, not the removed
+`DefinitionDraft` protocol. A **binding** is identified
 by its Rust type and optional case-sensitive ID. IDs use dot-separated ASCII
 segments, each starting with a letter and followed by letters, digits, or
 underscores. A concrete component can expose a trait-object binding with
@@ -153,42 +159,46 @@ order. IoC does not depend on SPI or discover providers implicitly.
 
 ## 6. Errors and lifecycle
 
-Errors identify their stage. `RegistrationError` covers invalid IDs, profiles,
-and repeated declared requests. `BuildError` covers roots, candidates, graph
-validation, async requirements, configuration reads, and factory failures.
-`ResolveError` covers queries after publication. `ShutdownError` aggregates
-resource cleanup failures. Factory and configuration errors retain their
-source chain; graph and construction errors retain binding sources and
-dependency paths when available.
+`RegistrationError` covers malformed definitions and keys. `BuildError` is the
+original graph, configuration or factory cause. Both sync and async builders
+return `Result<Application, BuildFailure>`. `BuildFailure::cause()` retains
+source chains and diagnostic paths; `take_cleanup()` or `into_parts()` transfers
+optional rollback ownership. A later factory failure requests abort for all
+transferred managed resources and returns immediately. The application must
+explicitly await the cleanup handle to observe termination and cleanup errors.
+Graph and preflight failures construct nothing and have no cleanup handle.
+Factory unwind panic continues to propagate. Cancellation of async build
+requests abort but cannot wait.
 
-Create managed resources inside a managed factory, which only runs after graph
-validation. A selected synchronous managed factory can run in a synchronous or
-asynchronous build; a later factory failure rolls back resources already
-returned to the container. `Managed<T>` records a synchronous stop callback and optional async
-wait callback. Applications explicitly call `context.begin_shutdown()` and
-then await `ShutdownHandle::wait()`. Stops run in reverse construction order,
-followed by waits in that order. Stop errors and unwind panics are recorded and
-do not prevent later callbacks. Panics while creating or polling a wait future
-are recorded as wait failures. `panic = "abort"` and panics while dropping a
-cleanup future cannot be caught.
+`Application` owns cleanup independently of its cloneable query context.
+Selected managed graphs require an explicit `WaitPolicy`; a real application
+uses `WaitPolicy::bounded(grace, termination, timer)` with a driven timer.
+`Managed::new` supplies a non-blocking abort request;
+`.with_graceful_stop` optionally requests draining, and `.with_wait` confirms
+termination. `Application::begin_shutdown(ShutdownMode::Graceful)` publishes
+ShuttingDown and transfers ownership; its first `wait` poll begins graceful
+requests in reverse construction order, waiting for each consumer before
+stopping its dependencies. Missing graceful support falls back to abort and
+appears in the report. `Immediate` requests every abort before returning the
+handle, then explicit `wait` confirms termination. Failed cleanup actions and
+unwind panics are reported while later entries continue.
 
-`Managed<T>` and `ShutdownHandle` carry type-level `must_use` guidance.
-Return managed values to the container; dropping an untransferred `Managed`
-does not invoke cleanup. Await the shutdown handle, or explicitly use
-`drop(context.begin_shutdown())` to abandon waiting after stop requests run.
+Cancelling a `wait` future preserves its active future and deadline in the
+handle; another call resumes without resetting the budget. `abort()` upgrades
+unfinished entries. `abandon()` returns a report after requesting remaining
+aborts without starting waits. Owner, untransferred `Managed`, and handle Drop
+request best-effort abort without waiting; query context Drop does not request
+shutdown. `ShutdownReport::is_complete()` checks that `incomplete()` is empty;
+`is_success()` additionally checks failures. Incomplete never means a resource
+was forcibly killed. Bounded deadlines cannot interrupt blocking callbacks,
+blocking polls, destructors or `panic = "abort"`.
 
-If a wait is cancelled, keep the handle and call `wait()` again to resume the
-same future. Dropping the handle abandons unfinished waits after stops have
-run. A synchronous build failure stops resources already returned as `Managed` but does not
-wait. An async build failure stops and waits, preserving cleanup failures with
-the original build error. Cancelling an async build calls stop once per resource already returned as
-`Managed`, in reverse construction order, without waiting. Side effects made by a factory before it returns a
-`Managed<T>` remain that factory's responsibility. Dropping a context does not
-automatically stop managed resources, and external `Arc` clones can outlive
-shutdown.
-
-See the runnable [managed worker example](../examples/app_lifecycle.rs) and
-the [lifecycle guide](lifecycle.md) for a complete task stop-and-join flow.
+The EventBus adapter uses non-blocking `request_shutdown` and a generation
+bound ticket whose `wait_async()` belongs in the managed wait callback. Even
+`EventBus::shutdown(Immediate)` synchronously waits and cannot serve as an
+abort callback. Ticket Drop or cancelled observation does not cancel its
+background shutdown. The [lifecycle guide](lifecycle.md) includes the exact
+migration from 0.2 to 0.3, failure flow and runnable worker link.
 
 ## 7. Verification sources
 

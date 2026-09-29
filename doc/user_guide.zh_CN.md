@@ -2,7 +2,7 @@
 
 [English user guide](user_guide.md) · [项目 README](../README.zh_CN.md)
 
-本手册面向使用 `qubit-ioc` 0.2.0 发布候选的 Rust 应用开发者，介绍如何在启动时组装
+本手册面向使用 `qubit-ioc` 0.3.0 发布候选的 Rust 应用开发者，介绍如何在启动时组装
 应用级共享组件、定位错误，以及安排资源关闭。项目清单要求 Rust 1.94 或更新版本。
 
 ## 概念模型
@@ -13,7 +13,8 @@
 | 绑定 | 由 Rust 类型和可选的区分大小写 ID 标识的组件。 |
 | 依赖 | 工厂显式声明或宏根据字段生成的请求。 |
 | 根节点 | `build()` 要构建的组件及其传递依赖的起点。 |
-| 上下文 | 成功构建后发布的只读 `ApplicationContext`。 |
+| Application | 构建成功后返回的唯一生命周期所有者。 |
+| 上下文 | 从 `application.context()` 借用或克隆的只读查询句柄。 |
 
 构建器先筛选生效的 profile，再解析根节点和依赖、验证依赖图，最后按依赖顺序执行
 工厂。`build_all()` 则构建所有生效的定义。构建失败时不会发布部分上下文。
@@ -30,7 +31,7 @@
 
 ```toml
 [dependencies]
-qubit-ioc = { version = "0.2", path = "../rs-ioc", default-features = false }
+qubit-ioc = { version = "0.3", path = "../rs-ioc", default-features = false }
 ```
 
 将下面的代码放到该应用的 `src/main.rs`，然后在应用目录运行 `cargo run`：
@@ -58,7 +59,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     })?;
     builder.root::<Greeter>();
 
-    let context = builder.build()?;
+    let application = builder.build()?;
+    let context = application.context();
     let first = context.get::<Greeter>()?;
     let second = context.get::<Greeter>()?;
     assert_eq!(first.greet(), "hello");
@@ -80,7 +82,7 @@ provider 通过自由函数创建值时，可以用 `#[bean]` 为函数生成可
 它使用 Rust 2024、Rust 1.94，只需启用 `macros`：
 
 ```toml
-qubit-ioc = { version = "0.2", path = "../rs-ioc", default-features = false, features = ["macros"] }
+qubit-ioc = { version = "0.3", path = "../rs-ioc", default-features = false, features = ["macros"] }
 ```
 
 ```rust
@@ -118,7 +120,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     builder.root::<DefaultValue>();
     builder.root::<CustomValue>();
     builder.root::<String>();
-    let context = builder.build()?;
+    let application = builder.build()?;
+    let context = application.context();
     assert_eq!(context.get::<DefaultValue>()?.0, 1);
     assert_eq!(context.get::<CustomValue>()?.0, 2);
     assert_eq!(context.get::<String>()?.as_str(), "ready");
@@ -147,21 +150,12 @@ cargo +1.94.0 run --example readme_beans --no-default-features --features macros
 此时先前完成的托管工厂所移交的资源会参与回滚。
 
 bean 需要启动 worker 时，在工厂内部创建它，并返回带 stop 回调的 `Managed<T>`；
-需要等待终止时再追加 `.with_wait(...)`。应用退出时先释放共享 context 句柄、取回唯一
-所有者，然后在异步函数里执行以下片段：
-
-```rust,ignore
-let mut shutdown = context.begin_shutdown();
-shutdown.wait().await?;
-```
-
-`begin_shutdown()` 返回前已经发送全部 stop 请求；`wait()` 用来等待终止并观察清理
-错误。`Managed` 和 `ShutdownHandle` 都有 `must_use` 提示：将托管值返回给容器，
-并处理关闭句柄。若确实只请求停止而不等待，请显式写
-`drop(context.begin_shutdown())`。单纯丢弃 context 不会停止 worker。构建取消时，
-容器只为已成功返回 `Managed` 的资源请求 stop；尚未完成的工厂所产生的副作用由
-工厂自行收尾。完整实现见[生命周期说明](lifecycle.zh_CN.md)和
-[托管 worker 示例](../examples/app_lifecycle.rs)。
+需要等待终止时再追加 `.with_wait(...)`。选中托管图时先配置 bounded `WaitPolicy`，并保留构建返回的 `Application`；
+`application.context()` 的克隆在关闭期间也可存在。正常退出调用
+`application.begin_shutdown(ShutdownMode::Graceful)` 并等待句柄的 `wait()`；
+失败和取消走 Immediate abort。[生命周期说明](lifecycle.zh_CN.md)提供完整的
+bounded 集成函数，在构建失败清理和正常关闭两条路径都显式等待；
+[托管 worker 示例](../examples/app_lifecycle.rs)同样展示所有者和句柄契约。
 
 ## 选择定义与构建范围
 
@@ -185,13 +179,14 @@ shutdown.wait().await?;
 `primary`，否则返回歧义错误。精确选择需要有效 ID：各段以点分隔，首字符为
 ASCII 字母，后续只能使用 ASCII 字母、数字或下划线。构建后可用
 `get_by_id::<T>()`、`try_get::<T>()`、`get_all::<T>()` 分别进行精确、可选或
-集合查询。`get_all()` 按 `order`、ID 和来源位置排序。字段和 bean 参数上的 `cfg`（包括嵌套
+集合查询。`get_all()` 复用 context 发布时按 `order`、ID、来源位置和注册位置预排序的不可变索引。字段和 bean 参数上的 `cfg`（包括嵌套
 `cfg_attr(..., cfg(...))`）会同步控制生成的依赖请求、字段初始化和工厂调用实参。
 
 `register_instance_with` 暂存实例时会校验自身的 ID 和 profile；与其他定义的键冲突会在
 构建时、过滤非活跃 profile 后检查。工厂 panic 按 Rust 的常规 panic 语义传播。后续构造
-失败时，同步构建会 stop 工厂已成功返回给容器的托管资源，但不等待；异步构建会 stop 并
-等待，然后连同清理错误返回构建错误。
+失败时，同步构建会 stop 工厂已成功返回给容器的托管资源，但不等待；异步构建也会请求 abort 并立即返回 `BuildFailure`。
+应用从 `cause()` 取得原始错误，并显式等待可选的 `take_cleanup()` 句柄来观察
+终止与清理错误。
 
 定义可以指定生效的 `profile`。每次调用 `active_profiles` 都会替换此前的集合；空集合
 激活 `default`，无 profile 定义始终生效。通过 `#[value]` 或
@@ -207,22 +202,29 @@ ASCII 字母，后续只能使用 ASCII 字母、数字或下划线。构建后�
 ```rust
 use std::error::Error;
 use std::sync::Arc;
-use qubit_ioc::{BindingKey, ContainerBuilder};
+use qubit_ioc::{BindingKey, ContainerBuilder, Definition};
 
 fn replace_for_test() -> Result<(), Box<dyn Error>> {
     let mut builder = ContainerBuilder::new();
     builder.register_instance(Arc::new(1_u64))?;
     let fake = Arc::new(7_u64);
     let key = BindingKey::of::<u64>(None);
-    builder.replace_definition(key, move |draft| draft.register_instance(fake))?;
+    builder.replace_definition(key, move |draft| {
+        let replacement = Definition::<u64>::builder().instance(fake).build()?;
+        draft.register_definition(replacement)
+    })?;
     builder.root::<u64>();
-    let context = builder.build()?;
+    let application = builder.build()?;
+    let context = application.context();
     assert_eq!(*context.get::<u64>()?, 7);
     Ok(())
 }
 ```
 
-回调会先在临时 builder 上执行。若回调返回错误，或没有为目标键恰好注册一个定义，
+回调会先在临时 builder 上执行。`Definition::builder()` 还可设置 `binding`、
+`dependencies`、同步/异步及托管工厂，并通过 `bind` 声明 trait alias；
+`build()` 不执行用户工厂，只验证完整定义，`register_definition` 则原子登记。
+宏也使用这套公开核心，而不依赖已移除的隐藏定义协议。若回调返回错误，或没有为目标键恰好注册一个定义，
 原 builder 不会改变。替换成功后原定义的全部键（包括 alias）都会移除；新定义需要重新声明仍需保留的 alias。
 
 ## 配置和依赖请求怎么选
@@ -266,11 +268,15 @@ provider crate 导出 `register_ioc(&mut builder)`。应用夹具的 `app/src/di
 cargo test --manifest-path tests/fixtures/ioc_cross_crate/Cargo.toml
 ```
 
-若配置子树缺失，构造返回 `BuildError::ConfigReadFailed`，source 链保留原始 `ConfigError`。需要启用可选 preview provider 时，调用 `assemble(config, &["default", "preview"])`；未激活的定义不会出现在 context 中。夹具集成测试覆盖了这两种结果。
+若配置子树缺失，构造返回 `BuildFailure`，其 cause 为
+`BuildError::ConfigReadFailed`，source 链保留原始 `ConfigError`。需要启用可选 preview provider 时，调用 `assemble(config, &["default", "preview"])`；未激活的定义不会出现在 context 中。夹具集成测试覆盖了这两种结果。
 
-另一个下游夹具 `rs-execution-services/tests/fixtures/ioc_application_consumer/src/main.rs` 展示托管资源生命周期：安装托管的 `ExecutionServices` 与 `EventBus`，构建后取得共享服务，在退出时调用 `begin_shutdown()` 请求停止，再等待 `ShutdownHandle::wait()` 完成。这些片段来自不同夹具、承担不同验证目标；应用仍需自行处理配置来源和外部副作用。
+另一个下游夹具 `rs-execution-services/tests/fixtures/ioc_application_consumer/src/main.rs` 展示托管资源生命周期：安装托管的 `ExecutionServices` 与 `EventBus`，构建后取得共享服务，正常退出通过 `Application::begin_shutdown(ShutdownMode::Graceful)` 请求排空，
+失败走 `Immediate`，再等待 `ShutdownHandle::wait()`。EventBus adapter 使用
+`request_shutdown`、ticket 和 `wait_async()`；同步 `EventBus::shutdown(Immediate)`
+仍会在停止回调中等待。这些片段来自不同夹具、承担不同验证目标；应用仍需自行处理配置来源和外部副作用。
 
-只有构造过程需要等待 I/O 时才使用异步工厂。可以声明 `#[bean] async fn`，也可调用 `register_async_factory`；之后用 `build_async()` 或 `build_all_async()`，并由应用执行器驱动 future。若选中图里有异步定义却调用同步 `build()`，会在工厂运行前返回 `BuildError::AsyncRequired`。执行器选择和取消策略由应用负责。
+只有构造过程需要等待 I/O 时才使用异步工厂。可以声明 `#[bean] async fn`，也可调用 `register_async_factory`；之后用 `build_async()` 或 `build_all_async()`，并由应用执行器驱动 future。若选中图里有异步定义却调用同步 `build()`，会在工厂运行前返回 `BuildFailure`，其 cause 为 `BuildError::AsyncRequired`。执行器选择和取消策略由应用负责。
 
 ## 错误与排障
 
@@ -290,43 +296,38 @@ cargo test --manifest-path tests/fixtures/ioc_cross_crate/Cargo.toml
 
 ## 生命周期与限制
 
-上下文保存共享 `Arc`，查询不会再次执行工厂，并可在多线程中并发查询。
-需要关闭时先释放全部共享上下文句柄，再用 `Arc::try_unwrap` 取回唯一所有者，
-随后调用 `begin_shutdown()`。完整示例见
-[`examples/context_sharing.rs`](../examples/context_sharing.rs)。需要关闭的资源组件可显式选择
-`Managed<T>`。仓库提供可运行的 worker 示例：它在托管工厂中启动任务，发送停止信号，
-等待任务退出并检查结果。可在仓库根目录运行
-`cargo run --example app_lifecycle --no-default-features`；源码见
-[`examples/app_lifecycle.rs`](../examples/app_lifecycle.rs)，关闭和取消语义见
-[生命周期说明](lifecycle.zh_CN.md)。
+`Application` 持有生命周期所有权，`application.context()` 提供只读共享查询句柄。
+可克隆句柄分发给并发读者；关闭时不需要收回每个克隆或执行 `Arc::try_unwrap`。
+[上下文共享示例](../examples/context_sharing.rs)展示这个分工。关闭开始后查询仍可能
+成功，但不表示服务继续接收业务工作。
 
-托管资源应在托管工厂中创建；工厂只会在依赖图验证后运行。装配前已启动的外部资源
-使用 `register_instance(Arc<T>)` 注入，关闭动作由应用负责。不要在托管工厂闭包中捕获
-已创建的 `Managed<T>`。
+托管资源应在图验证通过后由托管工厂创建。已运行的外部资源用
+`register_instance(Arc<T>)` 注入，应用自己负责关闭。真实应用的托管图应配置
+bounded `WaitPolicy`。`Managed::new` 提供非阻塞 abort 请求，
+`.with_graceful_stop` 可请求排空，`.with_wait` 确认终止。正常退出选 Graceful 并等待
+句柄；Graceful 从首次轮询 `wait` 才开始逐个请求，消费者终止后才处理其依赖。
+Immediate 在返回句柄前向全部托管组件请求 abort。[生命周期说明](lifecycle.zh_CN.md)
+包含构建失败和业务退出的完整流程，[app_lifecycle](../examples/app_lifecycle.rs)
+提供实际 worker 示例。
 
-`Managed::new` 接收同步 stop 请求，`.with_wait` 可添加异步终止等待。
-`begin_shutdown(self)` 在返回前按实际构建顺序的逆序调用所有 stop。返回的
-`ShutdownHandle::wait(&mut self)` 按同一顺序等待并返回所有清理错误。若 wait future
-被取消，保留句柄并再次调用 `wait()` 可继续同一个 future。同步 `build()` 失败时只停止已成功返回 `Managed` 的资源，不会等待；
-异步 `build_async()` 失败时先 stop 再 wait，并把清理错误与原始构建错误一起保留。
-若构建失败时也必须等已有资源终止，即使所有工厂同步，也使用 `build_async()`。
-异步构建 future 被取消时只对已成功返回 `Managed` 的资源调用 stop，
-不等待；此时调用方已无法接收清理错误。工厂在返回 `Managed<T>` 前产生的副作用
-由工厂自身负责收尾。
+同步和异步构建失败时都会先请求已移交资源 abort，再立即返回 `BuildFailure`。
+应用检查 `cause()`，用 `take_cleanup()` 或 `into_parts()` 获取可选清理句柄并显式
+等待。丢弃 owner、未移交的 `Managed` 或关闭句柄会请求 abort，但不等待；查询
+context Drop 不请求关闭。丢弃构建失败对象或取消异步构建也不等待。工厂 unwind
+panic 仍向外传播；工厂在返回 `Managed` 前产生的副作用由它自身负责。
 
-普通释放上下文不会自动停止资源。外部持有的 `Arc` 可使对象在
-关闭后继续存活；关闭动作不能撤销这些克隆。stop 回调 panic 会作为 Stop 阶段失败
-记录。wait 回调创建或 wait future 轮询时发生的 unwind panic 会作为 Wait 阶段失败
-记录，其他 wait 仍会执行。`panic = "abort"` 和 future 析构时的 panic 不会被捕获。
-构造工厂 panic 仍会传播。
+取消 `ShutdownHandle::wait()` 后，同一句柄会保留当前 future 与期限，再次调用会
+接着执行。bounded 期限要求应用驱动计时器，无法打断阻塞回调或阻塞的 future poll。
+`ShutdownReport::incomplete()` 表示终止未获确认，并非资源已被杀死。即使全部
+wait 完成，报告仍可能保留回调错误；外部 `Arc` 克隆可在关闭后继续持有对象内存。
 
-旧的托管实例注册入口已移除。资源应在 `register_managed_factory` 或对应的托管
-`#[bean]` 工厂中创建；若资源必须在注册前创建，则通过 `register_instance(Arc<T>)`
-注入，并由应用自行处理关闭。
+旧托管实例注册入口已移除；使用 `register_managed_factory` 或托管 `#[bean]` 工厂。
+`Definition::builder()` 和 `register_definition` 提供公开的完整自定义注册与 trait
+alias 能力。集合查询复用发布时预排序的索引；构建和清理顺序与此独立。
 
-当前不提供原型或请求作用域、热更新、未托管组件的自动生命周期管理、循环代理和动态库发现。
-结构体宏支持具名字段和单元结构体；其他形状可使用手动工厂。组件构造不使用运行时
-反射。provider 的选择和回退由 `qubit-spi` 另行负责。
+当前不提供原型或请求作用域、热更新、未托管组件自动关闭、循环代理或动态库发现。
+结构体宏支持具名字段和单元结构体；其他形状可用手动工厂。组件构造不依赖运行时
+反射，provider 选择与回退由 `qubit-spi` 另行负责。
 
-继续阅读[项目 README](../README.zh_CN.md)、[English user guide](user_guide.md)
+继续阅读[项目 README](../README.zh_CN.md)、[English user guide](user_guide.md)，
 或运行 `cargo doc --no-deps --open` 查看 API 文档。

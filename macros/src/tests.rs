@@ -8,3 +8,4 @@
 //! Proc-macro parsing and validation unit tests.
 
 mod parse_tests;
+mod public_definition_tests;

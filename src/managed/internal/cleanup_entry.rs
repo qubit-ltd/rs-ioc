@@ -7,6 +7,7 @@
 // =============================================================================
 //! Cleanup callbacks paired with binding metadata.
 
+use super::entry_state::EntryState;
 use crate::key::BindingKey;
 use crate::managed::CleanupAction;
 use crate::options::DefinitionSource;
@@ -19,4 +20,6 @@ pub(crate) struct CleanupEntry {
     pub(crate) definition: DefinitionSource,
     /// One-shot cleanup callbacks associated with the binding.
     pub(crate) action: CleanupAction,
+    /// Progress retained by the unique lifecycle owner.
+    pub(super) state: EntryState,
 }

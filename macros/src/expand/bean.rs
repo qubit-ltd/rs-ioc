@@ -61,7 +61,7 @@ pub(crate) fn expand(value: BeanIr, context: &ExpansionContext) -> Result<TokenS
         .map(|index| internal_ident("argument", index))
         .collect::<Vec<_>>();
     let context = internal_ident("context", 0);
-    let draft = internal_ident("draft", 0);
+    let definition = internal_ident("definition", 0);
     let dependencies_ident = internal_ident("dependencies", 0);
     let dependency_ident = internal_ident("dependency", 0);
     let output_ident = internal_ident("output", 0);
@@ -140,23 +140,23 @@ pub(crate) fn expand(value: BeanIr, context: &ExpansionContext) -> Result<TokenS
             ::core::result::Result::Ok(#output_ident)
         })
     };
-    let draft_constructor = if output.managed {
+    let factory_method = if output.managed {
         if item.sig.asyncness.is_some() {
-            quote!(new_managed_async)
+            quote!(managed_async_factory)
         } else {
-            quote!(new_managed_sync)
+            quote!(managed_factory)
         }
     } else if item.sig.asyncness.is_some() {
-        quote!(new_async)
+        quote!(async_factory)
     } else {
-        quote!(new_sync)
+        quote!(factory)
     };
     let aliases = options.binds.iter().map(|target| {
         quote! {
-            #draft.bind::<#target, _>(#alias_options, |concrete| {
+            .bind::<#target, _>(#alias_options, |concrete| {
                 let alias: ::std::sync::Arc<#target> = concrete;
                 alias
-            })?;
+            })
         }
     });
     let item_name = &source.item;
@@ -185,14 +185,14 @@ pub(crate) fn expand(value: BeanIr, context: &ExpansionContext) -> Result<TokenS
                         #dependencies_ident.push(#dependency_ident);
                     }
                 }
-                let mut #draft = #runtime::__private::codegen_v1::DefinitionDraft::<#component_type>::#draft_constructor(
-                    Self::__IOC_SOURCE,
-                    &#dependencies_ident,
-                    #concrete_options,
-                    #factory,
-                )?;
-                #(#aliases)*
-                #draft.register(builder)
+                let #definition = #runtime::Definition::<#component_type>::builder()
+                    .source(Self::__IOC_SOURCE)
+                    .binding(#concrete_options)
+                    .dependencies(&#dependencies_ident)
+                    .#factory_method(#factory)
+                    #(#aliases)*
+                    .build()?;
+                builder.register_definition(#definition)
             }
         }
     };

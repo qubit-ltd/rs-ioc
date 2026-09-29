@@ -7,7 +7,6 @@
 // =============================================================================
 //! Validated graph state and root-selection entry points.
 
-use std::any::TypeId;
 use std::collections::HashMap;
 
 use crate::binding::PendingBindingKind;
@@ -20,8 +19,8 @@ use crate::graph::build_all_seeds;
 use crate::graph::close_definitions;
 use crate::graph::detect_errors_and_cycles;
 use crate::graph::exact_keys;
-use crate::graph::first_keys;
 use crate::graph::flatten;
+use crate::graph::internal::binding_index::BindingIndex;
 use crate::graph::internal::binding_location::BindingLocation;
 use crate::graph::internal::resolved_dependency::ResolvedDependency;
 use crate::graph::resolve_edges;
@@ -72,21 +71,14 @@ impl ValidatedGraph {
             .filter(|definition| profile_is_active(definition.profile.as_deref(), active_profiles))
             .collect();
         let nodes = flatten(&definitions);
-        let by_key = if roots.is_none() {
-            exact_keys(&nodes)?
-        } else {
-            first_keys(&nodes)
-        };
         if roots.is_none() {
+            exact_keys(&nodes)?;
             validate_primary(&nodes)?;
         }
-        let mut by_type: HashMap<TypeId, Vec<usize>> = HashMap::new();
-        for (index, node) in nodes.iter().enumerate() {
-            by_type.entry(node.key.type_id()).or_default().push(index);
-        }
-        let (edges, resolved) = resolve_edges(&definitions, &nodes, &by_key, &by_type);
+        let index = BindingIndex::new(&nodes);
+        let (edges, resolved) = resolve_edges(&definitions, &nodes, &index);
         let seeds = if let Some(roots) = roots {
-            select_roots(roots, &nodes, &by_type)?
+            select_roots(roots, &nodes, &index)?
         } else {
             build_all_seeds(&nodes, &edges)
         };

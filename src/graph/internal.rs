@@ -7,6 +7,7 @@
 // =============================================================================
 //! Graph model types separated from validation algorithms.
 
+pub(in crate::graph) mod binding_index;
 pub(in crate::graph) mod binding_location;
 pub(in crate::graph) mod edge;
 pub(in crate::graph) mod node;

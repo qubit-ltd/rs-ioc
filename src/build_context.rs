@@ -32,7 +32,8 @@ use crate::store::ErasedInstance;
 /// builder.register_factory::<usize, _>(&[Dependency::of::<u32>()], |context| {
 ///     Ok(Arc::new(*context.get::<u32>().map_err(FactoryError::new)? as usize))
 /// })?;
-/// let context = builder.build_all()?;
+/// let application = builder.build_all()?;
+/// let context = application.context();
 /// assert_eq!(*context.get::<usize>()?, 7);
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```

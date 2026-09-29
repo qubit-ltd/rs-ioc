@@ -13,6 +13,7 @@ use quote::quote_spanned;
 use syn::Result;
 
 use crate::expand::ExpansionContext;
+use crate::expand::internal_ident;
 use crate::ir::ConfigurationPropertiesIr;
 
 /// Emits the user's struct and its config-dependent typed factory.
@@ -26,6 +27,12 @@ pub(crate) fn expand(value: ConfigurationPropertiesIr, context: &ExpansionContex
     let runtime = &context.runtime;
     let ident = &item.ident;
     let item_name = &source.item;
+    let options_ident = internal_ident("options", 0);
+    let dependencies_ident = internal_ident("dependencies", 0);
+    let context_ident = internal_ident("context", 0);
+    let config_ident = internal_ident("config", 0);
+    let value_ident = internal_ident("value", 0);
+    let definition_ident = internal_ident("definition", 0);
     let source_expr = quote_spanned! {source.span=>
         #runtime::DefinitionSource::new(
             ::core::env!("CARGO_PKG_NAME"), ::core::module_path!(), ::core::file!(),
@@ -52,29 +59,30 @@ pub(crate) fn expand(value: ConfigurationPropertiesIr, context: &ExpansionContex
             fn register(
                 builder: &mut #runtime::ContainerBuilder,
             ) -> ::std::result::Result<(), #runtime::RegistrationError> {
-                let __qubit_ioc_options = #runtime::BindingOptions {
+                let #options_ident = #runtime::BindingOptions {
                     id: #id,
                     primary: #primary,
                     order: #order,
                     profile: #profile,
                 };
-                let __qubit_ioc_dependencies = [
+                let #dependencies_ident = [
                     #runtime::Dependency::of::<#runtime::__private::codegen_v1::Config>()
                 ];
-                #runtime::__private::codegen_v1::DefinitionDraft::<#ident>::new_sync(
-                    <#ident as #runtime::ComponentDefinition>::source(),
-                    &__qubit_ioc_dependencies,
-                    __qubit_ioc_options,
-                    |__qubit_ioc_context| {
-                        let __qubit_ioc_config = __qubit_ioc_context
+                let #definition_ident = #runtime::Definition::<#ident>::builder()
+                    .source(<#ident as #runtime::ComponentDefinition>::source())
+                    .binding(#options_ident)
+                    .dependencies(&#dependencies_ident)
+                    .factory(|#context_ident| {
+                        let #config_ident = #context_ident
                             .get::<#runtime::__private::codegen_v1::Config>()
                             .map_err(#runtime::FactoryError::new)?;
-                        let __qubit_ioc_value = #runtime::config::deserialize_properties_for::<#ident>(
-                            __qubit_ioc_config.as_ref(), #prefix, ::core::stringify!(#item_name),
+                        let #value_ident = #runtime::config::deserialize_properties_for::<#ident>(
+                            #config_ident.as_ref(), #prefix, ::core::stringify!(#item_name),
                         )?;
-                        ::std::result::Result::Ok(::std::sync::Arc::new(__qubit_ioc_value))
-                    },
-                )?.register(builder)
+                        ::std::result::Result::Ok(::std::sync::Arc::new(#value_ident))
+                    })
+                    .build()?;
+                builder.register_definition(#definition_ident)
             }
         }
     };
@@ -212,24 +220,25 @@ mod tests {
         let Stmt::Expr(Expr::MethodCall(install), None) =
             register.block.stmts.last().expect("expected registration call")
         else {
-            panic!("expected draft registration");
+            panic!("expected public definition registration");
         };
-        assert_eq!(install.method, "register");
-        let Expr::Try(draft) = install.receiver.as_ref() else {
-            panic!("expected fallible draft creation")
+        assert_eq!(install.method, "register_definition");
+        let Stmt::Local(definition) = &register.block.stmts[2] else {
+            panic!("expected complete definition");
         };
-        let Expr::Call(constructor) = draft.expr.as_ref() else {
-            panic!("expected draft constructor")
+        let Expr::Try(built) = definition.init.as_ref().expect("definition initializer").expr.as_ref() else {
+            panic!("expected validated definition");
         };
-        let Expr::Path(constructor_path) = constructor.func.as_ref() else {
-            panic!("expected draft constructor path")
+        let Expr::MethodCall(build) = built.expr.as_ref() else {
+            panic!("expected build call");
         };
-        assert_path(
-            &constructor_path.path,
-            &["renamed_ioc", "__private", "codegen_v1", "DefinitionDraft", "new_sync"],
-        );
-        let Expr::Closure(factory) = &constructor.args[3] else {
-            panic!("expected properties factory")
+        assert_eq!(build.method, "build");
+        let Expr::MethodCall(constructor) = build.receiver.as_ref() else {
+            panic!("expected public factory setter");
+        };
+        assert_eq!(constructor.method, "factory");
+        let Expr::Closure(factory) = &constructor.args[0] else {
+            panic!("expected properties factory");
         };
         let Expr::Block(factory_body) = factory.body.as_ref() else {
             panic!("expected factory block")

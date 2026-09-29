@@ -21,7 +21,9 @@ use qubit_ioc::CleanupError;
 use qubit_ioc::ContainerBuilder;
 use qubit_ioc::FactoryError;
 use qubit_ioc::Managed;
+use qubit_ioc::ShutdownMode;
 use qubit_ioc::ShutdownPhase;
+use qubit_ioc::WaitPolicy;
 use qubit_ioc::managed::CleanupFuture;
 
 struct ComponentA;
@@ -54,7 +56,7 @@ fn managed_with_wait<T: Send + Sync + 'static>(
 #[test]
 fn test_shutdown_collects_wait_callback_panic_and_continues() {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let mut builder = ContainerBuilder::new();
+    let mut builder = ContainerBuilder::new().wait_policy(WaitPolicy::unbounded());
     let captured = Arc::clone(&events);
     builder
         .register_managed_factory::<ComponentA, _>(&[], move |_| Ok(managed_with_wait(ComponentA, captured, "wait A")))
@@ -66,19 +68,20 @@ fn test_shutdown_collects_wait_callback_panic_and_continues() {
         })
         .expect("register component B");
 
-    let context = builder.build_all().expect("build components");
-    let mut shutdown = context.begin_shutdown();
+    let application = builder.build_all().expect("build components");
+
+    let mut shutdown = application.begin_shutdown(ShutdownMode::Immediate);
     let error = run_ready(shutdown.wait()).expect_err("wait callback panic is collected");
-    assert_eq!(error.failures().len(), 1);
-    assert_eq!(error.failures()[0].phase, ShutdownPhase::Wait);
-    assert!(error.failures()[0].to_string().contains("create wait future"));
+    assert_eq!(error.report().failures().len(), 1);
+    assert_eq!(error.report().failures()[0].phase, ShutdownPhase::Wait);
+    assert!(error.report().failures()[0].to_string().contains("create wait future"));
     assert_eq!(*events.lock().expect("event mutex is available"), ["wait A"]);
 }
 
 #[test]
 fn test_shutdown_collects_wait_poll_panic_and_continues() {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let mut builder = ContainerBuilder::new();
+    let mut builder = ContainerBuilder::new().wait_policy(WaitPolicy::unbounded());
     let captured = Arc::clone(&events);
     builder
         .register_managed_factory::<ComponentA, _>(&[], move |_| Ok(managed_with_wait(ComponentA, captured, "wait A")))
@@ -95,19 +98,20 @@ fn test_shutdown_collects_wait_poll_panic_and_continues() {
         })
         .expect("register component B");
 
-    let context = builder.build_all().expect("build components");
-    let mut shutdown = context.begin_shutdown();
+    let application = builder.build_all().expect("build components");
+
+    let mut shutdown = application.begin_shutdown(ShutdownMode::Immediate);
     let error = run_ready(shutdown.wait()).expect_err("wait poll panic is collected");
-    assert_eq!(error.failures().len(), 1);
-    assert_eq!(error.failures()[0].phase, ShutdownPhase::Wait);
-    assert!(error.failures()[0].to_string().contains("poll wait future"));
+    assert_eq!(error.report().failures().len(), 1);
+    assert_eq!(error.report().failures()[0].phase, ShutdownPhase::Wait);
+    assert!(error.report().failures()[0].to_string().contains("poll wait future"));
     assert_eq!(*events.lock().expect("event mutex is available"), ["wait A"]);
 }
 
 #[test]
 fn test_async_build_failure_collects_wait_panic_and_preserves_cause() {
     let events = Arc::new(Mutex::new(Vec::new()));
-    let mut builder = ContainerBuilder::new();
+    let mut builder = ContainerBuilder::new().wait_policy(WaitPolicy::unbounded());
     let captured = Arc::clone(&events);
     builder
         .register_managed_factory::<ComponentA, _>(&[], move |_| Ok(managed_with_wait(ComponentA, captured, "wait A")))
@@ -124,14 +128,14 @@ fn test_async_build_failure_collects_wait_panic_and_preserves_cause() {
         })
         .expect("register failing component");
 
-    let error = match run_ready(builder.build_all_async()) {
+    let mut failure = match run_ready(builder.build_all_async()) {
         Ok(_) => panic!("factory error should fail the build"),
         Err(error) => error,
     };
-    let BuildError::CleanupFailed { cause, failures } = error else {
-        panic!("wait panic should be combined with the build error");
-    };
-    assert!(matches!(*cause, BuildError::FactoryFailed { .. }));
+    assert!(matches!(failure.cause(), BuildError::FactoryFailed { .. }));
+    let mut cleanup = failure.take_cleanup().expect("constructed components require cleanup");
+    let error = run_ready(cleanup.wait()).expect_err("wait panic must be reported");
+    let failures = error.report().failures();
     assert_eq!(failures.len(), 1);
     assert_eq!(failures[0].phase, ShutdownPhase::Wait);
     assert!(failures[0].to_string().contains("create wait future"));
@@ -143,7 +147,7 @@ fn test_cancelled_wait_resumes_then_reports_poll_panic() {
     let events = Arc::new(Mutex::new(Vec::new()));
     let polls = Arc::new(AtomicUsize::new(0));
     let starts = Arc::new(AtomicUsize::new(0));
-    let mut builder = ContainerBuilder::new();
+    let mut builder = ContainerBuilder::new().wait_policy(WaitPolicy::unbounded());
     let captured = Arc::clone(&events);
     builder
         .register_managed_factory::<ComponentA, _>(&[], move |_| Ok(managed_with_wait(ComponentA, captured, "wait A")))
@@ -168,8 +172,9 @@ fn test_cancelled_wait_resumes_then_reports_poll_panic() {
         })
         .expect("register component B");
 
-    let context = builder.build_all().expect("build components");
-    let mut shutdown = context.begin_shutdown();
+    let application = builder.build_all().expect("build components");
+
+    let mut shutdown = application.begin_shutdown(ShutdownMode::Immediate);
     let mut first_wait = Box::pin(shutdown.wait());
     assert!(
         first_wait
@@ -180,9 +185,9 @@ fn test_cancelled_wait_resumes_then_reports_poll_panic() {
     drop(first_wait);
 
     let error = run_ready(shutdown.wait()).expect_err("resumed wait panic is collected");
-    assert_eq!(error.failures().len(), 1);
-    assert_eq!(error.failures()[0].phase, ShutdownPhase::Wait);
-    assert!(error.failures()[0].to_string().contains("resumed wait future"));
+    assert_eq!(error.report().failures().len(), 1);
+    assert_eq!(error.report().failures()[0].phase, ShutdownPhase::Wait);
+    assert!(error.report().failures()[0].to_string().contains("resumed wait future"));
     assert_eq!(starts.load(Ordering::SeqCst), 1);
     assert_eq!(*events.lock().expect("event mutex is available"), ["wait A"]);
 }

@@ -34,6 +34,12 @@ use crate::options::DefinitionSource;
 #[derive(Debug, Error)]
 #[must_use = "registration errors must be handled or explicitly discarded"]
 pub enum RegistrationError {
+    /// A definition has no instance or factory configured.
+    #[error("{definition}: definition has no instance or factory")]
+    MissingDefinitionFactory {
+        /// Definition missing its construction source.
+        definition: DefinitionSource,
+    },
     /// An interface alias attempted to use a different activation profile.
     #[error("{definition}: alias profile {alias:?} differs from concrete profile {concrete:?}")]
     AliasProfileMismatch {

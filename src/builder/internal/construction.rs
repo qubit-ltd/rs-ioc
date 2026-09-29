@@ -9,12 +9,14 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
 
+use crate::application::Application;
 use crate::application_context::ApplicationContext;
 use crate::application_context::BuiltBinding;
 use crate::binding::PendingBinding;
 use crate::binding::PendingBindingKind;
 use crate::build_context::BuildContext;
 use crate::error::BuildError;
+use crate::error::BuildFailure;
 use crate::error::FactoryError;
 use crate::graph::BindingLocation;
 use crate::graph::DiagnosticPaths;
@@ -22,6 +24,9 @@ use crate::graph::ResolvedDependency;
 use crate::graph::ValidatedGraph;
 use crate::key::BindingKey;
 use crate::managed::CleanupJournal;
+use crate::managed::ShutdownHandle;
+use crate::managed::ShutdownMode;
+use crate::managed::WaitPolicy;
 use crate::options::DefinitionSource;
 use crate::store::InstanceStore;
 
@@ -43,6 +48,8 @@ pub(crate) struct Construction {
     cleanup: CleanupJournal,
     /// Partially populated store, kept private until construction succeeds.
     store: InstanceStore,
+    /// Validated lifecycle deadlines carried into the successful owner.
+    policy: WaitPolicy,
 }
 
 // BuildError keeps full dependency paths and original factory sources.
@@ -50,7 +57,7 @@ pub(crate) struct Construction {
 impl Construction {
     /// Retains lookup and diagnostic metadata before consuming one-shot
     /// bindings.
-    pub(crate) fn new(graph: ValidatedGraph) -> Self {
+    pub(crate) fn new(graph: ValidatedGraph, policy: WaitPolicy) -> Self {
         let selected: HashSet<_> = graph.order.iter().copied().collect();
         let diagnostics = graph.diagnostics;
         let bindings = graph
@@ -93,12 +100,13 @@ impl Construction {
             bindings,
             cleanup: CleanupJournal::default(),
             store: InstanceStore::default(),
+            policy,
         }
     }
 
     /// Runs every sync binding after the graph and async preflight have
     /// succeeded.
-    pub(crate) fn run_sync(mut self) -> Result<ApplicationContext, BuildError> {
+    pub(crate) fn run_sync(mut self) -> Result<Application, BuildFailure> {
         for location in std::mem::take(&mut self.order) {
             let (key, source, kind) = self.take_binding(location);
             let product = match kind {
@@ -123,23 +131,23 @@ impl Construction {
             };
             let (value, cleanup) = match product {
                 Ok(product) => product,
-                Err(error) => return Err(self.stop_and_wrap(error)),
+                Err(error) => return Err(self.cleanup_and_wrap(error)),
             };
             if let Some(cleanup) = cleanup {
                 self.cleanup.push(key.clone(), source, cleanup);
             }
             self.insert(key, value);
         }
-        Ok(ApplicationContext::new(
-            self.store,
-            self.bindings,
+        Ok(Application::new(
+            ApplicationContext::new(self.store, self.bindings),
             std::mem::take(&mut self.cleanup),
+            self.policy,
         ))
     }
 
     /// Drives each async factory to completion before starting the next
     /// binding.
-    pub(crate) async fn run_async(mut self) -> Result<ApplicationContext, BuildError> {
+    pub(crate) async fn run_async(mut self) -> Result<Application, BuildFailure> {
         for location in std::mem::take(&mut self.order) {
             let (key, source, kind) = self.take_binding(location);
             let product = match kind {
@@ -164,46 +172,33 @@ impl Construction {
             };
             let (value, cleanup) = match product {
                 Ok(product) => product,
-                Err(error) => return Err(self.cleanup_and_wrap(error).await),
+                Err(error) => return Err(self.cleanup_and_wrap(error)),
             };
             if let Some(cleanup) = cleanup {
                 self.cleanup.push(key.clone(), source, cleanup);
             }
             self.insert(key, value);
         }
-        Ok(ApplicationContext::new(
-            self.store,
-            self.bindings,
+        Ok(Application::new(
+            ApplicationContext::new(self.store, self.bindings),
             std::mem::take(&mut self.cleanup),
+            self.policy,
         ))
     }
 
-    /// Stops built managed components after a synchronous construction failure.
-    fn stop_and_wrap(&mut self, cause: BuildError) -> BuildError {
-        let failures = self.cleanup.stop_reverse();
-        if failures.is_empty() {
-            cause
-        } else {
-            BuildError::CleanupFailed {
-                cause: Box::new(cause),
-                failures,
-            }
+    /// Transfers partial storage and the journal into an Immediate rollback
+    /// owner, requesting every abort before returning without starting waits.
+    fn cleanup_and_wrap(self, cause: BuildError) -> BuildFailure {
+        if self.cleanup.is_empty() {
+            return cause.into();
         }
-    }
-
-    /// Stops and waits for built managed components after an asynchronous
-    /// failure.
-    async fn cleanup_and_wrap(&mut self, cause: BuildError) -> BuildError {
-        let mut failures = self.cleanup.stop_reverse();
-        failures.extend(self.cleanup.wait_reverse().await);
-        if failures.is_empty() {
-            cause
-        } else {
-            BuildError::CleanupFailed {
-                cause: Box::new(cause),
-                failures,
-            }
-        }
+        let cleanup = ShutdownHandle::new(
+            ApplicationContext::new(self.store, self.bindings),
+            self.cleanup,
+            self.policy,
+            ShutdownMode::Immediate,
+        );
+        BuildFailure::new(cause, Some(cleanup))
     }
 
     /// Takes the one-shot action for a graph location without changing its

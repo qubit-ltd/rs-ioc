@@ -7,7 +7,7 @@
 // =============================================================================
 //! Errors returned by the manual fixture assembly path.
 
-use qubit_ioc::BuildError;
+use qubit_ioc::BuildFailure;
 use qubit_ioc::RegistrationError;
 
 /// Failure during explicit registration or construction.
@@ -18,5 +18,5 @@ pub enum ManualError {
     Registration(#[from] RegistrationError),
     /// The declared graph or factory failed.
     #[error(transparent)]
-    Build(#[from] BuildError),
+    Build(#[from] BuildFailure),
 }

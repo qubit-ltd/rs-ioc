@@ -10,6 +10,7 @@
 
 mod build_access_error;
 mod build_error;
+mod build_failure;
 mod factory_error;
 mod internal;
 mod invalid_binding_id;
@@ -18,6 +19,7 @@ mod resolve_error;
 
 pub use build_access_error::BuildAccessError;
 pub use build_error::BuildError;
+pub use build_failure::BuildFailure;
 pub use factory_error::FactoryError;
 pub use invalid_binding_id::InvalidBindingId;
 pub use registration_error::RegistrationError;

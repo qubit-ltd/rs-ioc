@@ -129,7 +129,8 @@ fn install_consumer_graph() -> ContainerBuilder {
 #[test]
 fn test_component_macro_builds_private_fields_and_selects_interface_aliases() {
     assert_eq!((Alpha::__IOC_SOURCE, Alpha::__IOC_ID), (1, 2));
-    let context = install_consumer_graph().build_all().expect("build consumer graph");
+    let application = install_consumer_graph().build_all().expect("build consumer graph");
+    let context = application.context();
     let consumer = context.get::<Consumer>().expect("get consumer");
     assert_eq!(consumer.selected.greeting(), "beta");
     assert_eq!(consumer.primary.greeting(), "alpha");
@@ -155,7 +156,8 @@ fn test_component_macro_handles_optional_and_empty_collection() {
     builder
         .install::<OptionalConsumer>()
         .expect("install optional consumer");
-    let context = builder.build_all().expect("optional dependency can be absent");
+    let application = builder.build_all().expect("optional dependency can be absent");
+    let context = application.context();
     let consumer = context.get::<OptionalConsumer>().expect("get optional consumer");
     assert!(consumer.absent.is_none());
     assert!(consumer.all_absent.is_empty());
@@ -167,7 +169,8 @@ fn test_component_macro_accepts_standard_qualified_wrapper_paths() {
     builder.install::<QualifiedDependency>().expect("install dependency");
     builder.install::<QualifiedConsumer>().expect("install consumer");
     builder.root::<QualifiedConsumer>();
-    let context = builder.build().expect("build qualified consumer");
+    let application = builder.build().expect("build qualified consumer");
+    let context = application.context();
     let consumer = context.get::<QualifiedConsumer>().expect("get consumer");
     assert!(Arc::ptr_eq(&consumer.required, consumer.optional.as_ref().unwrap()));
     assert_eq!(consumer.all.len(), 1);
@@ -179,7 +182,8 @@ fn test_component_macro_preserves_unit_struct_and_private_field_construction() {
     let mut builder = ContainerBuilder::new();
     builder.install::<Alpha>().expect("install alpha");
     builder.install::<PrivateFields>().expect("install private fields");
-    let context = builder.build_all().expect("build private fields graph");
+    let application = builder.build_all().expect("build private fields graph");
+    let context = application.context();
     let private = context.get::<PrivateFields>().expect("get private fields");
     assert!(Arc::ptr_eq(
         &private.dependency,
@@ -194,7 +198,8 @@ fn test_component_macro_reuses_one_declared_dependency_for_two_fields() {
     builder
         .install::<DuplicateConsumer>()
         .expect("install duplicate consumer");
-    let context = builder.build_all().expect("build consumer with duplicate field type");
+    let application = builder.build_all().expect("build consumer with duplicate field type");
+    let context = application.context();
     let consumer = context.get::<DuplicateConsumer>().expect("get duplicate consumer");
     assert!(Arc::ptr_eq(&consumer.first, &consumer.second));
 }
@@ -207,7 +212,8 @@ fn test_component_macro_requires_explicit_installation() {
     assert_eq!(source.module_path, module_path!());
 
     let builder = install_consumer_graph();
-    let context = builder.build_all().expect("build explicitly installed components");
+    let application = builder.build_all().expect("build explicitly installed components");
+    let context = application.context();
     assert!(
         context
             .try_get::<Missing>()
@@ -229,7 +235,7 @@ fn test_component_macro_requires_explicit_installation() {
         .expect("staging duplicate is deferred");
     assert!(matches!(
         duplicate_builder.build_all(),
-        Err(BuildError::DuplicateBinding { .. })
+        Err(failure) if matches!(failure.cause(), BuildError::DuplicateBinding { .. })
     ));
 }
 
@@ -244,7 +250,8 @@ fn test_component_macro_reads_value_from_config_snapshot() {
         .active_profiles(&["values"])
         .expect("valid profile");
     builder.install::<ValueConsumer>().expect("install value consumer");
-    let context = builder.build_all().expect("build configured component");
+    let application = builder.build_all().expect("build configured component");
+    let context = application.context();
     assert_eq!(context.get::<ValueConsumer>().expect("get value consumer").answer, 42);
 }
 
@@ -261,8 +268,10 @@ fn test_component_macro_interleaves_value_dependency_in_field_order() {
         Ok(_) => panic!("missing Config should be reported first"),
         Err(error) => error,
     };
-    assert!(matches!(error, ConfigBuildError::MissingDependency { dependency, .. }
-        if dependency == Dependency::of::<Config>()));
+    assert!(
+        matches!(error.cause(), ConfigBuildError::MissingDependency { dependency, .. }
+        if dependency == &Dependency::of::<Config>())
+    );
 }
 
 #[test]

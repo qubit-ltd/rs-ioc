@@ -48,7 +48,7 @@ fn test_graph_errors_precede_any_user_factory() {
         })
         .expect("stage missing consumer");
     let error = missing.build_all().err().expect("missing dependency");
-    assert!(matches!(error, BuildError::MissingDependency { path, .. } if !path.is_empty()));
+    assert!(matches!(error.cause(), BuildError::MissingDependency { path, .. } if !path.is_empty()));
     assert_eq!(RUNS.load(Ordering::SeqCst), 0);
 
     let mut ambiguous = ContainerBuilder::new();
@@ -70,8 +70,10 @@ fn test_graph_errors_precede_any_user_factory() {
         })
         .expect("stage ambiguous consumer");
     let error = ambiguous.build_all().err().expect("ambiguous dependency");
-    assert!(matches!(error, BuildError::AmbiguousBinding { candidates, path, .. }
-        if candidates.len() == 2 && !path.is_empty()));
+    assert!(
+        matches!(error.cause(), BuildError::AmbiguousBinding { candidates, path, .. }
+        if candidates.len() == 2 && !path.is_empty())
+    );
     assert_eq!(RUNS.load(Ordering::SeqCst), 0);
 
     struct CycleA;
@@ -90,7 +92,7 @@ fn test_graph_errors_precede_any_user_factory() {
         })
         .expect("stage second node");
     let error = cyclic.build_all().err().expect("dependency cycle");
-    assert!(matches!(error, BuildError::DependencyCycle { path } if path.len() >= 3));
+    assert!(matches!(error.cause(), BuildError::DependencyCycle { path } if path.len() >= 3));
     assert_eq!(RUNS.load(Ordering::SeqCst), 0);
 }
 
@@ -118,9 +120,12 @@ fn test_mixed_factories_require_async_build_and_share_results() {
             .expect("stage async factory");
         builder
     }
-    assert!(matches!(builder().build_all(), Err(BuildError::AsyncRequired { .. })));
+    assert!(
+        matches!(builder().build_all(), Err(failure) if matches!(failure.cause(), BuildError::AsyncRequired { .. }))
+    );
     assert_eq!(RUNS.load(Ordering::SeqCst), 0);
-    let context = ready(builder().build_all_async()).expect("mixed graph builds asynchronously");
+    let application = ready(builder().build_all_async()).expect("mixed graph builds asynchronously");
+    let context = application.context();
     assert_eq!(*context.get::<u64>().expect("async result"), 7);
     assert_eq!(RUNS.load(Ordering::SeqCst), 2);
 }
@@ -149,8 +154,13 @@ fn test_spi_resolution_error_keeps_its_source_chain() {
         })
         .expect("stage SPI factory");
     let error = builder.build_all().err().expect("empty registry cannot resolve");
-    assert!(matches!(&error, BuildError::FactoryFailed { path, .. } if path.len() == 1));
-    let source = error.source().expect("factory error").source().expect("SPI error");
+    assert!(matches!(error.cause(), BuildError::FactoryFailed { path, .. } if path.len() == 1));
+    let source = error
+        .cause()
+        .source()
+        .expect("factory error")
+        .source()
+        .expect("SPI error");
     assert!(
         source
             .downcast_ref::<ProviderResolutionError>()

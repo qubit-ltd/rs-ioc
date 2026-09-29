@@ -5,52 +5,30 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-//! Aggregate of failures observed during application shutdown.
-
-use std::sync::Arc;
+//! Failed or incomplete shutdown with retained final observations.
 
 use thiserror::Error;
 
-use crate::managed::ShutdownFailure;
+use crate::managed::ShutdownReport;
 
-/// All failures observed while stopping and waiting for managed components.
-///
-/// # Examples
-///
-/// ```
-/// use qubit_ioc::ShutdownError;
-///
-/// let error = ShutdownError::new(Vec::new());
-/// assert!(error.failures().is_empty());
-/// ```
+/// Final shutdown observations when an action failed or termination is
+/// incomplete.
 #[derive(Clone, Debug, Error)]
-#[error("{} component cleanup action(s) failed", failures.len())]
+#[error("shutdown observed {} failure(s) and {} incomplete component(s)", report.failures().len(), report.incomplete().len())]
 pub struct ShutdownError {
-    /// Cleanup failures in the order their actions were attempted.
-    failures: Arc<[ShutdownFailure]>,
+    /// Shared observations including incomplete termination.
+    report: ShutdownReport,
 }
 
 impl ShutdownError {
-    /// Creates a shutdown error from all observed stop and wait failures.
-    ///
-    /// # Parameters
-    ///
-    /// `failures` contains cleanup failures in the order their actions ran.
-    ///
-    /// # Returns
-    ///
-    /// An error that can be cloned without cloning its original error sources.
-    #[must_use]
-    pub fn new(failures: Vec<ShutdownFailure>) -> Self {
-        Self {
-            failures: Arc::from(failures),
-        }
+    /// Wraps a completed report while retaining its shared error sources.
+    pub(crate) fn new(report: ShutdownReport) -> Self {
+        Self { report }
     }
 
-    /// Returns every recorded cleanup failure in action order.
+    /// Returns the complete observations for the failed shutdown attempt.
     #[must_use]
-    #[inline]
-    pub fn failures(&self) -> &[ShutdownFailure] {
-        &self.failures
+    pub fn report(&self) -> &ShutdownReport {
+        &self.report
     }
 }

@@ -5,21 +5,21 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-//! Lifecycle phase associated with a cleanup failure.
+//! Lifecycle operation associated with a cleanup failure.
 
-/// Identifies which lifecycle phase failed.
-///
-/// # Examples
-///
-/// ```
-/// use qubit_ioc::ShutdownPhase;
-///
-/// assert_ne!(ShutdownPhase::Stop, ShutdownPhase::Wait);
-/// ```
+/// Distinguishes request, wait, timeout, and timer failures.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ShutdownPhase {
-    /// The component's synchronous stop action failed.
-    Stop,
-    /// The component's asynchronous wait action failed.
+    /// A graceful request returned an error or panicked.
+    RequestGraceful,
+    /// An immediate cancellation request failed.
+    Abort,
+    /// Creating or polling the component wait failed.
     Wait,
+    /// The graceful waiting budget expired.
+    GracefulWait,
+    /// The termination waiting budget expired.
+    TerminationWait,
+    /// Creating or polling a deadline panicked.
+    Deadline,
 }

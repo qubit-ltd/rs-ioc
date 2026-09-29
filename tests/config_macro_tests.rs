@@ -69,7 +69,8 @@ fn test_configuration_properties_reads_subtree_and_root() {
         .with_config(configured_snapshot())
         .expect("register snapshot");
     builder.install::<ServiceSettings>().expect("install subtree settings");
-    let context = builder.build_all().expect("deserialize properties");
+    let application = builder.build_all().expect("deserialize properties");
+    let context = application.context();
     assert_eq!(
         *context.get_by_id::<ServiceSettings>("config.service").expect("subtree"),
         ServiceSettings {
@@ -90,7 +91,8 @@ fn test_configuration_properties_reads_subtree_and_root() {
         .with_config(root_config)
         .expect("register root snapshot");
     root_builder.install::<RootSettings>().expect("install root settings");
-    let root_context = root_builder.build_all().expect("deserialize root properties");
+    let root_application = root_builder.build_all().expect("deserialize root properties");
+    let root_context = root_application.context();
     assert_eq!(
         *root_context.get::<RootSettings>().expect("root"),
         RootSettings { enabled: true }
@@ -108,7 +110,7 @@ fn test_configuration_properties_rejects_unknown_field_with_config_source() {
         .expect("register snapshot");
     builder.install::<ServiceSettings>().expect("install settings");
     let error = builder.build_all().err().expect("unknown property must fail");
-    match &error {
+    match error.cause() {
         BuildError::ConfigReadFailed {
             path_key, target, path, ..
         } => {
@@ -122,6 +124,7 @@ fn test_configuration_properties_rejects_unknown_field_with_config_source() {
         other => panic!("expected configuration failure, got {other:?}"),
     }
     let source = error
+        .cause()
         .source()
         .expect("factory wrapper")
         .source()
@@ -149,8 +152,8 @@ fn test_configuration_properties_missing_config_prevents_all_factories() {
         .build_all()
         .err()
         .expect("missing config must fail graph validation");
-    assert!(matches!(error, BuildError::MissingDependency { dependency, .. }
-        if dependency == Dependency::of::<Config>()));
+    assert!(matches!(error.cause(), BuildError::MissingDependency { dependency, .. }
+        if dependency == &Dependency::of::<Config>()));
     assert_eq!(RUNS.load(Ordering::SeqCst), 0);
 }
 
@@ -163,7 +166,8 @@ fn test_value_reads_component_field_and_bean_parameter() {
         .expect("register snapshot");
     builder.install::<ValueService>().expect("install component");
     builder.install::<ValueBeanBean>().expect("install bean");
-    let context = builder.build_all().expect("read both values");
+    let application = builder.build_all().expect("read both values");
+    let context = application.context();
     assert_eq!(context.get::<ValueService>().expect("component").port, 8140);
     assert_eq!(context.get::<ValueService>().expect("component").port_copy, 8140);
     assert_eq!(*context.get::<ValueBean>().expect("bean"), ValueBean(8140, 8140));
@@ -178,7 +182,7 @@ fn test_value_missing_path_reports_target_and_original_config_error() {
         .expect("register empty snapshot");
     builder.install::<ValueService>().expect("install component");
     let error = builder.build_all().err().expect("missing value must fail");
-    match &error {
+    match error.cause() {
         BuildError::ConfigReadFailed {
             path_key, target, path, ..
         } => {
@@ -192,6 +196,7 @@ fn test_value_missing_path_reports_target_and_original_config_error() {
         other => panic!("expected configuration failure, got {other:?}"),
     }
     let source = error
+        .cause()
         .source()
         .expect("factory wrapper")
         .source()
@@ -209,8 +214,10 @@ fn test_bean_value_missing_path_reports_parameter_name() {
         .expect("register empty snapshot");
     builder.install::<ValueBeanBean>().expect("install bean");
     let error = builder.build_all().err().expect("missing parameter must fail");
-    assert!(matches!(error, BuildError::ConfigReadFailed { path_key, target, .. }
-        if path_key == "service.port" && target == "port"));
+    assert!(
+        matches!(error.cause(), BuildError::ConfigReadFailed { path_key, target, .. }
+        if path_key == "service.port" && target == "port")
+    );
 }
 
 #[test]

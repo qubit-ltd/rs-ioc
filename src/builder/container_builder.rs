@@ -16,21 +16,23 @@ use super::internal::validation::profile_source;
 use super::internal::validation::source;
 use super::internal::validation::valid_profile;
 use super::internal::validation::validate_dependencies;
-use super::internal::validation::validate_options;
 use crate::FactoryFuture;
-use crate::application_context::ApplicationContext;
-use crate::binding::PendingBinding;
+use crate::application::Application;
+use crate::binding::PendingBindingKind;
 use crate::binding::PendingDefinition;
 use crate::binding::profile_is_active;
 use crate::build_context::BuildContext;
+use crate::definition::Definition;
 use crate::dependency::Dependency;
 use crate::error::BuildError;
+use crate::error::BuildFailure;
 use crate::error::FactoryError;
 use crate::error::RegistrationError;
 use crate::graph::ValidatedGraph;
 use crate::key::BindingKey;
 use crate::managed::Managed;
 use crate::managed::ManagedFactoryFuture;
+use crate::managed::WaitPolicy;
 use crate::options::BindingOptions;
 
 // Implements configuration snapshot registration when integration is enabled.
@@ -54,7 +56,8 @@ type PreparedDefinitions = (Vec<PendingDefinition>, Vec<String>, Vec<Dependency>
 /// let mut builder = ContainerBuilder::new();
 /// builder.register_instance(Arc::new(7_u8))?;
 /// builder.root::<u8>();
-/// let context = builder.build()?;
+/// let application = builder.build()?;
+/// let context = application.context();
 /// assert_eq!(*context.get::<u8>()?, 7);
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
@@ -68,6 +71,8 @@ pub struct ContainerBuilder {
     roots: Vec<Dependency>,
     /// Whole-definition replacements applied after profile filtering.
     replacements: Vec<Replacement>,
+    /// Explicit lifecycle deadlines required for selected managed factories.
+    wait_policy: Option<WaitPolicy>,
 }
 
 // Public structured registration/build errors retain complete paths and
@@ -83,6 +88,16 @@ impl ContainerBuilder {
     #[inline]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Configures lifecycle deadlines for managed components.
+    ///
+    /// A selected managed factory requires an explicit policy before any
+    /// factory can execute. Ordinary graphs do not require a policy.
+    #[must_use]
+    pub fn wait_policy(mut self, policy: WaitPolicy) -> Self {
+        self.wait_policy = Some(policy);
+        self
     }
 
     /// Selects `T` as a required root for [`Self::build`] or
@@ -189,10 +204,7 @@ impl ContainerBuilder {
         value: Arc<T>,
         options: BindingOptions,
     ) -> Result<(), RegistrationError> {
-        let source = source::<T>();
-        let (key, profile) = validate_options::<T>(&options, source)?;
-        let binding = PendingBinding::instance(key, value, options.primary, options.order);
-        self.stage_definition(PendingDefinition::new(source, profile, Vec::new(), binding))
+        self.register_definition(Definition::<T>::builder().binding(options).instance(value).build()?)
     }
 
     /// Stages a one-shot synchronous factory with default binding options.
@@ -259,11 +271,13 @@ impl ContainerBuilder {
         T: ?Sized + Send + Sync + 'static,
         F: FnOnce(BuildContext) -> Result<Arc<T>, FactoryError> + Send + 'static,
     {
-        let source = source::<T>();
-        let (key, profile) = validate_options::<T>(&options, source)?;
-        validate_dependencies(dependencies, source)?;
-        let binding = PendingBinding::sync_factory(key, options.primary, options.order, factory);
-        self.stage_definition(PendingDefinition::new(source, profile, dependencies.to_vec(), binding))
+        self.register_definition(
+            Definition::<T>::builder()
+                .binding(options)
+                .dependencies(dependencies)
+                .factory(factory)
+                .build()?,
+        )
     }
 
     /// Stages a one-shot managed synchronous factory with default options.
@@ -345,11 +359,13 @@ impl ContainerBuilder {
         T: ?Sized + Send + Sync + 'static,
         F: FnOnce(BuildContext) -> Result<Managed<T>, FactoryError> + Send + 'static,
     {
-        let source = source::<T>();
-        let (key, profile) = validate_options::<T>(&options, source)?;
-        validate_dependencies(dependencies, source)?;
-        let binding = PendingBinding::managed_sync_factory(key, options.primary, options.order, factory);
-        self.stage_definition(PendingDefinition::new(source, profile, dependencies.to_vec(), binding))
+        self.register_definition(
+            Definition::<T>::builder()
+                .binding(options)
+                .dependencies(dependencies)
+                .managed_factory(factory)
+                .build()?,
+        )
     }
 
     /// Stages a one-shot asynchronous factory with default binding options.
@@ -421,11 +437,13 @@ impl ContainerBuilder {
         T: ?Sized + Send + Sync + 'static,
         F: FnOnce(BuildContext) -> FactoryFuture<T> + Send + 'static,
     {
-        let source = source::<T>();
-        let (key, profile) = validate_options::<T>(&options, source)?;
-        validate_dependencies(dependencies, source)?;
-        let binding = PendingBinding::async_factory(key, options.primary, options.order, factory);
-        self.stage_definition(PendingDefinition::new(source, profile, dependencies.to_vec(), binding))
+        self.register_definition(
+            Definition::<T>::builder()
+                .binding(options)
+                .dependencies(dependencies)
+                .async_factory(factory)
+                .build()?,
+        )
     }
 
     /// Stages a managed asynchronous factory with default options.
@@ -501,11 +519,24 @@ impl ContainerBuilder {
         T: ?Sized + Send + Sync + 'static,
         F: FnOnce(BuildContext) -> ManagedFactoryFuture<T> + Send + 'static,
     {
-        let source = source::<T>();
-        let (key, profile) = validate_options::<T>(&options, source)?;
-        validate_dependencies(dependencies, source)?;
-        let binding = PendingBinding::managed_async_factory(key, options.primary, options.order, factory);
-        self.stage_definition(PendingDefinition::new(source, profile, dependencies.to_vec(), binding))
+        self.register_definition(
+            Definition::<T>::builder()
+                .binding(options)
+                .dependencies(dependencies)
+                .managed_async_factory(factory)
+                .build()?,
+        )
+    }
+
+    /// Atomically stages a complete validated definition of component `T`.
+    ///
+    /// Returns a structured registration error if the definition's internal
+    /// keys are invalid. Factories and projectors are deferred until build.
+    pub fn register_definition<T>(&mut self, value: Definition<T>) -> Result<(), RegistrationError>
+    where
+        T: ?Sized + Send + Sync + 'static,
+    {
+        self.stage_definition(value.into_pending())
     }
 
     /// Invokes a generated or handwritten definition registration entry.
@@ -622,20 +653,23 @@ impl ContainerBuilder {
     ///
     /// # Returns
     ///
-    /// The context containing the selected dependency closure.
+    /// The application owner containing the selected dependency closure.
     ///
     /// # Errors
     ///
-    /// Returns [`BuildError`] for missing roots, invalid graphs, asynchronous
-    /// factories, or construction failures.
-    pub fn build(self) -> Result<ApplicationContext, BuildError> {
+    /// Returns [`BuildFailure`] with its [`BuildError`] cause for missing
+    /// roots, invalid graphs, asynchronous factories, missing managed wait
+    /// policy, or construction failures.
+    pub fn build(mut self) -> Result<Application, BuildFailure> {
         if self.roots.is_empty() {
-            return Err(BuildError::NoRootsSelected);
+            return Err(BuildError::NoRootsSelected.into());
         }
+        let policy = self.wait_policy.take();
         let (definitions, profiles, roots) = self.prepare_definitions()?;
         let graph = ValidatedGraph::validate_roots(definitions, &profiles, Some(&roots))?;
+        let policy = Self::selected_wait_policy(&graph, policy)?;
         graph.require_sync()?;
-        Construction::new(graph).run_sync()
+        Construction::new(graph, policy).run_sync()
     }
 
     /// Validates and constructs every definition active under the configured
@@ -646,17 +680,20 @@ impl ContainerBuilder {
     ///
     /// # Returns
     ///
-    /// The context containing every active definition.
+    /// The application owner containing every active definition.
     ///
     /// # Errors
     ///
-    /// Returns [`BuildError`] for invalid graphs, asynchronous factories, or
+    /// Returns [`BuildFailure`] with its [`BuildError`] cause for invalid
+    /// graphs, asynchronous factories, missing managed wait policy, or
     /// construction failures.
-    pub fn build_all(self) -> Result<ApplicationContext, BuildError> {
+    pub fn build_all(mut self) -> Result<Application, BuildFailure> {
+        let policy = self.wait_policy.take();
         let (definitions, profiles, _) = self.prepare_definitions()?;
         let graph = ValidatedGraph::validate_roots(definitions, &profiles, None)?;
+        let policy = Self::selected_wait_policy(&graph, policy)?;
         graph.require_sync()?;
-        Construction::new(graph).run_sync()
+        Construction::new(graph, policy).run_sync()
     }
 
     /// Builds the components selected by one or more calls to [`Self::root`]
@@ -671,19 +708,23 @@ impl ContainerBuilder {
     ///
     /// # Returns
     ///
-    /// A future that resolves to the context containing the selected closure.
+    /// A future that resolves to the owner of the selected component graph.
     ///
     /// # Errors
     ///
-    /// Returns [`BuildError`] for missing roots, invalid graphs, or factory
-    /// failures. Managed cleanup failures are retained with the build error.
-    pub async fn build_async(self) -> Result<ApplicationContext, BuildError> {
+    /// Returns [`BuildFailure`] with its [`BuildError`] cause for missing
+    /// roots, invalid graphs, missing managed wait policy, or factory
+    /// failures. Already constructed managed resources are aborted before
+    /// returning; the failure owns their deferred cleanup handle.
+    pub async fn build_async(mut self) -> Result<Application, BuildFailure> {
         if self.roots.is_empty() {
-            return Err(BuildError::NoRootsSelected);
+            return Err(BuildError::NoRootsSelected.into());
         }
+        let policy = self.wait_policy.take();
         let (definitions, profiles, roots) = self.prepare_definitions()?;
         let graph = ValidatedGraph::validate_roots(definitions, &profiles, Some(&roots))?;
-        Construction::new(graph).run_async().await
+        let policy = Self::selected_wait_policy(&graph, policy)?;
+        Construction::new(graph, policy).run_async().await
     }
 
     /// Validates and asynchronously constructs every definition active under
@@ -691,17 +732,36 @@ impl ContainerBuilder {
     ///
     /// # Returns
     ///
-    /// A future that resolves to the context containing every active
-    /// definition.
+    /// A future that resolves to the owner of every active definition.
     ///
     /// # Errors
     ///
-    /// Returns [`BuildError`] for invalid graphs or factory failures. Managed
-    /// cleanup failures are retained with the build error.
-    pub async fn build_all_async(self) -> Result<ApplicationContext, BuildError> {
+    /// Returns [`BuildFailure`] with its [`BuildError`] cause for invalid
+    /// graphs, missing managed wait policy, or factory failures. The
+    /// failure owns deferred managed cleanup; construction never waits for
+    /// rollback.
+    pub async fn build_all_async(mut self) -> Result<Application, BuildFailure> {
+        let policy = self.wait_policy.take();
         let (definitions, profiles, _) = self.prepare_definitions()?;
         let graph = ValidatedGraph::validate_roots(definitions, &profiles, None)?;
-        Construction::new(graph).run_async().await
+        let policy = Self::selected_wait_policy(&graph, policy)?;
+        Construction::new(graph, policy).run_async().await
+    }
+
+    /// Requires explicit deadlines only when the validated selection owns
+    /// managed resources.
+    fn selected_wait_policy(graph: &ValidatedGraph, policy: Option<WaitPolicy>) -> Result<WaitPolicy, BuildError> {
+        let has_managed = graph.order.iter().any(|location| {
+            matches!(
+                &graph.definitions[location.definition].bindings[location.binding].kind,
+                PendingBindingKind::ManagedSyncFactory(_) | PendingBindingKind::ManagedAsyncFactory(_)
+            )
+        });
+        match policy {
+            Some(policy) => Ok(policy),
+            None if has_managed => Err(BuildError::MissingWaitPolicy),
+            None => Ok(WaitPolicy::unbounded()),
+        }
     }
 
     /// Filters profiles, then applies each exact-key override before graph

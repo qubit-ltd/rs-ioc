@@ -1,6 +1,38 @@
 # Changelog
 
-## 0.2.0 — release candidate
+## 0.3.0 — release candidate
+
+Breaking lifecycle and definition changes from the 0.2 source line; this version
+has not been published to crates.io. The [bilingual migration guide](doc/lifecycle.md)
+([中文](doc/lifecycle.zh_CN.md)) gives every old-to-new call and exit path.
+
+- Builds now return the unique `Application` owner; cloneable `ApplicationContext`
+  handles are obtained through `application.context()`. Query clones do not block
+  shutdown, and lookup does not imply that a service still admits work.
+- `Application::begin_shutdown(ShutdownMode::Graceful)` requests draining when
+  its handle is first polled; `Immediate` requests all aborts before returning.
+  Selected managed graphs require explicit `WaitPolicy`; real applications use
+  bounded grace and termination deadlines with an application-driven timer.
+- Sync and async builds now immediately return `BuildFailure` with the original
+  `cause()` and optional `take_cleanup()` / `into_parts()` handle. Applications
+  explicitly wait to observe rollback. `BuildError::CleanupFailed` is removed.
+- Dropping the owner, an untransferred `Managed`, or a shutdown handle requests
+  best-effort abort without waiting. `ShutdownReport::incomplete()` records
+  unconfirmed termination, not forced termination.
+- `Definition::builder()` and `register_definition` expose complete atomic
+  definitions, including factories and trait aliases. Macros use the same public
+  core. Hidden `codegen_v1::DefinitionDraft` is removed; remaining
+  `__private::codegen_v1` names serve only configuration diagnostics and
+  generated-code glue.
+- Per-type collection ordering is precomputed at context publication. This
+  avoids repeated query sorting; no overall linear-time or production speed
+  guarantee is implied.
+- The EventBus 0.18 adapter uses non-blocking `request_shutdown` and awaits its
+  generation-bound ticket with `wait_async()`. Synchronous `shutdown`, including
+  Immediate, still waits and is unsuitable as a managed abort callback.
+
+
+## 0.2.0 — historical release candidate
 
 This release candidate prepares the first published release and permits breaking
 changes from the earlier 0.1.0 source line.
@@ -32,4 +64,5 @@ changes from the earlier 0.1.0 source line.
   These are repository source locations, not public Rust module paths. `ApplicationContext`, `ContainerBuilder`, `ComponentDefinition`, `Managed`, and shutdown types remain available from their documented facade or crate-root exports.
 - `#[value]` and `ConfigurationProperties` keep direct, non-interpolating reads. Structured deserialization rejects unknown fields by default. Applications needing interpolation call `Config::get_interpolated` explicitly in a factory.
 
-`0.2.0` is a release candidate in this checkout; no registry release has been made.
+Historical note: `0.2.0` was an unpublished release candidate in its source checkout.
+The current checkout targets unpublished `0.3.0`.

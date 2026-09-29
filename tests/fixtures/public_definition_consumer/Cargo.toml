@@ -1,0 +1,10 @@
+[package]
+name = "ioc-public-definition-consumer"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+qubit-ioc = { path = "../../..", default-features = false }

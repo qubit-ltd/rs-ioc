@@ -7,10 +7,11 @@
 // =============================================================================
 #![deny(unused_must_use)]
 
-use qubit_ioc::ApplicationContext;
+use qubit_ioc::ShutdownMode;
+use qubit_ioc::Application;
 
-fn ignored(context: ApplicationContext) {
-    context.begin_shutdown();
+fn ignored(application: Application) {
+    application.begin_shutdown(ShutdownMode::Immediate);
 }
 
 fn main() {}

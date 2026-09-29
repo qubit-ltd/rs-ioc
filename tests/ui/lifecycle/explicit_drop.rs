@@ -9,12 +9,13 @@
 
 use std::sync::Arc;
 
+use qubit_ioc::ShutdownMode;
 use qubit_ioc::ContainerBuilder;
 use qubit_ioc::Managed;
 
 fn main() {
     let builder = ContainerBuilder::new();
-    drop(builder.build_all().unwrap().begin_shutdown());
+    drop(builder.build_all().unwrap().begin_shutdown(ShutdownMode::Immediate));
     drop(Managed::new(Arc::new(1_u8), |_| Ok(())));
 }
 

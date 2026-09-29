@@ -14,11 +14,11 @@ use std::task::Context;
 use std::task::Poll;
 use std::task::Waker;
 
-use qubit_ioc::__private::codegen_v1::DefinitionDraft;
 use qubit_ioc::BindingOptions;
 use qubit_ioc::BuildError;
 use qubit_ioc::ComponentDefinition;
 use qubit_ioc::ContainerBuilder;
+use qubit_ioc::Definition;
 use qubit_ioc::DefinitionSource;
 use qubit_ioc::Dependency;
 use qubit_ioc::FactoryError;
@@ -120,7 +120,7 @@ fn test_factory_failure_in_second_branch_keeps_root_in_path() {
     builder.root::<Root>();
 
     let error = builder.build().err().expect("factory must fail");
-    match error {
+    match error.cause() {
         BuildError::FactoryFailed { path, .. } => {
             assert_eq!(path.len(), 2);
             assert_eq!(path[0].type_name(), type_name::<Root>());
@@ -147,7 +147,7 @@ fn test_async_factory_failure_in_second_branch_keeps_root_in_path() {
     builder.root::<Root>();
 
     let error = ready(builder.build_async()).err().expect("factory must fail");
-    match error {
+    match error.cause() {
         BuildError::FactoryFailed { path, .. } => {
             assert_eq!(path.len(), 2);
             assert_eq!(path[0].type_name(), type_name::<Root>());
@@ -172,7 +172,7 @@ fn test_cycle_error_keeps_explicit_root_registered_after_cycle() {
     builder.root::<CycleRoot>();
 
     let error = builder.build().err().expect("cycle must fail");
-    match error {
+    match error.cause() {
         BuildError::DependencyCycle { path } => assert_eq!(
             path.iter().map(|key| key.type_name()).collect::<Vec<_>>(),
             vec![
@@ -213,7 +213,7 @@ fn test_root_factory_failure_restores_a_deep_path_without_recursive_walks() {
     builder.root_by_id::<u32>("chain.n0").expect("select chain root");
 
     let error = builder.build().err().expect("last factory must fail");
-    match error {
+    match error.cause() {
         BuildError::FactoryFailed { path, .. } => {
             assert_eq!(path.len(), NODE_COUNT);
             assert_eq!(
@@ -238,7 +238,8 @@ fn test_optional_dependency_is_none_only_when_missing() {
         })
         .expect("register optional root");
     builder.root::<OptionalRoot>();
-    let context = builder.build().expect("missing optional is allowed");
+    let application = builder.build().expect("missing optional is allowed");
+    let context = application.context();
     assert!(context.get::<OptionalRoot>().expect("root").0.is_none());
 }
 
@@ -269,7 +270,7 @@ fn test_optional_dependency_rejects_ambiguity() {
         )
         .expect("two");
     builder.root::<OptionalRoot>();
-    assert!(matches!(builder.build(), Err(BuildError::AmbiguousBinding { .. })));
+    assert!(matches!(builder.build(), Err(failure) if matches!(failure.cause(), BuildError::AmbiguousBinding { .. })));
 }
 
 #[test]
@@ -293,7 +294,8 @@ fn test_collection_dependency_is_stable() {
             .expect("register collection item");
     }
     builder.root::<Collector>();
-    let context = builder.build().expect("collection dependencies resolve");
+    let application = builder.build().expect("collection dependencies resolve");
+    let context = application.context();
     let collector = context.get::<Collector>().expect("collector");
     assert_eq!(collector.0.iter().map(|value| **value).collect::<Vec<_>>(), [1, 2, 10]);
 }
@@ -303,7 +305,8 @@ fn test_unique_primary_selects_interface_alias() {
     let mut builder = ContainerBuilder::new();
     builder.install::<Aliases>().expect("install aliases");
     builder.root::<dyn Named>();
-    let context = builder.build().expect("one alias is primary");
+    let application = builder.build().expect("one alias is primary");
+    let context = application.context();
     assert_eq!(context.get::<dyn Named>().expect("primary").name(), "first");
 }
 
@@ -311,9 +314,10 @@ fn test_unique_primary_selects_interface_alias() {
 fn test_concrete_binding_does_not_inherit_alias_priority() {
     let mut builder = ContainerBuilder::new();
     builder.install::<Aliases>().expect("install aliases");
-    let context = builder
+    let application = builder
         .build_all()
         .expect("alias priority does not affect concrete binding");
+    let context = application.context();
     assert_eq!(context.get::<First>().expect("concrete binding").name(), "first");
 }
 
@@ -348,10 +352,11 @@ fn test_active_profiles_replace_previous_selection_without_running_factories() {
             .expect("register profile factory");
     }
     assert!(calls.lock().expect("calls").is_empty());
-    let context = builder.build_all().expect("dev definition is filtered out");
+    let application = builder.build_all().expect("dev definition is filtered out");
+    let context = application.context();
     assert!(context.get_by_id::<u8>("env.dev").is_err());
     assert_eq!(calls.lock().expect("calls").as_slice(), ["env.prod", "env.common"]);
-    drop(context);
+    drop(application);
 
     let mut defaults = ContainerBuilder::new()
         .active_profiles(&[])
@@ -373,9 +378,10 @@ fn test_active_profiles_replace_previous_selection_without_running_factories() {
             )
             .expect("register profile instance");
     }
-    let context = defaults
+    let application = defaults
         .build_all()
         .expect("only default and profile-free definitions remain");
+    let context = application.context();
     assert!(context.get_by_id::<&str>("env.default").is_ok());
     assert!(context.get_by_id::<&str>("env.common").is_ok());
     assert!(context.get_by_id::<&str>("env.dev").is_err());
@@ -411,7 +417,7 @@ fn test_factories_run_dependency_first_with_stable_same_level_order() {
         })
         .expect("register left third");
     builder.root::<OrderRoot>();
-    builder.build().expect("valid graph builds");
+    drop(builder.build().expect("valid graph builds"));
     assert_eq!(events.lock().expect("events").as_slice(), ["right", "left", "root"]);
 }
 
@@ -427,7 +433,7 @@ fn test_graph_error_prevents_all_factory_side_effects() {
         })
         .expect("register root");
     builder.root::<MissingRoot>();
-    assert!(matches!(builder.build(), Err(BuildError::MissingDependency { .. })));
+    assert!(matches!(builder.build(), Err(failure) if matches!(failure.cause(), BuildError::MissingDependency { .. })));
     assert!(events.lock().expect("events").is_empty());
 }
 
@@ -445,7 +451,7 @@ fn test_shared_failure_uses_declared_root_order_for_equal_length_paths() {
         .expect("shared failing dependency");
     builder.root::<FirstRoot>();
     builder.root::<SecondRoot>();
-    match builder.build().err().expect("shared dependency fails") {
+    match builder.build().err().expect("shared dependency fails").cause() {
         BuildError::FactoryFailed { path, .. } => assert_eq!(
             path.iter().map(|key| key.type_name()).collect::<Vec<_>>(),
             [type_name::<FirstRoot>(), type_name::<SharedBad>()]
@@ -471,7 +477,7 @@ fn test_shared_failure_prefers_shorter_root_path() {
         .expect("shared failing dependency");
     builder.root::<DeepRoot>();
     builder.root::<SecondRoot>();
-    match builder.build().err().expect("shared dependency fails") {
+    match builder.build().err().expect("shared dependency fails").cause() {
         BuildError::FactoryFailed { path, .. } => assert_eq!(
             path.iter().map(|key| key.type_name()).collect::<Vec<_>>(),
             [type_name::<SecondRoot>(), type_name::<SharedBad>()]
@@ -510,7 +516,7 @@ fn test_collection_failure_path_identifies_second_ordered_item() {
         )
         .expect("second branch");
     builder.root::<Collector>();
-    match builder.build().err().expect("second item fails") {
+    match builder.build().err().expect("second item fails").cause() {
         BuildError::FactoryFailed { path, .. } => assert_eq!(
             path.iter()
                 .map(|key| key.id().map(|id| id.as_str()))
@@ -524,19 +530,22 @@ fn test_collection_failure_path_identifies_second_ordered_item() {
 #[test]
 fn test_trait_alias_root_factory_failure_path_includes_concrete_member() {
     let mut builder = ContainerBuilder::new();
-    let mut draft = DefinitionDraft::<AliasConcrete>::new_sync(
-        DefinitionSource::new("tests", "graph", "tests/graph_tests.rs", 1, 1, "AliasConcrete"),
-        &[],
-        BindingOptions::default(),
-        |_| Err(FactoryError::new(std::io::Error::other("concrete failure"))),
-    )
-    .expect("draft");
-    draft
+    let definition = Definition::<AliasConcrete>::builder()
+        .source(DefinitionSource::new(
+            "tests",
+            "graph",
+            "tests/graph_tests.rs",
+            1,
+            1,
+            "AliasConcrete",
+        ))
+        .factory(|_| Err(FactoryError::new(std::io::Error::other("concrete failure"))))
         .bind::<dyn AliasService, _>(BindingOptions::default(), |value| value)
-        .expect("alias");
-    draft.register(&mut builder).expect("register definition");
+        .build()
+        .expect("definition with alias");
+    builder.register_definition(definition).expect("register definition");
     builder.root::<dyn AliasService>();
-    match builder.build().err().expect("concrete factory fails") {
+    match builder.build().err().expect("concrete factory fails").cause() {
         BuildError::FactoryFailed { path, .. } => assert_eq!(
             path.iter().map(|key| key.type_name()).collect::<Vec<_>>(),
             [type_name::<dyn AliasService>(), type_name::<AliasConcrete>()]
@@ -554,7 +563,7 @@ fn test_build_all_isolated_factory_failure_has_single_binding_path() {
     builder
         .register_factory::<IsolatedBad, _>(&[], |_| Err(FactoryError::new(std::io::Error::other("isolated"))))
         .expect("bad isolated binding");
-    match builder.build_all().err().expect("isolated factory fails") {
+    match builder.build_all().err().expect("isolated factory fails").cause() {
         BuildError::FactoryFailed { path, .. } => assert_eq!(
             path.iter().map(|key| key.type_name()).collect::<Vec<_>>(),
             [type_name::<IsolatedBad>()]

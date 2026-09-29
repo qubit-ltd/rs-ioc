@@ -29,10 +29,11 @@ fn fixture_config() -> Config {
 
 #[test]
 fn test_explicit_provider_list_registers_aliases_and_shares_identity() {
-    let context = assemble(fixture_config(), &[])
+    let application = assemble(fixture_config(), &[])
         .expect("assemble explicit provider list")
         .build_all()
         .expect("build cross-crate graph");
+    let context = application.context();
     let service = context.get::<AppService>().expect("service from linked provider");
     let memory = context
         .get_by_id::<MemoryRepository>("fixture.repo.memory")
@@ -60,10 +61,11 @@ fn test_explicit_provider_list_registers_aliases_and_shares_identity() {
 
 #[test]
 fn test_explicit_provider_list_respects_profiles() {
-    let context = assemble(fixture_config(), &["default", "preview"])
+    let application = assemble(fixture_config(), &["default", "preview"])
         .expect("assemble with both profiles")
         .build_all()
         .expect("build both profiles");
+    let context = application.context();
     assert!(context.get::<PreviewMarker>().is_ok());
     assert!(context.get::<AppService>().is_ok());
 }
@@ -75,9 +77,9 @@ fn test_linked_properties_keep_original_config_error() {
         .build_all()
         .err()
         .expect("missing settings must fail");
-    assert!(matches!(&error, BuildError::ConfigReadFailed { path_key, target, .. }
+    assert!(matches!(error.cause(), BuildError::ConfigReadFailed { path_key, target, .. }
         if path_key == "fixture" && target == "Settings"));
-    let source = error.source().expect("factory error").source().expect("config error");
+    let source = error.cause().source().expect("factory error").source().expect("config error");
     assert!(source.is::<ConfigError>());
 }
 
@@ -88,5 +90,5 @@ fn test_uninstalled_cross_crate_root_is_reported() {
 
     let mut builder = ContainerBuilder::new();
     builder.root::<AppService>();
-    assert!(matches!(builder.build(), Err(BuildError::MissingRoot { .. })));
+    assert!(matches!(builder.build(), Err(failure) if matches!(failure.cause(), BuildError::MissingRoot { .. })));
 }

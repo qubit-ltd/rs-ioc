@@ -57,7 +57,9 @@ fn test_build_resolves_reverse_registered_chain() {
         .register_instance(Arc::new(LevelOne(42)))
         .expect("stage level one");
 
-    let context = builder.build_all().expect("valid graph must build");
+    let application = builder.build_all().expect("valid graph must build");
+
+    let context = application.context();
     assert_eq!(context.get::<LevelThree>().expect("built level three").0.0.0, 42);
 }
 
@@ -85,8 +87,8 @@ fn test_build_requires_async_before_running_any_factory() {
         .expect("stage later asynchronous factory");
 
     let error = builder.build_all().err().expect("synchronous build requires async");
-    assert!(matches!(error, BuildError::AsyncRequired { definition, key }
-        if key == BindingKey::of::<u64>(None)
+    assert!(matches!(error.cause(), BuildError::AsyncRequired { definition, key }
+        if key == &BindingKey::of::<u64>(None)
             && definition.file == file!()
             && definition.line == async_line
             && definition.item == std::any::type_name::<u64>()));
@@ -114,7 +116,9 @@ fn test_build_sync_root_ignores_unselected_async_factory() {
         .expect("stage unselected asynchronous factory");
     builder.root::<u32>();
 
-    let context = builder.build().expect("selected graph only requires sync");
+    let application = builder.build().expect("selected graph only requires sync");
+
+    let context = application.context();
     assert_eq!(*context.get::<u32>().expect("selected synchronous value"), 1);
     assert!(context.get_all::<u64>().is_empty());
     assert_eq!(sync_calls.load(Ordering::SeqCst), 1);
@@ -141,10 +145,11 @@ fn test_build_async_mixes_factory_kinds() {
     assert_send(&future);
     let waker = Waker::noop();
     let mut poll_context = Context::from_waker(waker);
-    let context = match future.as_mut().poll(&mut poll_context) {
+    let application = match future.as_mut().poll(&mut poll_context) {
         Poll::Ready(result) => result.expect("ready factories must build"),
         Poll::Pending => panic!("ready factories unexpectedly yielded"),
     };
+    let context = application.context();
     assert_eq!(*context.get::<u64>().expect("built async value"), 7);
 }
 
@@ -162,8 +167,8 @@ fn test_build_retains_factory_source_chain() {
         Ok(_) => panic!("factory must fail"),
         Err(error) => error,
     };
-    assert!(matches!(error, BuildError::FactoryFailed { .. }));
-    let factory_error = error.source().expect("factory error source");
+    assert!(matches!(error.cause(), BuildError::FactoryFailed { .. }));
+    let factory_error = error.cause().source().expect("factory error source");
     assert!(factory_error.source().expect("domain source").is::<DomainFailure>());
 }
 
@@ -196,7 +201,7 @@ fn test_build_maps_generated_config_error_with_complete_path() {
         message.contains("path:"),
         "diagnostic must show dependency path: {message}"
     );
-    match &error {
+    match error.cause() {
         BuildError::ConfigReadFailed {
             path_key, target, path, ..
         } => {
@@ -209,6 +214,7 @@ fn test_build_maps_generated_config_error_with_complete_path() {
         other => panic!("expected ConfigReadFailed, got {other:?}"),
     }
     let source = error
+        .cause()
         .source()
         .expect("factory wrapper")
         .source()
@@ -233,7 +239,7 @@ fn test_build_failure_carries_consumer_to_dependency_path() {
         Ok(_) => panic!("dependency factory must fail"),
         Err(error) => error,
     };
-    match error {
+    match error.cause() {
         BuildError::FactoryFailed { path, .. } => {
             assert_eq!(path.len(), 2);
             assert_eq!(path[0].type_name(), std::any::type_name::<u64>());
@@ -259,7 +265,7 @@ fn test_build_failure_path_includes_later_registered_consumer() {
         Ok(_) => panic!("dependency factory must fail"),
         Err(error) => error,
     };
-    match error {
+    match error.cause() {
         BuildError::FactoryFailed { path, .. } => {
             assert_eq!(path.len(), 2);
             assert_eq!(path[0].type_name(), std::any::type_name::<u64>());
@@ -312,6 +318,7 @@ fn test_register_factory_rejects_duplicate_requests_atomically() {
         *builder
             .build_all()
             .expect("valid graph")
+            .context()
             .get::<u64>()
             .expect("instance"),
         2
@@ -337,6 +344,7 @@ fn test_build_filters_inactive_profile_before_duplicate_check() {
         *builder
             .build_all()
             .expect("inactive duplicate is valid")
+            .context()
             .get::<u32>()
             .expect("active instance"),
         1
@@ -367,6 +375,7 @@ fn test_invalid_registration_id_and_profile_return_structured_errors() {
         builder
             .build_all()
             .expect("rejected registrations leave no bindings")
+            .context()
             .get_all::<u32>()
             .is_empty()
     );
@@ -405,7 +414,8 @@ fn test_collection_dependency_uses_id_order_when_priorities_match() {
             ))
         })
         .expect("stage collection consumer");
-    let context = builder.build_all().expect("build ordered collection");
+    let application = builder.build_all().expect("build ordered collection");
+    let context = application.context();
     assert_eq!(
         context.get::<Vec<u32>>().expect("collection result").as_slice(),
         &[1, 26]
@@ -432,9 +442,10 @@ fn test_build_async_preserves_both_sync_and_async_factory_failures() {
     let error = ready(sync_builder.build_all_async())
         .err()
         .expect("sync failure must propagate from async build");
-    assert!(matches!(&error, BuildError::FactoryFailed { .. }));
+    assert!(matches!(error.cause(), BuildError::FactoryFailed { .. }));
     assert!(
         error
+            .cause()
             .source()
             .expect("factory wrapper")
             .source()
@@ -449,9 +460,10 @@ fn test_build_async_preserves_both_sync_and_async_factory_failures() {
     let error = ready(async_builder.build_all_async())
         .err()
         .expect("async failure must propagate from async build");
-    assert!(matches!(&error, BuildError::FactoryFailed { .. }));
+    assert!(matches!(error.cause(), BuildError::FactoryFailed { .. }));
     assert!(
         error
+            .cause()
             .source()
             .expect("factory wrapper")
             .source()

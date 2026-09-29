@@ -12,7 +12,6 @@ use thiserror::Error;
 use super::FactoryError;
 use crate::dependency::Dependency;
 use crate::key::BindingKey;
-use crate::managed::ShutdownFailure;
 use crate::options::DefinitionSource;
 
 /// Errors detected before or during container construction.
@@ -27,21 +26,14 @@ use crate::options::DefinitionSource;
 ///     Ok(_) => panic!("a root is required"),
 ///     Err(error) => error,
 /// };
-/// assert!(matches!(error, BuildError::NoRootsSelected));
+/// assert!(matches!(error.cause(), BuildError::NoRootsSelected));
 /// ```
 #[derive(Debug, Error)]
 #[must_use = "build errors must be handled or explicitly discarded"]
 pub enum BuildError {
-    /// A factory failed and one or more managed components also failed to clean
-    /// up.
-    #[error("build failed: {cause}; cleanup failures: {failures:?}")]
-    CleanupFailed {
-        /// Original graph or factory construction failure.
-        #[source]
-        cause: Box<BuildError>,
-        /// Stop or wait failures collected while unwinding the build.
-        failures: Vec<ShutdownFailure>,
-    },
+    /// A selected managed factory lacks an explicit lifecycle wait policy.
+    #[error("selected managed factories require an explicit wait policy")]
+    MissingWaitPolicy,
     /// A root-scoped build was requested without selecting a root component.
     #[error("no build roots were selected; register at least one root or call build_all")]
     NoRootsSelected,

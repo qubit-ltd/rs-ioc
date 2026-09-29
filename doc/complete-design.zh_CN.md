@@ -1,10 +1,10 @@
 # qubit-ioc 当前设计
 
-> 本文描述当前实现（0.2.0 发布候选）的设计与公开契约。英文版见[Current Design](complete-design.md)。历史设计背景见[容器内核草案](design.zh_CN.md)和[注解草案](annotation-design.zh_CN.md)；接入步骤见[中文用户手册](user_guide.zh_CN.md)与[English user guide](user_guide.md)。实现和测试是事实依据，本文不承诺未在公开 API 中提供的能力。
+> 本文描述当前实现（0.3.0 发布候选）的设计与公开契约。英文版见[Current Design](complete-design.md)。历史设计背景见[容器内核草案](design.zh_CN.md)和[注解草案](annotation-design.zh_CN.md)；接入步骤见[中文用户手册](user_guide.zh_CN.md)与[English user guide](user_guide.md)。实现和测试是事实依据，本文不承诺未在公开 API 中提供的能力。
 
 ## 1. 目标与边界
 
-`qubit-ioc` 在应用启动阶段显式登记应用级共享组件，解析并验证依赖图，再按依赖顺序调用工厂。成功后发布只读 `ApplicationContext`。组件定义可以通过过程宏生成，也可以手动注册；宏不会自动进入容器，应用或 provider 必须调用 `install::<T>()` 或自己的 `register_ioc(&mut builder)`。
+`qubit-ioc` 在应用启动阶段显式登记应用级共享组件，解析并验证依赖图，再按依赖顺序调用工厂。成功后返回独占生命周期的 `Application`，通过 `context()` 提供只读 `ApplicationContext`。组件定义可以通过过程宏生成，也可以手动注册；宏不会自动进入容器，应用或 provider 必须调用 `install::<T>()` 或自己的 `register_ioc(&mut builder)`。
 
 容器负责绑定、依赖解析、构造顺序、诊断路径和显式托管关闭。`qubit-spi` 负责 provider 选择与回退。容器不提供请求作用域、原型作用域、热更新、循环代理、自动发现、运行时反射构造或未托管资源的自动关闭。
 
@@ -21,7 +21,11 @@ workspace 包含运行时 `qubit-ioc` 与过程宏 `qubit-ioc-macros`。Edition 
 
 ## 3. 定义与绑定
 
-**定义**是一次组件或工厂注册；**绑定**由 Rust 类型和可选 ID 唯一标识。ID 区分大小写，以点分段；每段以 ASCII 字母开头，后续可含字母、数字和下划线。一个具体实例可通过显式 `bind = dyn Trait` 暴露 trait 绑定；独立 `impl Trait for Type` 不会自动产生绑定。具体键和其接口别名共享同一底层 `Arc`。
+**定义**是一次组件或工厂注册。公开 `Definition::builder()` 可设置 `binding`、
+`dependencies`、实例、同步/异步与托管工厂，还可用 `bind` 声明 trait alias；
+`build()` 原子验证，`ContainerBuilder::register_definition` 登记。宏也使用同一
+公开核心；`__private::codegen_v1` 只保留配置诊断与生成代码 glue，已无旧的
+`DefinitionDraft` 协议。**绑定**由 Rust 类型和可选 ID 唯一标识。ID 区分大小写，以点分段；每段以 ASCII 字母开头，后续可含字母、数字和下划线。一个具体实例可通过显式 `bind = dyn Trait` 暴露 trait 绑定；独立 `impl Trait for Type` 不会自动产生绑定。具体键和其接口别名共享同一底层 `Arc`。
 
 宏支持具名字段结构体和单元结构体，以及同步/异步自由函数工厂。组件字段或 bean 参数显式声明依赖；支持单值、精确 ID、可选和集合请求。对其他数据形状，使用手动工厂。字段和 bean 参数的 `cfg` 激活条件会同步投影到宏生成的依赖请求、构造代码和函数调用实参；嵌套 `cfg_attr(..., cfg(...))` 转换为等价条件。被禁用字段上的不支持注入类型不会拒绝该配置；启用字段时会产生带字段 span 的编译错误。`inject`、`value` 等 helper 属性必须直接写在组件字段或 bean 参数上，放进 `cfg_attr` 会得到明确诊断。配置宏需要 `config` feature 和已登记的配置快照。
 
@@ -47,7 +51,8 @@ workspace 包含运行时 `qubit-ioc` 与过程宏 `qubit-ioc-macros`。Edition 
 
 ## 5. 配置与上下游边界
 
-构建后的上下文支持通过 `Arc` 并发执行只读查询。关闭仍由唯一所有者发起：释放共享句柄后用 `Arc::try_unwrap` 取回上下文，再调用 `begin_shutdown(self)`。
+上下文可克隆并支持并发只读查询；唯一的 `Application` owner 可在查询句柄克隆仍存活时
+发起关闭。查询成功不表示服务仍接收业务工作。
 
 
 启用 `config` 后，`with_config(config)` 将配置快照放入 builder；第二个活跃 `Config` 同键冲突在构建时作为 `BuildError::DuplicateBinding` 返回。`#[value]` 读取配置值，`#[ConfigurationProperties]` 读取结构化子树。缺少快照或反序列化失败在验证或构造阶段返回错误，并保留原始配置错误 source 与组件/字段路径。
@@ -60,13 +65,36 @@ provider crate 应导出显式 `register_ioc(&mut builder)`，由应用决定纳
 
 ## 6. 错误与生命周期
 
-错误按阶段表达：`RegistrationError` 表示 ID、profile、重复依赖声明等登记问题；`BuildError` 表示 roots、候选、重复活跃绑定、图、异步要求、配置或工厂问题；`ResolveError` 表示 context 查询问题；`ShutdownError` 聚合资源关闭失败。工厂和配置错误保留 source 链，构建错误尽可能包含完整依赖路径和定义来源。多个 root 保留声明顺序；cycle 诊断包含 root 前缀和实际环路后缀，定义成员补全也保留对应来源关系。
+`RegistrationError` 表示定义或键格式不合法。`BuildError` 是图、配置或工厂失败的
+原始原因；同步和异步构建都返回 `Result<Application, BuildFailure>`。
+`BuildFailure::cause()` 保留 source 链与诊断路径，`take_cleanup()` 或
+`into_parts()` 移交可选回滚句柄。后续工厂失败时，构建先为已移交托管资源请求 abort，
+然后立即返回；应用必须显式等待清理句柄，才能观察终止与清理错误。图验证和预检
+失败时没有已构造资源，也没有清理句柄。工厂 unwind panic 仍向外传播；取消异步
+构建只请求 abort，不能等待。
 
-托管资源只能由托管工厂在依赖图验证通过后创建，再通过 `Managed<T>` 注册 stop 和可选的异步 wait。已有外部资源应作为普通实例注册，并由应用自行负责关闭。同步托管工厂可在同步或异步构建中执行，后续工厂失败时已成功移交的资源会参与回滚。应用显式调用 `context.begin_shutdown()`，再对返回句柄调用 `wait().await`。关闭会先按逆构建顺序执行全部 stop，再按该顺序执行 wait；stop 返回错误或 unwind panic 会记录为 `ShutdownFailure` 并继续后续动作。wait 回调创建和 wait future 轮询中的 unwind panic 也会记录为 `ShutdownPhase::Wait` 失败，并继续等待其他组件。`panic = "abort"` 和清理 future 析构时的 panic 无法由此机制捕获。取消 wait 后保留句柄并再次调用 `wait()`，会继续同一个 future。
+`Application` 独占生命周期，与可克隆的查询 context 分离。选中托管图须显式配置
+`WaitPolicy`；实际应用通过 `WaitPolicy::bounded(grace, termination, timer)` 和正常
+驱动的计时器设置期限。`Managed::new` 提供非阻塞 abort 请求，
+`.with_graceful_stop` 可请求排空，`.with_wait` 确认终止。
+`Application::begin_shutdown(ShutdownMode::Graceful)` 发布 ShuttingDown 并转移所有权；
+首次轮询 `wait` 时才按逆构建顺序请求排空，每个消费者终止后才关闭其依赖。
+缺少 graceful 支持的组件降级为 abort 并进入报告的 `fallbacks()`。
+`Immediate` 则在返回句柄前为全部托管组件请求 abort，然后显式 `wait` 确认终止。
+某个清理动作报错或 unwind panic 会记录在报告中，后续条目仍会执行。
 
-`Managed<T>` 和 `ShutdownHandle` 使用类型级 `must_use` 提示。托管值应返回给容器；直接丢弃未移交的 `Managed` 不会调用清理。关闭句柄应等待，若有意放弃等待，可显式 `drop(context.begin_shutdown())`，此时 stop 已经执行。
+取消 `wait` future 会把活跃 future 与 deadline 留在句柄里，再次调用会继续原预算。
+`abort()` 可升级未完成条目；`abandon()` 请求剩余 abort、返回报告但不启动 wait。
+owner、未移交的 `Managed` 与句柄 Drop 尽力请求 abort，不等待；查询 context Drop
+不请求关闭。`ShutdownReport::is_complete()` 只检查 `incomplete()` 是否为空，
+`is_success()` 还需没有失败。incomplete 绝不表示资源被强制杀死；bounded 期限
+也无法打断阻塞回调、阻塞的 poll、析构函数或 `panic = "abort"`。
 
-同步构建失败会 stop 已成功返回 `Managed` 的资源但不能 wait；异步构建失败会 stop、wait，并将清理错误与原构建错误一起返回。取消异步构建会按逆构建顺序对已成功返回 `Managed` 的资源各执行一次 stop，但不 wait。工厂在返回 `Managed<T>` 之前已产生的副作用由工厂负责回收。普通 context drop 不会自动关闭资源，外部 `Arc` 克隆可以在关闭后继续持有对象。
+EventBus adapter 在请求回调中使用非阻塞 `request_shutdown` 并保留绑定 generation 的
+ticket，在托管 wait 回调中等待 `wait_async()`。即便是同步
+`EventBus::shutdown(Immediate)` 也会等待，不能放进 abort 回调。ticket Drop 或取消
+观察不取消后台关闭。[生命周期说明](lifecycle.zh_CN.md)提供从 0.2 到 0.3 的完整
+迁移、构建失败处理和可运行 worker 入口。
 
 ## 7. 当前验收依据
 

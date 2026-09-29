@@ -25,6 +25,8 @@ use qubit_ioc::Configuration;
 use qubit_ioc::ContainerBuilder;
 use qubit_ioc::FactoryError;
 use qubit_ioc::Managed;
+use qubit_ioc::ShutdownMode;
+use qubit_ioc::WaitPolicy;
 use qubit_ioc::bean;
 
 #[derive(Debug, PartialEq)]
@@ -140,7 +142,7 @@ fn test_bean_keeps_plain_functions_callable_and_supports_all_output_shapes() {
     builder
         .install::<AsyncFallibleSharedValueBean>()
         .expect("install async fallible shared factory");
-    assert!(matches!(builder.build_all(), Err(BuildError::AsyncRequired { .. })));
+    assert!(matches!(builder.build_all(), Err(failure) if matches!(failure.cause(), BuildError::AsyncRequired { .. })));
 
     let mut builder = ContainerBuilder::new();
     builder.install::<BareValueBean>().expect("install bare factory");
@@ -163,7 +165,8 @@ fn test_bean_keeps_plain_functions_callable_and_supports_all_output_shapes() {
     builder
         .install::<AsyncFallibleSharedValueBean>()
         .expect("install async fallible shared factory");
-    let context = ready(builder.build_all_async()).expect("all factory shapes build");
+    let application = ready(builder.build_all_async()).expect("all factory shapes build");
+    let context = application.context();
     assert_eq!(*context.get::<BareValue>().expect("bare value"), BareValue(11));
     assert_eq!(*context.get::<SharedValue>().expect("shared value"), SharedValue(12));
     assert_eq!(
@@ -246,15 +249,17 @@ fn failed_managed_value() -> Result<Managed<FailedManagedValue>, BeanFailure> {
 fn test_sync_managed_bean_projects_one_instance_and_stops_once() {
     MANAGED_GREETING_STOPS.store(0, Ordering::SeqCst);
     let mut builder = ContainerBuilder::new()
+        .wait_policy(WaitPolicy::unbounded())
         .active_profiles(&["managed_test"])
         .expect("active managed test profile");
     builder.install::<ManagedGreetingBean>().expect("install managed bean");
-    let context = builder.build_all().expect("sync managed bean builds");
+    let application = builder.build_all().expect("sync managed bean builds");
+    let context = application.context();
     let concrete = context.get::<ManagedGreetingWorker>().expect("concrete worker");
     let alias = context.get::<dyn ManagedGreeting>().expect("trait alias");
     assert_eq!(alias.message(), "managed hello");
     assert_eq!(Arc::as_ptr(&concrete) as *const (), Arc::as_ptr(&alias) as *const ());
-    let mut shutdown = context.begin_shutdown();
+    let mut shutdown = application.begin_shutdown(ShutdownMode::Immediate);
     ready(shutdown.wait()).expect("managed shutdown succeeds");
     assert_eq!(MANAGED_GREETING_STOPS.load(Ordering::SeqCst), 1);
 }
@@ -264,14 +269,16 @@ fn test_async_managed_bean_waits_and_build_failure_runs_cleanup() {
     ASYNC_MANAGED_STOPS.store(0, Ordering::SeqCst);
     ASYNC_MANAGED_WAITS.store(0, Ordering::SeqCst);
     let mut builder = ContainerBuilder::new()
+        .wait_policy(WaitPolicy::unbounded())
         .active_profiles(&["managed_test"])
         .expect("active managed test profile");
     builder
         .install::<AsyncManagedValueBean>()
         .expect("install async managed bean");
-    let context = ready(builder.build_all_async()).expect("async managed bean builds");
+    let application = ready(builder.build_all_async()).expect("async managed bean builds");
+    let context = application.context();
     assert!(context.get::<AsyncManagedValue>().is_ok());
-    let mut shutdown = context.begin_shutdown();
+    let mut shutdown = application.begin_shutdown(ShutdownMode::Immediate);
     ready(shutdown.wait()).expect("async managed shutdown succeeds");
     assert_eq!(ASYNC_MANAGED_STOPS.load(Ordering::SeqCst), 1);
     assert_eq!(ASYNC_MANAGED_WAITS.load(Ordering::SeqCst), 1);
@@ -279,6 +286,7 @@ fn test_async_managed_bean_waits_and_build_failure_runs_cleanup() {
     ASYNC_MANAGED_STOPS.store(0, Ordering::SeqCst);
     ASYNC_MANAGED_WAITS.store(0, Ordering::SeqCst);
     let mut builder = ContainerBuilder::new()
+        .wait_policy(WaitPolicy::unbounded())
         .active_profiles(&["managed_test"])
         .expect("active managed test profile");
     builder
@@ -287,10 +295,12 @@ fn test_async_managed_bean_waits_and_build_failure_runs_cleanup() {
     builder
         .register_async_factory::<u64, _>(&[], |_| Box::pin(async { Err(FactoryError::new(BeanFailure)) }))
         .expect("install failing async factory");
-    assert!(matches!(
-        ready(builder.build_all_async()),
-        Err(BuildError::FactoryFailed { .. })
-    ));
+    let mut failure = ready(builder.build_all_async())
+        .err()
+        .expect("failing async factory must fail construction");
+    assert!(matches!(failure.cause(), BuildError::FactoryFailed { .. }));
+    let mut cleanup = failure.take_cleanup().expect("managed bean requires cleanup");
+    ready(cleanup.wait()).expect("managed bean cleanup succeeds");
     assert_eq!(ASYNC_MANAGED_STOPS.load(Ordering::SeqCst), 1);
     assert_eq!(ASYNC_MANAGED_WAITS.load(Ordering::SeqCst), 1);
 }
@@ -298,6 +308,7 @@ fn test_async_managed_bean_waits_and_build_failure_runs_cleanup() {
 #[test]
 fn test_fallible_managed_bean_preserves_error_source() {
     let mut builder = ContainerBuilder::new()
+        .wait_policy(WaitPolicy::unbounded())
         .active_profiles(&["managed_failure"])
         .expect("active managed failure profile");
     builder
@@ -307,7 +318,7 @@ fn test_fallible_managed_bean_preserves_error_source() {
         Ok(_) => panic!("fallible managed bean must fail"),
         Err(error) => error,
     };
-    let factory_error = error.source().expect("build error source");
+    let factory_error = error.cause().source().expect("build error source");
     assert!(factory_error.source().expect("bean error source").is::<BeanFailure>());
 }
 
@@ -353,7 +364,8 @@ fn test_bean_inject_id_and_custom_marker() {
     builder
         .install::<RepeatedRequestBean>()
         .expect("install repeated-request bean");
-    let context = builder.build_all().expect("exact ID resolves consumer");
+    let application = builder.build_all().expect("exact ID resolves consumer");
+    let context = application.context();
     assert_eq!(context.get::<NamedConsumer>().expect("consumer").0.0, 22);
     assert_eq!(context.get::<PairValue>().expect("repeated request").0, 44);
 }
@@ -376,7 +388,7 @@ fn test_bean_preserves_factory_error_source() {
         Ok(_) => panic!("failing bean must fail construction"),
         Err(error) => error,
     };
-    let source = error.source().expect("factory wrapper");
+    let source = error.cause().source().expect("factory wrapper");
     assert!(source.source().expect("domain failure").is::<BeanFailure>());
 }
 
@@ -402,7 +414,8 @@ fn greeting() -> GreetingImpl {
 fn test_bean_bind_projects_shared_instance_to_trait() {
     let mut builder = ContainerBuilder::new();
     builder.install::<GreetingBean>().expect("install trait binding");
-    let context = builder.build_all().expect("trait binding builds");
+    let application = builder.build_all().expect("trait binding builds");
+    let context = application.context();
     let concrete = context.get::<GreetingImpl>().expect("concrete binding");
     let alias = context.get::<dyn Greeting>().expect("trait binding");
     assert_eq!(alias.message(), "hello");
@@ -422,7 +435,8 @@ fn test_bean_explicit_type_resolves_return_alias() {
     builder
         .install::<AliasValueBean>()
         .expect("install alias return factory");
-    let context = builder.build_all().expect("alias return builds");
+    let application = builder.build_all().expect("alias return builds");
+    let context = application.context();
     assert_eq!(context.get::<String>().expect("resolved String").as_str(), "aliased");
 }
 
@@ -447,7 +461,8 @@ fn test_bean_value_reads_declared_config_snapshot() {
         .with_config(config)
         .expect("stage configuration");
     builder.install::<ConfiguredPortBean>().expect("install value bean");
-    let context = builder.build_all().expect("value bean builds");
+    let application = builder.build_all().expect("value bean builds");
+    let context = application.context();
     assert_eq!(context.get::<ConfiguredPort>().expect("configured port").0, 8140);
 }
 
@@ -495,7 +510,8 @@ mod grouped {
 fn test_configuration_applies_default_profile_and_installs_in_source_order() {
     let mut builder = ContainerBuilder::new().active_profiles(&["prod"]).expect("active prod");
     grouped::register_ioc(&mut builder).expect("register group in order");
-    let context = builder.build_all().expect("group builds");
+    let application = builder.build_all().expect("group builds");
+    let context = application.context();
     let first = context.get::<grouped::First>().expect("first").0;
     let second = context.get::<grouped::Second>().expect("second").0;
     assert!(first < second, "manual group registration must preserve source order");
@@ -508,7 +524,8 @@ fn test_configuration_applies_default_profile_and_installs_in_source_order() {
 
     let mut builder = ContainerBuilder::new();
     grouped::register_ioc(&mut builder).expect("register default group");
-    let context = builder.build_all().expect("default group builds");
+    let application = builder.build_all().expect("default group builds");
+    let context = application.context();
     assert!(context.try_get::<grouped::First>().expect("prod-only lookup").is_none());
     assert!(
         context
@@ -523,7 +540,8 @@ fn test_configuration_applies_default_profile_and_installs_in_source_order() {
 fn test_configuration_group_installs_beans_and_source_matches_marker() {
     let mut builder = ContainerBuilder::new().active_profiles(&["prod"]).expect("active prod");
     grouped::register_ioc(&mut builder).expect("install configuration beans");
-    let context = ready(builder.build_all_async()).expect("configuration group builds");
+    let application = ready(builder.build_all_async()).expect("configuration group builds");
+    let context = application.context();
     assert!(context.get::<grouped::First>().is_ok());
     assert!(context.get::<grouped::Second>().is_ok());
     assert!(
@@ -545,7 +563,7 @@ fn test_configuration_group_and_explicit_install_report_duplicate() {
         Ok(_) => panic!("manual plus linked bean must be duplicate"),
         Err(error) => error,
     };
-    assert!(matches!(error, BuildError::DuplicateBinding { .. }));
+    assert!(matches!(error.cause(), BuildError::DuplicateBinding { .. }));
 }
 
 mod application {
@@ -566,6 +584,8 @@ fn test_application_managed_path_remains_an_ordinary_factory_output() {
         .install::<ApplicationManagedValueBean>()
         .expect("install ordinary factory");
 
-    let context = builder.build_all().expect("build ordinary output");
+    let application = builder.build_all().expect("build ordinary output");
+
+    let context = application.context();
     assert_eq!(context.get::<application::Managed<u32>>().expect("value").0, 23);
 }

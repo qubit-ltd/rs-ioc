@@ -10,23 +10,24 @@
 `qubit-ioc` helps Rust application authors assemble shared components across
 crates at startup. It validates dependencies before running factories, so a
 missing or ambiguous service fails during startup instead of a later request.
-Successful construction publishes a read-only `ApplicationContext`; applications
-can use attribute macros or explicit registration.
+Successful construction returns an `Application` lifecycle owner with a cloneable,
+read-only `ApplicationContext`; applications can use attribute macros or explicit
+registration.
 
 ## Installation
 
-After the `0.2.0` release is published, add the registry dependency:
+After the `0.3.0` release is published, add the registry dependency:
 
 ```toml
 [dependencies]
-qubit-ioc = "0.2"
+qubit-ioc = "0.3"
 ```
 
-This checkout is a `0.2.0` release candidate and is not yet available from
+This checkout is a `0.3.0` release candidate and is not yet available from
 crates.io. To develop against a local checkout, use:
 
 ```toml
-qubit-ioc = { version = "0.2", path = "../rs-ioc" }
+qubit-ioc = { version = "0.3", path = "../rs-ioc" }
 ```
 
 The default features are `macros` and `config`. To use only the manual
@@ -50,7 +51,7 @@ block, so `bind = dyn Greeting` is required.
 
 ```rust
 use std::sync::Arc;
-use qubit_ioc::{ApplicationContext, Component, Service};
+use qubit_ioc::{Application, Component, Service};
 
 trait Greeting: Send + Sync {
     fn text(&self) -> &'static str;
@@ -69,11 +70,12 @@ struct Greeter {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut builder = ApplicationContext::builder();
+    let mut builder = Application::builder();
     builder.install::<English>()?;
     builder.install::<Greeter>()?;
     builder.root::<Greeter>();
-    let context = builder.build()?;
+    let application = builder.build()?;
+    let context = application.context();
     assert_eq!(context.get::<Greeter>()?.greeting.text(), "hello");
     Ok(())
 }
@@ -126,18 +128,29 @@ Create each managed resource inside its managed factory, after graph
 validation. Register an already-running external resource with
 `register_instance(Arc<T>)` and keep its shutdown responsibility in the
 application; do not capture an already-created `Managed<T>` in a factory.
-The built context supports concurrent read-only queries through `Arc`.
-Release shared context handles before recovering the single shutdown owner with
-`Arc::try_unwrap`; then call `begin_shutdown()` and await its handle.
+The application retains its unique lifecycle owner while
+`application.context().clone()` provides concurrent read-only query handles.
+These clones can remain alive during shutdown; a successful lookup does not
+guarantee that a component still accepts work. Collection query order is
+precomputed when the context is published, using binding order, ID, and source
+location. Normal exit uses
+`application.begin_shutdown(ShutdownMode::Graceful)` and explicitly awaits the
+returned handle. Graceful requests start when `wait()` is first polled;
+`ShutdownMode::Immediate` requests all aborts before `begin_shutdown` returns.
+Managed graphs require an explicit `WaitPolicy`; use
+`WaitPolicy::bounded` with an application-driven timer. Public
+`Definition::builder()` and `register_definition` support custom factories and
+trait aliases without relying on macro internals. See the [lifecycle and 0.3 migration guide](doc/lifecycle.md).
 
 Config reads from `#[value]` and `ConfigurationProperties` preserve stored
 values without interpolation. Structured deserialization rejects unknown
 fields by default. When interpolation is required, call
 `Config::get_interpolated` explicitly in a factory.
-Factory panics follow Rust's panic behavior and propagate. If a later factory
-fails, synchronous build stops managed values already returned to the
-container without waiting; asynchronous build stops and waits before returning
-the build error together with cleanup failures.
+Factory panics follow Rust's panic behavior and propagate. On failure, both
+synchronous and asynchronous construction return `BuildFailure` immediately after requesting
+abort for transferred managed resources. Inspect `cause()`, take the cleanup
+owner with `take_cleanup()` or `into_parts()`, and explicitly await its `wait()`
+to observe termination and cleanup failures.
 
 ### Manual assembly
 
@@ -155,7 +168,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Ok(Arc::new(message.len()))
     })?;
     builder.root::<usize>();
-    let context = builder.build()?;
+    let application = builder.build()?;
+    let context = application.context();
     assert_eq!(*context.get::<usize>()?, 5);
     Ok(())
 }
@@ -176,6 +190,8 @@ An independent downstream assembly example is maintained in the
 From the `rs-execution-services` checkout, run it with
 `cargo run --manifest-path tests/fixtures/ioc_application_consumer/Cargo.toml`.
 This fixture verifies the cross-crate contract and does not claim production adoption.
+Its EventBus adapter uses `request_shutdown` and a ticket's `wait_async()`;
+the synchronous EventBus `shutdown`, including Immediate mode, still waits.
 
 ## Limitations
 
@@ -183,12 +199,15 @@ The container provides application-wide shared instances. It does not provide
 prototype or request scopes, hot reload, automatic lifecycle management for
 unmanaged components, circular proxies, or dynamic-library discovery. Managed
 factories can opt into explicit stop and wait actions through `Managed<T>` and
-`ApplicationContext::begin_shutdown` and `ShutdownHandle::wait`. Struct macros support named-field and unit structs;
+`Application::begin_shutdown` and `ShutdownHandle::wait`. Struct macros support named-field and unit structs;
 other shapes can use manual factories. Runtime reflection is not used to
 construct components. `qubit-spi` remains responsible for provider selection
 and fallback; its registry or a selected service can be registered as a normal
-IoC component. Managed shutdown requires explicit `begin_shutdown()` and
-`ShutdownHandle::wait()` calls. See the [lifecycle guide](doc/lifecycle.md),
+IoC component. Observed managed shutdown requires an explicit shutdown mode and
+`ShutdownHandle::wait()`; dropping the owner, an untransferred `Managed`, or a
+shutdown handle requests best-effort abort without waiting. Dropping a query
+context does not request shutdown. A deadline cannot kill blocking work, and
+`ShutdownReport::incomplete()` means termination was not confirmed. See the [lifecycle guide](doc/lifecycle.md),
 the runnable [`app_lifecycle` example](examples/app_lifecycle.rs), and the
 [English current design](doc/complete-design.md) for design boundaries.
 

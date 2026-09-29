@@ -2,7 +2,7 @@
 
 [中文用户手册](user_guide.zh_CN.md) · [README](../README.md)
 
-This guide is for Rust application authors using the `qubit-ioc` 0.2.0 release candidate
+This guide is for Rust application authors using the `qubit-ioc` 0.3.0 release candidate
 checkout. It explains how to assemble application-wide shared components,
 diagnose startup failures, and manage their lifetime. Rust 1.94 or newer is
 required by the package manifest.
@@ -15,7 +15,8 @@ required by the package manifest.
 | Binding | A Rust type and optional, case-sensitive ID that identify a component. |
 | Dependency | A request declared by a factory or generated from a macro field. |
 | Root | A requested component whose dependency closure `build()` constructs. |
-| Context | The read-only `ApplicationContext` published after a successful build. |
+| Application | The unique lifecycle owner returned by a successful build. |
+| Context | The cloneable read-only `ApplicationContext` borrowed from `application.context()`. |
 
 The builder filters active profiles, resolves roots and dependencies, validates
 the graph, and then runs factories in dependency order. `build_all()` constructs
@@ -35,7 +36,7 @@ In an application beside this checkout, add:
 
 ```toml
 [dependencies]
-qubit-ioc = { version = "0.2", path = "../rs-ioc", default-features = false }
+qubit-ioc = { version = "0.3", path = "../rs-ioc", default-features = false }
 ```
 
 Place the following code in `src/main.rs`, then run `cargo run` in that
@@ -64,7 +65,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     })?;
     builder.root::<Greeter>();
 
-    let context = builder.build()?;
+    let application = builder.build()?;
+    let context = application.context();
     let first = context.get::<Greeter>()?;
     let second = context.get::<Greeter>()?;
     assert_eq!(first.greet(), "hello");
@@ -88,7 +90,7 @@ example verifies a default marker, a custom marker, and a module containing
 related beans. It uses Rust 2024, Rust 1.94, and only the `macros` feature:
 
 ```toml
-qubit-ioc = { version = "0.2", path = "../rs-ioc", default-features = false, features = ["macros"] }
+qubit-ioc = { version = "0.3", path = "../rs-ioc", default-features = false, features = ["macros"] }
 ```
 
 ```rust
@@ -126,7 +128,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     builder.root::<DefaultValue>();
     builder.root::<CustomValue>();
     builder.root::<String>();
-    let context = builder.build()?;
+    let application = builder.build()?;
+    let context = application.context();
     assert_eq!(context.get::<DefaultValue>()?.0, 1);
     assert_eq!(context.get::<CustomValue>()?.0, 2);
     assert_eq!(context.get::<String>()?.as_str(), "ready");
@@ -161,23 +164,14 @@ factory failure can still roll back resources from earlier managed factories.
 
 For a bean that starts a worker, create the worker inside the factory and
 return `Managed<T>` with a stop action and, when needed, `.with_wait(...)`.
-At application exit, release shared context handles, obtain its single owner,
-then use this fragment inside an async function:
-
-```rust,ignore
-let mut shutdown = context.begin_shutdown();
-shutdown.wait().await?;
-```
-
-`begin_shutdown()` sends every stop request before returning; `wait()` observes
-termination and cleanup errors. `Managed` and `ShutdownHandle` are `must_use`:
-return managed values to the container and observe the shutdown handle. To
-request stop while deliberately abandoning waits, explicitly write
-`drop(context.begin_shutdown())`. Dropping the context alone does not stop
-workers. Cancellation only requests stop for resources already returned as
-`Managed`; effects from an unfinished factory stay that factory's
-responsibility. Follow the [lifecycle guide](lifecycle.md) and
-[managed worker example](../examples/app_lifecycle.rs) for a full implementation.
+Configure a bounded `WaitPolicy` before building any selected managed graph.
+Retain the returned `Application`; clones of `application.context()` may remain
+alive while it shuts down. For normal exit, call
+`application.begin_shutdown(ShutdownMode::Graceful)` and await the handle's
+`wait()`; failure and cancellation request Immediate abort. The [lifecycle
+guide](lifecycle.md) shows a complete bounded integration function that waits
+on both build-failure cleanup and normal shutdown. The [managed worker
+example](../examples/app_lifecycle.rs) runs the same owner/handle contract.
 
 ## Choosing definitions and build scope
 
@@ -209,16 +203,17 @@ sole candidate or the sole `primary` candidate. Otherwise it is ambiguous.
 Use a valid ID for exact selection; each dot-separated ASCII segment must
 start with a letter and contain only letters, digits, or underscores.
 `get_by_id::<T>()`, `try_get::<T>()`, and `get_all::<T>()` support exact,
-optional, and collection queries after construction. `get_all()` orders
-results by `order`, ID, and source location.
+optional, and collection queries after construction. `get_all()` uses the immutable order precomputed at context publication:
+`order`, ID, source location, then registration position.
 
 `register_instance_with` validates its own ID and profile when staging the
 instance. Collisions with other definitions are checked at build time after
 inactive profiles have been filtered. Factory panics propagate with Rust's
 normal panic behavior. On a later construction failure, synchronous builds
 stop managed values already returned by factories but do not wait for them;
-asynchronous builds stop and wait before returning the build error with any
-cleanup failures.
+asynchronous builds also request abort and immediately return `BuildFailure`.
+Inspect `cause()` and explicitly await the optional `take_cleanup()` handle
+to observe termination and cleanup failures.
 
 ### Replace one complete definition
 
@@ -228,23 +223,31 @@ registration callback:
 ```rust
 use std::error::Error;
 use std::sync::Arc;
-use qubit_ioc::{BindingKey, ContainerBuilder};
+use qubit_ioc::{BindingKey, ContainerBuilder, Definition};
 
 fn replace_for_test() -> Result<(), Box<dyn Error>> {
     let mut builder = ContainerBuilder::new();
     builder.register_instance(Arc::new(1_u64))?;
     let fake = Arc::new(7_u64);
     let key = BindingKey::of::<u64>(None);
-    builder.replace_definition(key, move |draft| draft.register_instance(fake))?;
+    builder.replace_definition(key, move |draft| {
+        let replacement = Definition::<u64>::builder().instance(fake).build()?;
+        draft.register_definition(replacement)
+    })?;
     builder.root::<u64>();
-    let context = builder.build()?;
+    let application = builder.build()?;
+    let context = application.context();
     assert_eq!(*context.get::<u64>()?, 7);
     Ok(())
 }
 ```
 
 The callback runs against a temporary builder. It must register exactly one
-definition that declares the anchor key. An error leaves the original builder
+definition that declares the anchor key. `Definition::builder()` also accepts
+`binding`, `dependencies`, sync/async and managed factories, and `bind` for
+trait aliases. `build()` validates the complete definition without running
+user factories; `register_definition` stages it atomically. The macros use
+this public core rather than the removed hidden definition protocol. An error leaves the original builder
 unchanged. The complete original definition is replaced, including all aliases;
 the replacement must declare any aliases that remain needed.
 
@@ -300,11 +303,16 @@ For a consuming application, the dependency roles are visible in `tests/fixtures
 cargo test --manifest-path tests/fixtures/ioc_cross_crate/Cargo.toml
 ```
 
-If the configuration subtree is absent, construction returns `BuildError::ConfigReadFailed`; its source chain retains the original `ConfigError`. To activate the optional preview provider, call `assemble(config, &["default", "preview"])`; an inactive provider is absent from the built context. The fixture's integration tests assert both outcomes.
+If the configuration subtree is absent, construction returns `BuildFailure` with
+`BuildError::ConfigReadFailed` as its cause; its source chain retains the original `ConfigError`. To activate the optional preview provider, call `assemble(config, &["default", "preview"])`; an inactive provider is absent from the built context. The fixture's integration tests assert both outcomes.
 
-A separate downstream fixture, `rs-execution-services/tests/fixtures/ioc_application_consumer/src/main.rs`, demonstrates the resource lifecycle boundary: it installs managed `ExecutionServices` and `EventBus`, obtains shared services after build, requests stop through `begin_shutdown()`, then awaits `ShutdownHandle::wait()`. These snippets come from different fixtures with different purposes; use them as contract references and keep application-specific configuration and external side effects in the consuming application.
+A separate downstream fixture, `rs-execution-services/tests/fixtures/ioc_application_consumer/src/main.rs`, demonstrates the resource lifecycle boundary: it installs managed `ExecutionServices` and `EventBus`, obtains shared services after build, uses `Application::begin_shutdown(ShutdownMode::Graceful)` on normal exit,
+`Immediate` on failure, and awaits `ShutdownHandle::wait()`. Its EventBus adapter
+uses `request_shutdown` plus a ticket and `wait_async()`: synchronous
+`EventBus::shutdown(Immediate)` would still wait in a stop callback. These snippets come from different fixtures with different purposes; use them as contract references and keep application-specific configuration and external side effects in the consuming application.
 
-Use an async factory when construction itself must await I/O. `#[bean] async fn` and `register_async_factory` both create async definitions; choose `build_async()` or `build_all_async()` and drive the returned future with the application's executor. Calling synchronous `build()` on a selected async definition returns `BuildError::AsyncRequired` before any factory runs. The app owns executor choice and cancellation policy.
+Use an async factory when construction itself must await I/O. `#[bean] async fn` and `register_async_factory` both create async definitions; choose `build_async()` or `build_all_async()` and drive the returned future with the application's executor. Calling synchronous `build()` on a selected async definition returns `BuildFailure`
+with `BuildError::AsyncRequired` as its cause before any factory runs. The app owns executor choice and cancellation policy.
 
 ## Errors and diagnostics
 
@@ -325,61 +333,50 @@ at registration, or it receives `BuildAccessError::UndeclaredDependency`.
 
 ## Lifetime and limits
 
-The context stores shared `Arc` instances and does not rerun factories on
-lookup. Read-only context queries support concurrent sharing through `Arc`.
-When shutdown is needed, release all shared context handles, recover the
-single owner with `Arc::try_unwrap`, then call `begin_shutdown()`. The
-[`context_sharing` example](../examples/context_sharing.rs) demonstrates this
-sequence. Components own synchronization of their mutable state. Resource
-components can opt in to managed shutdown with `Managed<T>`. The runnable
-example starts a worker task inside its factory, sends a stop signal, awaits
-the task, and verifies it exited:
+`Application` owns lifecycle while `application.context()` provides immutable
+shared queries. Clone the query handle for concurrent readers; no
+`Arc::try_unwrap` or release of every query clone is needed to shut down.
+The [context-sharing example](../examples/context_sharing.rs) exercises this
+owner/context split. Context lookup can still succeed after shutdown starts;
+it does not establish that a resource still admits work.
 
-```bash
-cargo run --example app_lifecycle --no-default-features
-```
+Create managed resources inside managed factories, after graph validation. For
+an already-running external resource, register its `Arc<T>` and retain shutdown
+ownership in the application. Managed graphs need an explicit bounded
+`WaitPolicy` in real applications. `Managed::new` supplies a non-blocking abort
+request; `.with_graceful_stop` can request draining; `.with_wait` confirms
+termination. At normal exit choose Graceful and await the handle. Graceful
+requests begin on the first `wait` poll and run consumer-by-consumer before
+their dependencies. Immediate requests all aborts before returning the handle.
+The [lifecycle guide](lifecycle.md) supplies the complete failure and business
+exit flow, and [app_lifecycle](../examples/app_lifecycle.rs) runs a worker.
 
-See [`examples/app_lifecycle.rs`](../examples/app_lifecycle.rs) for its source
-and the [lifecycle guide](lifecycle.md) for shutdown and cancellation details.
+Both build variants return `BuildFailure` immediately after requesting abort
+for transferred managed values. Inspect `cause()`, take optional cleanup with
+`take_cleanup()` or `into_parts()`, and await its handle. Dropping the owner,
+an untransferred `Managed`, or a shutdown handle requests abort but never waits;
+query context Drop has no shutdown action. Dropping the failure or cancelling
+an async build never waits. Unwind panic in a factory propagates. The factory
+is responsible for side effects created before it returns `Managed`.
 
-Create managed resources inside managed factories, which run only after graph
-validation. For an external resource that is already running, register its
-`Arc<T>` with `register_instance` and keep shutdown ownership in the
-application. Do not capture an already-created `Managed<T>` in a factory.
-
-`Managed::new` provides a synchronous stop request; `.with_wait` can add an
-asynchronous termination wait. `begin_shutdown(self)` calls all stop actions
-in reverse construction order before returning a `ShutdownHandle`.
-`wait(&mut self)` awaits waits in that same order and returns every failure.
-If a wait future is cancelled, keep the handle and call `wait()` again to
-resume that same future. A synchronous `build()` failure stops resources already
-returned as `Managed` but cannot await them. An asynchronous `build_async()`
-failure calls stop and then waits, preserving cleanup failures alongside the
-original build error. If failed construction must wait for already-created
-resources before returning, use `build_async()` even when every factory is
-synchronous. Cancelling an asynchronous build calls
-stop for resources already returned as `Managed`, without waiting, because the caller no longer has a future to receive
-errors from. Effects created inside a factory before it returns `Managed<T>`
-remain the factory's responsibility.
-
-Dropping the context does not stop resources. External `Arc` clones can keep a
-value alive after shutdown; shutdown requests termination but cannot
-revoke those clones. Stop callback panics are collected as Stop failures.
-Panics while creating a wait future or polling it are collected as Wait
-failures, and remaining waits still run. `panic = "abort"` and panics while
-dropping a cleanup future cannot be caught. Factory panics during construction
-also propagate.
+Cancelling `ShutdownHandle::wait()` retains its active future and deadline;
+calling it again on the same handle resumes. Bounded deadlines require the
+timer to be driven and cannot interrupt blocking callbacks or future polls.
+`ShutdownReport::incomplete()` records unconfirmed termination, not a killed
+resource. Callback errors stay in the report even if all waits finish.
+External `Arc` clones may keep object memory alive after shutdown.
 
 The former managed-instance registration entry points have been removed.
-Create managed resources inside `register_managed_factory` (or the equivalent
-managed `#[bean]` factory); if a resource must exist before registration, use
-`register_instance` and let the application own its shutdown actions.
+Use `register_managed_factory` or a managed `#[bean]` factory. The public
+`Definition::builder()` and `register_definition` are available for complete
+custom registrations and trait aliases. Collections use the order precomputed
+at publication; construction and cleanup ordering are separate.
 
 There are no prototype or request scopes, hot reload, automatic lifecycle
-management for unmanaged components, circular proxies, or dynamic-library discovery. Struct macros support named
-fields and unit structs; use a manual factory for other shapes. Runtime
-reflection does not construct components. `qubit-spi` handles provider
-selection and fallback separately.
+management for unmanaged components, circular proxies, or dynamic-library
+discovery. Struct macros support named fields and unit structs; use a manual
+factory for other shapes. Runtime reflection does not construct components.
+`qubit-spi` handles provider selection and fallback separately.
 
 Continue with the [README](../README.md), [中文用户手册](user_guide.zh_CN.md),
 or run `cargo doc --no-deps --open` for API documentation.

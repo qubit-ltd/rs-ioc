@@ -28,10 +28,10 @@ use crate::options::DefinitionSource;
 /// let failure = ShutdownFailure {
 ///     key: BindingKey::of::<String>(None),
 ///     definition: DefinitionSource::new("app", "app", "src/main.rs", 1, 1, "Worker"),
-///     phase: ShutdownPhase::Stop,
+///     phase: ShutdownPhase::Abort,
 ///     error: CleanupError::new(std::io::Error::other("stop failed")),
 /// };
-/// assert_eq!(failure.phase, ShutdownPhase::Stop);
+/// assert_eq!(failure.phase, ShutdownPhase::Abort);
 /// ```
 #[derive(Debug, Error)]
 #[error("{phase:?} cleanup for {key:?} from {definition} failed: {error}")]

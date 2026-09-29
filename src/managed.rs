@@ -17,7 +17,10 @@ mod managed_type;
 mod shutdown_error;
 mod shutdown_failure;
 mod shutdown_handle;
+mod shutdown_mode;
 mod shutdown_phase;
+mod shutdown_report;
+mod wait_policy;
 
 pub use cleanup_error::CleanupError;
 pub(crate) use internal::cleanup_action::CleanupAction;
@@ -28,7 +31,11 @@ pub use managed_type::Managed;
 pub use shutdown_error::ShutdownError;
 pub use shutdown_failure::ShutdownFailure;
 pub use shutdown_handle::ShutdownHandle;
+pub use shutdown_mode::ShutdownMode;
 pub use shutdown_phase::ShutdownPhase;
+pub use shutdown_report::ShutdownReport;
+pub use wait_policy::DeadlineFuture;
+pub use wait_policy::WaitPolicy;
 
 /// A future used to wait for a managed component to finish shutting down.
 ///

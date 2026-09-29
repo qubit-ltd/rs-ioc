@@ -11,6 +11,8 @@ use std::sync::Arc;
 
 use ioc::bean;
 use ioc::ContainerBuilder;
+use ioc::WaitPolicy;
+use ioc::ShutdownMode;
 
 static STOPS: AtomicUsize = AtomicUsize::new(0);
 
@@ -31,14 +33,19 @@ async fn asynchronous() -> Result<::ioc::Managed<String>, std::io::Error> {
 }
 
 fn verify_managed_output_path() {
-    let mut builder = ContainerBuilder::new();
+    let mut builder = ContainerBuilder::new().wait_policy(WaitPolicy::bounded(
+            std::time::Duration::from_secs(30),
+            std::time::Duration::from_secs(5),
+            |duration| Box::pin(tokio::time::sleep(duration)),
+        ));
     builder.install::<SynchronousBean>().unwrap();
     builder.install::<AsynchronousBean>().unwrap();
-    let runtime = tokio::runtime::Builder::new_current_thread().build().unwrap();
-    let context = runtime.block_on(builder.build_all_async()).unwrap();
+    let runtime = tokio::runtime::Builder::new_current_thread().enable_time().build().unwrap();
+    let application = runtime.block_on(builder.build_all_async()).unwrap();
+    let context = application.context();
     assert_eq!(*context.get::<u32>().unwrap(), 7);
     assert_eq!(context.get::<String>().unwrap().as_str(), "async");
-    let mut shutdown = context.begin_shutdown();
+    let mut shutdown = application.begin_shutdown(ShutdownMode::Immediate);
     runtime.block_on(shutdown.wait()).unwrap();
     assert_eq!(STOPS.load(Ordering::SeqCst), 2);
 }

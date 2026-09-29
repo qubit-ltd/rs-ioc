@@ -20,7 +20,8 @@ use crate::key::BindingKey;
 /// use qubit_ioc::ContainerBuilder;
 /// use qubit_ioc::ResolveError;
 ///
-/// let context = ContainerBuilder::new().build_all()?;
+/// let application = ContainerBuilder::new().build_all()?;
+/// let context = application.context();
 /// assert!(matches!(context.get::<String>(), Err(ResolveError::MissingComponent { .. })));
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```

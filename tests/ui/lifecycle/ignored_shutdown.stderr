@@ -1,10 +1,10 @@
 error: unused `ShutdownHandle` that must be used
-  --> tests/ui/lifecycle/ignored_shutdown.rs:13:5
+  --> tests/ui/lifecycle/ignored_shutdown.rs:14:5
    |
-13 |     context.begin_shutdown();
-   |     ^^^^^^^^^^^^^^^^^^^^^^^^
+14 |     application.begin_shutdown(ShutdownMode::Immediate);
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
    |
-   = note: await shutdown.wait() to observe termination and cleanup errors, or explicitly drop the handle to abandon waiting
+   = note: await shutdown.wait() or call abandon() to observe shutdown completeness
 note: the lint level is defined here
   --> tests/ui/lifecycle/ignored_shutdown.rs:8:9
    |
@@ -12,5 +12,5 @@ note: the lint level is defined here
    |         ^^^^^^^^^^^^^^^
 help: use `let _ = ...` to ignore the resulting value
    |
-13 |     let _ = context.begin_shutdown();
+14 |     let _ = application.begin_shutdown(ShutdownMode::Immediate);
    |     +++++++

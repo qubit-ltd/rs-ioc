@@ -101,9 +101,10 @@ fn test_struct_activation_preserves_enabled_definition_and_derives() {
     builder
         .install::<ConditionalStruct>()
         .expect("install conditionally active struct");
-    let context = builder
+    let application = builder
         .build_all()
         .expect("active structs should register without dependencies");
+    let context = application.context();
     let component = context
         .get::<DerivedConditionalStruct>()
         .expect("active struct should be available");
@@ -129,9 +130,10 @@ fn test_bean_parameter_activation_matches_dependency_and_call_argument() {
     builder
         .install::<ConditionalFactory>()
         .expect("install conditional bean");
-    let context = builder
+    let application = builder
         .build_all()
         .expect("only active parameter dependencies are requested");
+    let context = application.context();
     assert_eq!(*context.get::<u32>().expect("conditional bean"), 17);
 }
 
@@ -143,7 +145,7 @@ fn test_disabled_fields_do_not_register_requests_or_require_config() {
     builder.install::<NestedCondition>().expect("install nested condition");
     builder.install::<DisabledValue>().expect("install disabled value");
     builder.install::<DisabledUnknownType>().expect("install missing type");
-    builder.build_all().expect("all fields are disabled");
+    drop(builder.build_all().expect("all fields are disabled"));
 }
 
 #[cfg(feature = "extra")]
@@ -156,7 +158,8 @@ fn test_enabled_fields_register_their_dependencies() {
     builder.register_instance(Arc::new(5_u16)).expect("register u16");
     builder.install::<Conditional>().expect("install conditional");
     builder.install::<NestedCondition>().expect("install nested condition");
-    let context = builder.build_all().expect("enabled dependencies are present");
+    let application = builder.build_all().expect("enabled dependencies are present");
+    let context = application.context();
     assert_eq!(*context.get::<u8>().expect("u8"), 3);
 }
 
@@ -166,6 +169,6 @@ fn test_enabled_field_reports_a_missing_dependency_before_construction() {
     let mut builder = ContainerBuilder::new();
     builder.install::<Conditional>().expect("install conditional");
     let error = builder.build_all().err().expect("u8 dependency is required");
-    assert!(matches!(error, BuildError::MissingDependency { dependency, .. }
-        if dependency == Dependency::of::<u8>()));
+    assert!(matches!(error.cause(), BuildError::MissingDependency { dependency, .. }
+        if dependency == &Dependency::of::<u8>()));
 }

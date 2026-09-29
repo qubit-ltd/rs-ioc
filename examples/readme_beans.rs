@@ -41,7 +41,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     builder.root::<DefaultValue>();
     builder.root::<CustomValue>();
     builder.root::<String>();
-    let context = builder.build()?;
+    let application = builder.build()?;
+    let context = application.context();
     assert_eq!(context.get::<DefaultValue>()?.0, 1);
     assert_eq!(context.get::<CustomValue>()?.0, 2);
     assert_eq!(context.get::<String>()?.as_str(), "ready");

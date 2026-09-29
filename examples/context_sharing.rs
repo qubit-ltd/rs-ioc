@@ -13,12 +13,19 @@ use std::sync::atomic::Ordering;
 
 use qubit_ioc::ContainerBuilder;
 use qubit_ioc::Managed;
+use qubit_ioc::ShutdownMode;
+use qubit_ioc::WaitPolicy;
 
 /// Builds the application and performs concurrent reads before shutdown.
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let runtime = tokio::runtime::Builder::new_current_thread().enable_time().build()?;
     let stops = Arc::new(AtomicUsize::new(0));
     let captured = Arc::clone(&stops);
-    let mut builder = ContainerBuilder::new();
+    let mut builder = ContainerBuilder::new().wait_policy(WaitPolicy::bounded(
+        std::time::Duration::from_secs(30),
+        std::time::Duration::from_secs(5),
+        |duration| Box::pin(tokio::time::sleep(duration)),
+    ));
     builder.register_managed_factory::<String, _>(&[], move |_| {
         let stops = Arc::clone(&captured);
         Ok(Managed::new(Arc::new(String::from("shared")), move |_| {
@@ -27,11 +34,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }))
     })?;
 
-    let context = Arc::new(builder.build_all()?);
-    let expected = context.get::<String>()?;
+    let application = match builder.build_all() {
+        Ok(application) => application,
+        Err(failure) => {
+            let (cause, cleanup) = failure.into_parts();
+            eprintln!("Application construction failed: {cause}");
+            if let Some(mut cleanup) = cleanup
+                && let Err(error) = runtime.block_on(cleanup.wait())
+            {
+                eprintln!("Application cleanup failed: {error}; {:?}", error.report());
+            }
+            return Err(cause.into());
+        }
+    };
+    let context = application.context().clone();
+    let expected = match context.get::<String>() {
+        Ok(expected) => expected,
+        Err(error) => {
+            let mut shutdown = application.begin_shutdown(ShutdownMode::Immediate);
+            if let Err(cleanup_error) = runtime.block_on(shutdown.wait()) {
+                eprintln!(
+                    "Application cleanup failed: {cleanup_error}; {:?}",
+                    cleanup_error.report()
+                );
+            }
+            return Err(error.into());
+        }
+    };
     std::thread::scope(|scope| {
         for _ in 0..4 {
-            let context = Arc::clone(&context);
+            let context = context.clone();
             let expected = Arc::clone(&expected);
             scope.spawn(move || {
                 let actual = context.get::<String>().expect("shared service");
@@ -41,9 +73,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     drop(expected);
-    let context = Arc::try_unwrap(context).map_err(|_| "query handles remain")?;
-    let mut shutdown = context.begin_shutdown();
-    let runtime = tokio::runtime::Builder::new_current_thread().build()?;
+    let mut shutdown = application.begin_shutdown(ShutdownMode::Graceful);
     runtime.block_on(shutdown.wait())?;
     assert_eq!(stops.load(Ordering::SeqCst), 1);
     Ok(())

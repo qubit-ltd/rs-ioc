@@ -52,7 +52,7 @@ fn test_get_rejects_undeclared_dependency() {
             Ok(Arc::new(9))
         })
         .expect("stage consumer");
-    builder.build_all().expect("factory must observe access error");
+    drop(builder.build_all().expect("factory must observe access error"));
 }
 
 #[test]
@@ -65,7 +65,8 @@ fn test_get_all_reads_only_declared_collection() {
             Ok(Arc::new(values.len()))
         })
         .expect("stage collection consumer");
-    let context = builder.build_all().expect("valid graph");
+    let application = builder.build_all().expect("valid graph");
+    let context = application.context();
     assert_eq!(*context.get::<usize>().expect("built count"), 1);
 }
 
@@ -83,7 +84,8 @@ fn test_try_get_by_id_distinguishes_missing_and_selected() {
             Ok(Arc::new(1))
         })
         .expect("stage optional consumer");
-    let context = builder.build_all().expect("optional absence is valid");
+    let application = builder.build_all().expect("optional absence is valid");
+    let context = application.context();
     assert_eq!(*context.get::<usize>().expect("built value"), 1);
 }
 
@@ -112,6 +114,7 @@ fn test_try_get_by_id_returns_the_declared_named_component() {
         *builder
             .build_all()
             .expect("valid graph")
+            .context()
             .get::<u64>()
             .expect("consumer"),
         37
@@ -161,6 +164,7 @@ fn test_retained_build_context_keeps_only_declared_dependencies_alive() {
 
     let application = builder.build_all().expect("build all staged components");
     let retained = application
+        .context()
         .get::<RetainedDependencyContext>()
         .expect("resolve retained context");
     drop(application);

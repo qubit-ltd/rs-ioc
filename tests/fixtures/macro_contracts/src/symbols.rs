@@ -65,7 +65,8 @@ fn test_shadowed_result_and_internal_parameter_names() {
     builder.install::<OrdinaryBean>().expect("install ordinary");
     builder.install::<CollisionBean>().expect("install collision");
     result_shadow::register_ioc(&mut builder).expect("install configuration group");
-    let context = builder.build_all().expect("build definitions");
+    let application = builder.build_all().expect("build definitions");
+    let context = application.context();
     assert_eq!(*context.get::<u32>().expect("ordinary value"), 7);
     assert_eq!(context.get::<CollisionResult>().expect("collision value").0, 5);
     #[cfg(feature = "extra")]

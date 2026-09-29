@@ -17,6 +17,8 @@ use std::sync::atomic::Ordering;
 use qubit_ioc::CleanupError;
 use qubit_ioc::ContainerBuilder;
 use qubit_ioc::Managed;
+use qubit_ioc::ShutdownMode;
+use qubit_ioc::WaitPolicy;
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 
@@ -30,54 +32,88 @@ struct Worker {
     task: Mutex<Option<JoinHandle<()>>>,
 }
 
+/// Requests stop without waiting; the wait callback observes task completion.
+fn request_stop(worker: Arc<Worker>) -> Result<(), CleanupError> {
+    let stop = worker
+        .stop
+        .lock()
+        .map_err(|_| CleanupError::new(io::Error::other("stop lock poisoned")))?
+        .take();
+    if let Some(stop) = stop {
+        let _ = stop.send(());
+    }
+    Ok(())
+}
+
+/// Builds the managed worker and observes cleanup on success and failure.
 fn main() -> Result<(), Box<dyn Error>> {
-    tokio::runtime::Builder::new_current_thread().build()?.block_on(async {
-        let mut builder = ContainerBuilder::new();
-        builder.register_managed_factory::<Worker, _>(&[], |_| {
-            let (stop_sender, stop_receiver) = oneshot::channel();
-            let finished = Arc::new(AtomicBool::new(false));
-            let task_finished = Arc::clone(&finished);
-            let task = tokio::spawn(async move {
-                let _ = stop_receiver.await;
-                task_finished.store(true, Ordering::Release);
-            });
-            let worker = Arc::new(Worker {
-                finished,
-                stop: Mutex::new(Some(stop_sender)),
-                task: Mutex::new(Some(task)),
-            });
-            Ok(Managed::new(Arc::clone(&worker), |worker| {
-                let stop = worker
-                    .stop
-                    .lock()
-                    .map_err(|_| CleanupError::new(io::Error::other("stop lock poisoned")))?
-                    .take();
-                if let Some(stop) = stop {
-                    let _ = stop.send(());
-                }
-                Ok(())
-            })
-            .with_wait(|worker| {
-                Box::pin(async move {
-                    let task = worker
-                        .task
-                        .lock()
-                        .map_err(|_| CleanupError::new(io::Error::other("task lock poisoned")))?
-                        .take();
-                    if let Some(task) = task {
-                        task.await.map_err(CleanupError::new)?;
+    tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()?
+        .block_on(async {
+            let mut builder = ContainerBuilder::new().wait_policy(WaitPolicy::bounded(
+                std::time::Duration::from_secs(30),
+                std::time::Duration::from_secs(5),
+                |duration| Box::pin(tokio::time::sleep(duration)),
+            ));
+            builder.register_managed_factory::<Worker, _>(&[], |_| {
+                let (stop_sender, stop_receiver) = oneshot::channel();
+                let finished = Arc::new(AtomicBool::new(false));
+                let task_finished = Arc::clone(&finished);
+                let task = tokio::spawn(async move {
+                    let _ = stop_receiver.await;
+                    task_finished.store(true, Ordering::Release);
+                });
+                let worker = Arc::new(Worker {
+                    finished,
+                    stop: Mutex::new(Some(stop_sender)),
+                    task: Mutex::new(Some(task)),
+                });
+                Ok(Managed::new(Arc::clone(&worker), request_stop)
+                    .with_graceful_stop(request_stop)
+                    .with_wait(|worker| {
+                        Box::pin(async move {
+                            let task = worker
+                                .task
+                                .lock()
+                                .map_err(|_| CleanupError::new(io::Error::other("task lock poisoned")))?
+                                .take();
+                            if let Some(task) = task {
+                                task.await.map_err(CleanupError::new)?;
+                            }
+                            Ok(())
+                        })
+                    }))
+            })?;
+            builder.root::<Worker>();
+            let application = match builder.build_async().await {
+                Ok(application) => application,
+                Err(failure) => {
+                    let (cause, cleanup) = failure.into_parts();
+                    eprintln!("Application construction failed: {cause}");
+                    if let Some(mut cleanup) = cleanup
+                        && let Err(error) = cleanup.wait().await
+                    {
+                        eprintln!("Application cleanup failed: {error}");
                     }
-                    Ok(())
-                })
-            }))
+                    return Err(cause.into());
+                }
+            };
+            let worker = application.context().get::<Worker>();
+            let mode = if worker.is_ok() {
+                ShutdownMode::Graceful
+            } else {
+                ShutdownMode::Immediate
+            };
+            let mut shutdown = application.begin_shutdown(mode);
+            let cleanup = shutdown.wait().await;
+            if let Err(error) = &cleanup {
+                eprintln!("Application shutdown failed: {error}; {:?}", error.report());
+            }
+            let worker = worker?;
+            cleanup?;
+            assert!(worker.finished.load(Ordering::Acquire));
+            Ok::<(), Box<dyn Error>>(())
         })?;
-        builder.root::<Worker>();
-        let context = builder.build()?;
-        let worker = context.get::<Worker>()?;
-        let mut shutdown = context.begin_shutdown();
-        shutdown.wait().await?;
-        assert!(worker.finished.load(Ordering::Acquire));
-        Ok::<(), Box<dyn Error>>(())
-    })?;
     Ok(())
 }

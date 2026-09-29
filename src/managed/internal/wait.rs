@@ -8,9 +8,9 @@
 //! Panic isolation and cancellation-safe wait polling.
 
 use std::any::Any;
-use std::future::poll_fn;
 use std::panic::AssertUnwindSafe;
 use std::panic::catch_unwind;
+use std::task::Context;
 use std::task::Poll;
 
 use crate::managed::CleanupError;
@@ -56,30 +56,15 @@ pub(in crate::managed) fn start_wait(wait: ErasedWait) -> Result<CleanupFuture, 
     catch_unwind(AssertUnwindSafe(wait)).map_err(|payload| panic_cleanup_error("wait callback", payload))
 }
 
-/// Polls a retained wait future and converts an unwind panic into a cleanup
-/// error.
-///
-/// The future is borrowed so a `Pending` result preserves its state if the
-/// caller cancels the surrounding wait operation.
-///
-/// # Parameters
-///
-/// * `future` - Retained future for one component's wait action.
-///
-/// # Returns
-///
-/// `Ok(())` when the wait future succeeds.
-///
-/// # Errors
-///
-/// Returns its cleanup error, or a cleanup error containing a caught panic.
-pub(in crate::managed) async fn poll_wait(future: &mut CleanupFuture) -> Result<(), CleanupError> {
-    poll_fn(
-        |context| match catch_unwind(AssertUnwindSafe(|| future.as_mut().poll(context))) {
-            Ok(Poll::Ready(result)) => Poll::Ready(result),
-            Ok(Poll::Pending) => Poll::Pending,
-            Err(payload) => Poll::Ready(Err(panic_cleanup_error("wait future", payload))),
-        },
-    )
-    .await
+/// Polls one retained component future behind the shared unwind boundary.
+/// Returns its Pending/Ready state, translating polling panics into Wait
+/// errors.
+pub(in crate::managed) fn poll_wait_once(
+    future: &mut CleanupFuture,
+    context: &mut Context<'_>,
+) -> Poll<Result<(), CleanupError>> {
+    match catch_unwind(AssertUnwindSafe(|| future.as_mut().poll(context))) {
+        Ok(result) => result,
+        Err(payload) => Poll::Ready(Err(panic_cleanup_error("wait future", payload))),
+    }
 }

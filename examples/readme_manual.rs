@@ -18,7 +18,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Ok(Arc::new(message.len()))
     })?;
     builder.root::<usize>();
-    let context = builder.build()?;
+    let application = builder.build()?;
+    let context = application.context();
     assert_eq!(*context.get::<usize>()?, 5);
     Ok(())
 }

@@ -7,7 +7,7 @@
 // =============================================================================
 use std::sync::Arc;
 
-use qubit_ioc::ApplicationContext;
+use qubit_ioc::Application;
 use qubit_ioc::BindingId;
 use qubit_ioc::BindingKey;
 use qubit_ioc::BindingOptions;
@@ -17,11 +17,12 @@ use qubit_ioc::ResolveError;
 #[test]
 fn test_get_reuses_shared_arc() {
     let instance = Arc::new(String::from("shared"));
-    let mut builder = ApplicationContext::builder();
+    let mut builder = Application::builder();
     builder
         .register_instance(Arc::clone(&instance))
         .expect("stage instance");
-    let context = builder.build_all().expect("build context");
+    let application = builder.build_all().expect("build context");
+    let context = application.context();
     let first = context.get::<String>().expect("first lookup");
     let second = context.get::<String>().expect("second lookup");
     assert!(Arc::ptr_eq(&instance, &first));
@@ -53,7 +54,8 @@ fn test_get_by_id_and_get_all_share_instances() {
             },
         )
         .expect("stage second");
-    let context = builder.build_all().expect("build context");
+    let application = builder.build_all().expect("build context");
+    let context = application.context();
     assert!(Arc::ptr_eq(
         &first,
         &context.get_by_id::<u32>("first").expect("named lookup")
@@ -81,7 +83,8 @@ fn test_equal_order_sorts_by_id_and_missing_lookup_lists_available_keys() {
             )
             .expect("stage named value");
     }
-    let context = builder.build_all().expect("build named values");
+    let application = builder.build_all().expect("build named values");
+    let context = application.context();
     assert_eq!(
         context.get_all::<u32>().iter().map(|value| **value).collect::<Vec<_>>(),
         [1, 26]
@@ -125,7 +128,8 @@ fn test_collection_order_and_named_queries_reuse_arcs() {
             )
             .expect("register collection member");
     }
-    let context = builder.build_all().expect("build collection");
+    let application = builder.build_all().expect("build collection");
+    let context = application.context();
     let first = context.get_all::<u8>();
     let second = context.get_all::<u8>();
     assert_eq!(first.iter().map(|value| **value).collect::<Vec<_>>(), [2, 1, 3]);
@@ -154,7 +158,8 @@ fn test_unique_primary_get_and_try_get_reuse_the_same_arc() {
             )
             .expect("register primary selection candidate");
     }
-    let context = builder.build_all().expect("build primary selection");
+    let application = builder.build_all().expect("build primary selection");
+    let context = application.context();
     let selected = context.get::<u8>().expect("unique primary");
     assert_eq!(*selected, 1);
     assert!(Arc::ptr_eq(&selected, &context.get::<u8>().expect("repeated primary")));
@@ -188,7 +193,8 @@ fn test_ambiguity_and_missing_errors_preserve_registered_candidate_order() {
             .expect("register ambiguous candidate");
         expected.push(BindingKey::of::<u8>(Some(BindingId::parse(id).expect("valid ID"))));
     }
-    let context = builder.build_all().expect("build ambiguous candidates");
+    let application = builder.build_all().expect("build ambiguous candidates");
+    let context = application.context();
     for error in [
         context.get::<u8>().expect_err("get is ambiguous"),
         context.try_get::<u8>().expect_err("try_get is equally ambiguous"),
@@ -215,7 +221,8 @@ fn test_ambiguity_and_missing_errors_preserve_registered_candidate_order() {
 
 #[test]
 fn test_absent_type_queries_preserve_empty_contracts() {
-    let context = ContainerBuilder::new().build_all().expect("build empty context");
+    let application = ContainerBuilder::new().build_all().expect("build empty context");
+    let context = application.context();
     assert!(context.try_get::<u8>().expect("optional absent type").is_none());
     assert!(context.get_all::<u8>().is_empty());
     match context.get::<u8>().expect_err("absent type") {
