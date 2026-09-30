@@ -5,12 +5,11 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-//! Crate-internal tests for runtime contracts unavailable through the public
-//! API.
+//! Component activated through a `cfg_attr` activation condition.
 
-// Verifies the graph validation contracts that the public builder cannot
-// reach.
-mod graph_tests;
-// Verifies that erased values keep wide pointers and aliases share one
-// allocation.
-mod store_tests;
+use r#type::Component;
+
+/// Removes the component when cfg_attr enables a false activation condition.
+#[Component]
+#[cfg_attr(not(feature = "extra"), cfg(any()), derive(Clone))]
+pub struct ConditionalStruct;

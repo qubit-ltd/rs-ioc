@@ -5,12 +5,12 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-//! Crate-internal tests for runtime contracts unavailable through the public
-//! API.
+//! Component that keeps a non-activation derive while cfg_attr keeps it
+//! active.
 
-// Verifies the graph validation contracts that the public builder cannot
-// reach.
-mod graph_tests;
-// Verifies that erased values keep wide pointers and aliases share one
-// allocation.
-mod store_tests;
+use r#type::Component;
+
+/// Retains a non-activation derive when cfg_attr selects an active component.
+#[Component]
+#[cfg_attr(feature = "extra", cfg(all()), derive(Clone))]
+pub struct DerivedConditionalStruct;

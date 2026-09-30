@@ -9,5 +9,10 @@
 #![allow(dead_code)]
 //! External consumer contracts for `qubit-ioc` macros.
 
-mod symbols;
+// Owns the conditional activation contracts driven by the consumer features.
 mod cfg_fields;
+// Owns the consumer-local names that shadow `Result` and the `Option` variants.
+mod symbols;
+
+#[cfg(test)]
+mod tests;

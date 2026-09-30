@@ -5,12 +5,9 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-//! Crate-internal tests for runtime contracts unavailable through the public
-//! API.
+//! Crate-internal contract tests for the macro fixture types.
 
-// Verifies the graph validation contracts that the public builder cannot
-// reach.
-mod graph_tests;
-// Verifies that erased values keep wide pointers and aliases share one
-// allocation.
-mod store_tests;
+// Covers the conditional activation contracts declared in `cfg_fields`.
+mod cfg_fields_tests;
+// Covers the consumer-local name shadowing contracts declared in `symbols`.
+mod symbols_tests;

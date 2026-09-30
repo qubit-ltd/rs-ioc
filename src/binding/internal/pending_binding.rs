@@ -9,11 +9,11 @@
 
 use std::sync::Arc;
 
+use crate::Managed;
 use crate::binding::ErasedFactoryFuture;
 use crate::binding::ErasedInstance;
 use crate::binding::ErasedManagedFactoryFuture;
 use crate::binding::FactoryFuture;
-use crate::binding::Managed;
 use crate::binding::ManagedProduct;
 use crate::binding::PendingBindingKind;
 use crate::build_context::BuildContext;
@@ -37,6 +37,15 @@ pub(crate) struct PendingBinding {
 
 impl PendingBinding {
     /// Stages a complete shared instance of `T` under a matching typed `key`.
+    ///
+    /// # Parameters
+    ///
+    /// * `key` — Typed identity this instance is staged under; it must carry
+    ///   the same type as `T`.
+    /// * `value` — The already constructed shared instance to publish.
+    /// * `primary` — Whether unnamed dependency requests may prefer this
+    ///   binding.
+    /// * `order` — Collection ordering value compared before ID and source.
     pub(crate) fn instance<T: ?Sized + Send + Sync + 'static>(
         key: BindingKey,
         value: Arc<T>,
@@ -56,6 +65,24 @@ impl PendingBinding {
     ///
     /// Construction and any factory error occur only when the validated graph
     /// executes this binding.
+    ///
+    /// # Parameters
+    ///
+    /// * `key` — Typed identity this factory is staged under; it must carry the
+    ///   same type as `T`.
+    /// * `primary` — Whether unnamed dependency requests may prefer this
+    ///   binding.
+    /// * `order` — Collection ordering value compared before ID and source.
+    /// * `factory` — One-shot producer invoked once per container build with
+    ///   the resolved [`BuildContext`]; it owns every dependency value it
+    ///   needs, because the returned [`PendingBinding`] is `Send` and may be
+    ///   moved to another thread.
+    ///
+    /// # Errors
+    ///
+    /// Staging itself cannot fail. The `Err` of `factory` is captured by the
+    /// staged binding and surfaces later, as the graph error of the component
+    /// that consumes this binding.
     pub(crate) fn sync_factory<T, F>(key: BindingKey, primary: bool, order: i32, factory: F) -> Self
     where
         T: ?Sized + Send + Sync + 'static,
@@ -77,6 +104,24 @@ impl PendingBinding {
     ///
     /// The returned future owns its data and is `Send`; construction and errors
     /// occur only when a caller polls it during asynchronous building.
+    ///
+    /// # Parameters
+    ///
+    /// * `key` — Typed identity this factory is staged under; it must carry the
+    ///   same type as `T`.
+    /// * `primary` — Whether unnamed dependency requests may prefer this
+    ///   binding.
+    /// * `order` — Collection ordering value compared before ID and source.
+    /// * `factory` — One-shot producer invoked once per container build with
+    ///   the resolved [`BuildContext`]; it owns every dependency value it
+    ///   needs, because the returned [`PendingBinding`] is `Send` and may be
+    ///   moved to another thread.
+    ///
+    /// # Returns
+    ///
+    /// The staged binding carries an erasing future. Construction and any
+    /// [`FactoryError`] are not observable here: they appear only when the
+    /// graph first polls that future while building asynchronously.
     pub(crate) fn async_factory<T, F>(key: BindingKey, primary: bool, order: i32, factory: F) -> Self
     where
         T: ?Sized + Send + Sync + 'static,
@@ -97,6 +142,26 @@ impl PendingBinding {
 
     /// Erases the value and lifecycle actions returned by a synchronous
     /// factory.
+    ///
+    /// # Parameters
+    ///
+    /// * `key` — Typed identity this factory is staged under; it must carry the
+    ///   same type as `T`.
+    /// * `primary` — Whether unnamed dependency requests may prefer this
+    ///   binding.
+    /// * `order` — Collection ordering value compared before ID and source.
+    /// * `factory` — One-shot producer invoked once per container build with
+    ///   the resolved [`BuildContext`]; it returns the [`Managed`] product
+    ///   whose value and lifecycle actions are erased into the staged binding,
+    ///   and it owns every dependency value it needs because the returned
+    ///   [`PendingBinding`] is `Send` and may be moved to another thread.
+    ///
+    /// # Errors
+    ///
+    /// Staging itself cannot fail. The `Err` of `factory` is captured by the
+    /// staged binding and surfaces later, as the graph error of the component
+    /// that consumes this binding; no lifecycle action is registered in that
+    /// case.
     pub(crate) fn managed_sync_factory<T, F>(key: BindingKey, primary: bool, order: i32, factory: F) -> Self
     where
         T: ?Sized + Send + Sync + 'static,
@@ -116,6 +181,25 @@ impl PendingBinding {
 
     /// Erases the value and lifecycle actions returned by an asynchronous
     /// factory.
+    ///
+    /// # Parameters
+    ///
+    /// * `key` — Typed identity this factory is staged under; it must carry the
+    ///   same type as `T`.
+    /// * `primary` — Whether unnamed dependency requests may prefer this
+    ///   binding.
+    /// * `order` — Collection ordering value compared before ID and source.
+    /// * `factory` — One-shot producer invoked once per container build with
+    ///   the resolved [`BuildContext`]; it returns the managed factory future
+    ///   whose value and lifecycle actions are erased into the staged binding,
+    ///   and it owns every dependency value it needs because the returned
+    ///   [`PendingBinding`] is `Send` and may be moved to another thread.
+    ///
+    /// # Returns
+    ///
+    /// The staged binding carries an erasing future. Construction and any
+    /// [`FactoryError`] are not observable here: they appear only when the
+    /// graph first polls that future while building asynchronously.
     pub(crate) fn managed_async_factory<T, F>(key: BindingKey, primary: bool, order: i32, factory: F) -> Self
     where
         T: ?Sized + Send + Sync + 'static,
@@ -138,6 +222,25 @@ impl PendingBinding {
     ///
     /// `project` converts a cloned `Arc<T>` into an `Arc<U>` without rebuilding
     /// the component. A mismatched source type yields `None` during projection.
+    ///
+    /// # Parameters
+    ///
+    /// * `key` — Typed identity of the alias; it carries the interface type
+    ///   `U`, not the concrete type `T`.
+    /// * `target` — Typed identity of the concrete binding this alias projects
+    ///   from.
+    /// * `primary` — Whether unnamed dependency requests may prefer this
+    ///   binding.
+    /// * `order` — Collection ordering value compared before ID and source.
+    /// * `project` — Cloning projection from a cloned `Arc<T>` to an `Arc<U>`;
+    ///   it is shared, so it may be called once per lookup and must not mutate
+    ///   shared state.
+    ///
+    /// # Returns
+    ///
+    /// The staged binding holds the projector, not the projected value.
+    /// Projection yields `Some` only when the erased value really holds an
+    /// `Arc<T>`, and `None` for a type mismatch or a non-alias stage.
     pub(crate) fn alias<T, U, F>(key: BindingKey, target: BindingKey, primary: bool, order: i32, project: F) -> Self
     where
         T: ?Sized + Send + Sync + 'static,
@@ -157,16 +260,6 @@ impl PendingBinding {
                 target,
                 project: Box::new(erased),
             },
-        }
-    }
-
-    /// Projects an alias from `value`, returning `None` for a non-alias or type
-    /// mismatch.
-    #[cfg(test)]
-    pub(crate) fn project_alias(&self, value: &ErasedInstance) -> Option<ErasedInstance> {
-        match &self.kind {
-            PendingBindingKind::Alias { project, .. } => project(value),
-            _ => None,
         }
     }
 }

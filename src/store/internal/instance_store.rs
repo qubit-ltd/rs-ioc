@@ -7,8 +7,6 @@
 // =============================================================================
 //! Map of constructed component values keyed by exact binding identity.
 
-#[cfg(test)]
-use std::any::TypeId;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -23,29 +21,25 @@ pub(crate) struct InstanceStore {
 }
 
 impl InstanceStore {
-    /// Inserts `value` under `key`, replacing an existing value with the same
-    /// key.
-    ///
-    /// `T` must match the type encoded by `key`; callers validate key
-    /// uniqueness before construction. The whole `Arc<T>` is erased so
-    /// wide-pointer metadata remains available for later queries.
-    #[cfg(test)]
-    pub(crate) fn insert<T: ?Sized + Send + Sync + 'static>(&mut self, key: BindingKey, value: Arc<T>) {
-        debug_assert_eq!(key.type_id(), TypeId::of::<T>());
-        self.insert_erased(key, Arc::new(value));
-    }
-
-    /// Inserts an already erased `Arc` under `key`, replacing any prior value.
-    ///
-    /// The caller must ensure the erased value contains the `Arc<T>` identified
-    /// by `key`; factories and alias projectors are responsible for this
-    /// invariant.
-    pub(crate) fn insert_erased(&mut self, key: BindingKey, value: ErasedInstance) {
-        self.values.insert(key, value);
-    }
-
     /// Returns a clone of the stored `Arc<T>`, or `None` when absent or
     /// mistyped.
+    ///
+    /// # Type Parameters
+    ///
+    /// `T` is the type the caller expects to read back. It must be
+    /// `Send + Sync + 'static` and must match the type encoded by `key`; a
+    /// mismatch is reported as `None` rather than as a panic.
+    ///
+    /// # Parameters
+    ///
+    /// `key` is the exact typed key to look up. A key that is absent and a key
+    /// whose stored value holds a different concrete type both yield `None`.
+    ///
+    /// # Returns
+    ///
+    /// `Some` with a shared clone of the stored value when `key` is present and
+    /// holds an `Arc<T>`, otherwise `None` - both for an unknown key and for a
+    /// key whose erased value holds a different concrete type.
     #[must_use]
     #[inline]
     pub(crate) fn get<T: ?Sized + Send + Sync + 'static>(&self, key: &BindingKey) -> Option<Arc<T>> {
@@ -53,6 +47,20 @@ impl InstanceStore {
     }
 
     /// Borrows the erased value for alias projection, or `None` if absent.
+    ///
+    /// The borrow stays valid while `self` is borrowed; it neither clones nor
+    /// allocates, and it does not check the concrete type behind the erased
+    /// value, leaving that projection to the caller.
+    ///
+    /// # Parameters
+    ///
+    /// `key` is the exact typed key whose erased entry is borrowed; no type
+    /// check is performed against the value behind it.
+    ///
+    /// # Returns
+    ///
+    /// `Some` referencing the stored erased value when `key` is present, or
+    /// `None` when no value is stored under that exact key.
     #[must_use]
     #[inline]
     pub(crate) fn get_erased(&self, key: &BindingKey) -> Option<&ErasedInstance> {
@@ -62,6 +70,11 @@ impl InstanceStore {
     /// Clones one erased value so a factory can retain only its resolved
     /// dependencies.
     ///
+    /// # Parameters
+    ///
+    /// `key` is the exact typed key whose erased entry is cloned into a new
+    /// shared handle.
+    ///
     /// # Returns
     ///
     /// Returns `Some` with a shared clone when `key` is present, or `None`
@@ -70,5 +83,21 @@ impl InstanceStore {
     #[inline]
     pub(crate) fn get_erased_cloned(&self, key: &BindingKey) -> Option<ErasedInstance> {
         self.values.get(key).cloned()
+    }
+
+    /// Inserts an already erased `Arc` under `key`, replacing any prior value.
+    ///
+    /// The caller must ensure the erased value contains the `Arc<T>` identified
+    /// by `key`; factories and alias projectors are responsible for this
+    /// invariant.
+    ///
+    /// # Parameters
+    ///
+    /// `key` is the exact typed key the erased value is filed under, and
+    /// `value` is the already type-erased shared component that must match
+    /// the concrete type `key` encodes. Any prior entry for the same key is
+    /// replaced.
+    pub(crate) fn insert_erased(&mut self, key: BindingKey, value: ErasedInstance) {
+        self.values.insert(key, value);
     }
 }

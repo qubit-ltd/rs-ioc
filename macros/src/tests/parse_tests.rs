@@ -530,31 +530,45 @@ fn test_bare_inject_rejects_unsupported_scalar_and_assignment_syntax() {
 
 #[test]
 fn test_bean_rejects_unsupported_signature() {
-    for item in [
-        quote!(
-            fn generic<T>() -> T {
-                todo!()
-            }
+    let cases = [
+        (
+            quote!(
+                fn generic<T>() -> T {
+                    todo!()
+                }
+            ),
+            "requires a safe, non-generic Rust function",
         ),
-        quote!(
-            unsafe fn unsafe_factory() -> Repository {
-                todo!()
-            }
+        (
+            quote!(
+                unsafe fn unsafe_factory() -> Repository {
+                    todo!()
+                }
+            ),
+            "requires a safe, non-generic Rust function",
         ),
-        quote!(
-            fn borrowed(value: &Repository) -> Repository {
-                todo!()
-            }
+        (
+            quote!(
+                fn borrowed(value: &Repository) -> Repository {
+                    todo!()
+                }
+            ),
+            "unsupported injection type",
         ),
-        quote!(
-            fn opaque() -> impl Send {
-                todo!()
-            }
+        (
+            quote!(
+                fn opaque() -> impl Send {
+                    todo!()
+                }
+            ),
+            "does not support `impl Trait` or borrowed outputs",
         ),
-    ] {
+    ];
+
+    for (item, expected) in cases {
         let error =
             declaration(MacroKind::Bean, quote!(), item).expect_err("unsupported bean signature must be rejected");
-        assert!(!error.to_string().is_empty());
+        assert!(error.to_string().contains(expected), "{expected}: {error}");
     }
 }
 
@@ -569,6 +583,64 @@ fn test_configuration_rejects_external_module() {
     )
     .expect_err("Configuration requires an inline module");
     assert!(error.to_string().contains("inline"), "{error}");
+}
+
+#[test]
+fn test_each_kind_rejects_a_foreign_item_shape() {
+    let cases = [
+        (
+            MacroKind::Bean,
+            "bean",
+            quote!(
+                struct NotAFunction;
+            ),
+        ),
+        (
+            MacroKind::Component,
+            "Component",
+            quote!(
+                fn not_a_struct() {}
+            ),
+        ),
+        (
+            MacroKind::Service,
+            "Service",
+            quote!(
+                fn not_a_struct() {}
+            ),
+        ),
+        (
+            MacroKind::Repository,
+            "Repository",
+            quote!(
+                fn not_a_struct() {}
+            ),
+        ),
+        (
+            MacroKind::Configuration,
+            "Configuration",
+            quote!(
+                struct NotAModule;
+            ),
+        ),
+        (
+            MacroKind::ConfigurationProperties,
+            "ConfigurationProperties",
+            quote!(
+                fn not_a_struct() {}
+            ),
+        ),
+    ];
+
+    for (kind, attribute, item) in cases {
+        let error = declaration(kind, quote!(), item).expect_err("a foreign item shape must be rejected");
+        assert!(
+            error
+                .to_string()
+                .contains(&format!("#[{attribute}] cannot be used on this Rust item")),
+            "{attribute} on a foreign item: {error}"
+        );
+    }
 }
 
 #[test]
