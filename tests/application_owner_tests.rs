@@ -17,6 +17,7 @@ use qubit_ioc::Dependency;
 use qubit_ioc::Managed;
 use qubit_ioc::ShutdownMode;
 use qubit_ioc::WaitPolicy;
+use tokio::runtime::Builder;
 
 #[test]
 fn test_query_clone_does_not_prevent_owner_shutdown() {
@@ -122,9 +123,7 @@ fn test_missing_policy_precedes_selected_managed_async_preflight() {
 #[test]
 fn test_async_root_build_missing_policy_prevents_every_factory() {
     let calls = Arc::new(AtomicUsize::new(0));
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .build()
-        .expect("test runtime builds");
+    let runtime = Builder::new_current_thread().build().expect("test runtime builds");
     let result = runtime.block_on(async_managed_builder(&calls).build_async());
     assert!(matches!(result, Err(failure) if matches!(failure.cause(), BuildError::MissingWaitPolicy)));
     assert_eq!(calls.load(Ordering::SeqCst), 0);
@@ -133,9 +132,7 @@ fn test_async_root_build_missing_policy_prevents_every_factory() {
 #[test]
 fn test_async_all_build_missing_policy_prevents_every_factory() {
     let calls = Arc::new(AtomicUsize::new(0));
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .build()
-        .expect("test runtime builds");
+    let runtime = Builder::new_current_thread().build().expect("test runtime builds");
     let result = runtime.block_on(async_managed_builder(&calls).build_all_async());
     assert!(matches!(result, Err(failure) if matches!(failure.cause(), BuildError::MissingWaitPolicy)));
     assert_eq!(calls.load(Ordering::SeqCst), 0);

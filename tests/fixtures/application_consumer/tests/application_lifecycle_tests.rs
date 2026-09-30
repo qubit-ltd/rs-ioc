@@ -8,6 +8,8 @@
 //! Original historical regressions adapted to explicit rollback ownership.
 
 use std::future::Future;
+use std::future::pending;
+use std::future::poll_fn;
 use std::io;
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
@@ -24,6 +26,7 @@ use qubit_ioc::FactoryError;
 use qubit_ioc::Managed;
 use qubit_ioc::WaitPolicy;
 use tokio::runtime::Builder;
+use tokio::sync::oneshot;
 
 #[test]
 fn test_event_bus_missing_registry_prevents_factory_execution() {
@@ -57,11 +60,11 @@ fn test_async_build_failure_stops_managed_execution_services_once() {
                 .build()
                 .expect("create execution services"),
         );
-        let (task_started_tx, task_started_rx) = tokio::sync::oneshot::channel();
+        let (task_started_tx, task_started_rx) = oneshot::channel();
         let _task = services
             .spawn_io(async move {
                 task_started_tx.send(()).expect("test receiver should be alive");
-                std::future::pending::<()>().await;
+                pending::<()>().await;
                 Ok::<(), io::Error>(())
             })
             .expect("submit pending IO task");
@@ -133,7 +136,7 @@ fn test_cancelling_async_build_stops_managed_execution_services_once() {
         );
         let stops = Arc::new(AtomicUsize::new(0));
         let waits = Arc::new(AtomicUsize::new(0));
-        let (factory_started_tx, factory_started_rx) = tokio::sync::oneshot::channel();
+        let (factory_started_tx, factory_started_rx) = oneshot::channel();
         let mut builder = ContainerBuilder::new().wait_policy(WaitPolicy::unbounded());
         let managed_services = Arc::clone(&services);
         let stop_count = Arc::clone(&stops);
@@ -162,7 +165,7 @@ fn test_cancelling_async_build_stops_managed_execution_services_once() {
                 Box::pin(async move {
                     let _services = dependency.map_err(FactoryError::new)?;
                     factory_started_tx.send(()).expect("test receiver should be alive");
-                    std::future::pending::<()>().await;
+                    pending::<()>().await;
                     Ok(Arc::new(1))
                 })
             })
@@ -171,7 +174,7 @@ fn test_cancelling_async_build_stops_managed_execution_services_once() {
 
         let mut build = Box::pin(builder.build_async());
         let mut factory_started = Box::pin(factory_started_rx);
-        std::future::poll_fn(|context| {
+        poll_fn(|context| {
             if build.as_mut().poll(context).is_ready() {
                 panic!("pending async factory unexpectedly completed");
             }
