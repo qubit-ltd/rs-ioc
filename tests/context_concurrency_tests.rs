@@ -32,7 +32,7 @@ fn run_ready<F: Future>(future: F) -> F::Output {
 
 /// Confirms a built context can be shared while all queries read the same Arc.
 #[test]
-fn context_is_send_sync_and_shared_queries_keep_one_instance() {
+fn test_context_is_send_sync_and_shared_queries_keep_one_instance() {
     fn assert_send_sync<T: Send + Sync>() {}
     assert_send_sync::<ApplicationContext>();
 
@@ -59,7 +59,7 @@ fn context_is_send_sync_and_shared_queries_keep_one_instance() {
 
 /// Confirms stop callbacks need to be `Send` but do not need to be `Sync`.
 #[test]
-fn managed_send_callback_can_capture_non_sync_state() {
+fn test_managed_send_callback_can_capture_non_sync_state() {
     let callback_state = Cell::new(0_u32);
     let mut builder = ContainerBuilder::new().wait_policy(WaitPolicy::unbounded());
     builder

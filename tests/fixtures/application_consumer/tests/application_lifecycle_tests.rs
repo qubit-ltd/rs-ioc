@@ -16,6 +16,7 @@ use std::sync::atomic::Ordering;
 use qubit_event_bus::EventBus;
 use qubit_event_bus::EventBusRegistry;
 use qubit_execution_services::ExecutionServices;
+use qubit_execution_services::ExecutionServicesSubmissionError;
 use qubit_ioc::BuildError;
 use qubit_ioc::ContainerBuilder;
 use qubit_ioc::Dependency;
@@ -111,7 +112,7 @@ fn test_async_build_failure_stops_managed_execution_services_once() {
         assert!(services.is_terminated());
         assert!(matches!(
             services.spawn_io(async { Ok::<(), io::Error>(()) }),
-            Err(qubit_execution_services::ExecutionServicesSubmissionError::Rejected { .. })
+            Err(ExecutionServicesSubmissionError::Rejected { .. })
         ));
     });
 }

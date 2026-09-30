@@ -7,8 +7,8 @@
 // =============================================================================
 #![deny(unused_must_use)]
 
-use qubit_ioc::ShutdownMode;
 use qubit_ioc::Application;
+use qubit_ioc::ShutdownMode;
 
 fn ignored(application: Application) {
     application.begin_shutdown(ShutdownMode::Immediate);

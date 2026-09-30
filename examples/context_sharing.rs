@@ -7,9 +7,11 @@
 // =============================================================================
 //! Shares immutable component queries and then shuts down through one owner.
 
+use std::error::Error;
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
+use std::time::Duration;
 
 use qubit_ioc::ContainerBuilder;
 use qubit_ioc::Managed;
@@ -17,13 +19,13 @@ use qubit_ioc::ShutdownMode;
 use qubit_ioc::WaitPolicy;
 
 /// Builds the application and performs concurrent reads before shutdown.
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), Box<dyn Error>> {
     let runtime = tokio::runtime::Builder::new_current_thread().enable_time().build()?;
     let stops = Arc::new(AtomicUsize::new(0));
     let captured = Arc::clone(&stops);
     let mut builder = ContainerBuilder::new().wait_policy(WaitPolicy::bounded(
-        std::time::Duration::from_secs(30),
-        std::time::Duration::from_secs(5),
+        Duration::from_secs(30),
+        Duration::from_secs(5),
         |duration| Box::pin(tokio::time::sleep(duration)),
     ));
     builder.register_managed_factory::<String, _>(&[], move |_| {

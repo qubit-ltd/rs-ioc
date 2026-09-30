@@ -7,8 +7,10 @@
 // =============================================================================
 //! Installs function beans individually and through a configuration group.
 
+use std::error::Error;
 use std::sync::Arc;
 
+use qubit_ioc::Configuration;
 use qubit_ioc::ContainerBuilder;
 use qubit_ioc::bean;
 
@@ -25,7 +27,7 @@ fn custom_value() -> Arc<CustomValue> {
     Arc::new(CustomValue(2))
 }
 
-#[qubit_ioc::Configuration]
+#[Configuration]
 mod grouped {
     #[qubit_ioc::bean]
     fn label() -> String {
@@ -33,7 +35,7 @@ mod grouped {
     }
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), Box<dyn Error>> {
     let mut builder = ContainerBuilder::new();
     builder.install::<DefaultValueBean>()?;
     builder.install::<CustomFactory>()?;

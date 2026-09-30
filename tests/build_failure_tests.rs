@@ -7,19 +7,29 @@
 // =============================================================================
 //! Public rollback ownership and immediate build failure regressions.
 
+use std::error::Error;
 use std::future::Future;
+use std::panic::AssertUnwindSafe;
+use std::panic::catch_unwind;
 use std::pin::pin;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 use std::task::Context;
 use std::task::Poll;
 use std::task::Waker;
+use std::time::Duration;
 
+use qubit_ioc::BindingKey;
+use qubit_ioc::BuildError;
+use qubit_ioc::BuildFailure;
 use qubit_ioc::ContainerBuilder;
 use qubit_ioc::Dependency;
 use qubit_ioc::FactoryError;
 use qubit_ioc::Managed;
+use qubit_ioc::ShutdownMode;
+use qubit_ioc::ShutdownPhase;
 use qubit_ioc::WaitPolicy;
 
 struct Resource;
@@ -56,8 +66,16 @@ fn test_build_async_returns_failure_before_starting_pending_cleanup() {
         matches!(result, Poll::Ready(Err(_))),
         "build failure must be ready on its first poll without awaiting rollback"
     );
-    assert_eq!(aborts.load(Ordering::SeqCst), 1);
-    assert_eq!(waits.load(Ordering::SeqCst), 0);
+    assert_eq!(
+        aborts.load(Ordering::SeqCst),
+        1,
+        "the completed resource must be aborted exactly once"
+    );
+    assert_eq!(
+        waits.load(Ordering::SeqCst),
+        0,
+        "the failed build must not start a rollback wait"
+    );
 }
 
 /// Drives deterministic futures that must finish in one poll.
@@ -95,11 +113,6 @@ fn failing_builder(aborts: Arc<AtomicUsize>, waits: Arc<AtomicUsize>) -> Contain
 
 #[test]
 fn test_all_build_modes_preserve_cause_and_transfer_cleanup_once() {
-    use std::error::Error;
-
-    use qubit_ioc::BindingKey;
-    use qubit_ioc::BuildError;
-
     for mode in 0..4 {
         let aborts = Arc::new(AtomicUsize::new(0));
         let waits = Arc::new(AtomicUsize::new(0));
@@ -112,8 +125,16 @@ fn test_all_build_modes_preserve_cause_and_transfer_cleanup_once() {
         }
         .err()
         .expect("consumer fails");
-        assert_eq!(aborts.load(Ordering::SeqCst), 1);
-        assert_eq!(waits.load(Ordering::SeqCst), 0);
+        assert_eq!(
+            aborts.load(Ordering::SeqCst),
+            1,
+            "the completed resource must be aborted exactly once in every build mode"
+        );
+        assert_eq!(
+            waits.load(Ordering::SeqCst),
+            0,
+            "no rollback wait may start before the caller claims the cleanup owner"
+        );
         let BuildError::FactoryFailed {
             key,
             path,
@@ -125,7 +146,10 @@ fn test_all_build_modes_preserve_cause_and_transfer_cleanup_once() {
         };
         assert_eq!(*key, BindingKey::of::<Failing>(None));
         assert_eq!(*path, [BindingKey::of::<Failing>(None)]);
-        assert!(definition.to_string().contains("build_failure_tests.rs"));
+        assert!(
+            definition.to_string().contains("build_failure_tests.rs"),
+            "definition must name the failing registration site"
+        );
         assert_eq!(
             error
                 .source()
@@ -140,19 +164,43 @@ fn test_all_build_modes_preserve_cause_and_transfer_cleanup_once() {
                 .source()
                 .expect("build source")
                 .downcast_ref::<BuildError>()
-                .is_some()
+                .is_some(),
+            "build error must expose its own source chain"
         );
-        assert!(format!("{failure:?}").contains("has_cleanup: true"));
-        assert!(failure.to_string().contains("cleanup available: true"));
+        assert!(
+            format!("{failure:?}").contains("has_cleanup: true"),
+            "debug output must advertise the pending rollback owner"
+        );
+        assert!(
+            failure.to_string().contains("cleanup available: true"),
+            "display output must advertise the pending rollback owner"
+        );
         let mut cleanup = failure.take_cleanup().expect("rollback owner");
-        assert!(failure.take_cleanup().is_none());
+        assert!(
+            failure.take_cleanup().is_none(),
+            "taking the rollback owner twice must not hand out a second handle"
+        );
         let (cause, second_cleanup) = failure.into_parts();
-        assert!(matches!(cause, BuildError::FactoryFailed { .. }));
-        assert!(second_cleanup.is_none());
+        assert!(
+            matches!(cause, BuildError::FactoryFailed { .. }),
+            "the original factory cause must survive the split"
+        );
+        assert!(
+            second_cleanup.is_none(),
+            "the consumed rollback owner must not reappear in into_parts"
+        );
         ready(cleanup.wait()).expect("rollback finishes");
-        assert_eq!(waits.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            waits.load(Ordering::SeqCst),
+            1,
+            "the claimed rollback owner must drive exactly one wait"
+        );
         drop(cleanup);
-        assert_eq!(aborts.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            aborts.load(Ordering::SeqCst),
+            1,
+            "dropping the finished cleanup handle must not abort a second time"
+        );
     }
 }
 
@@ -161,13 +209,20 @@ fn test_dropping_build_failure_does_not_start_wait_or_repeat_abort() {
     let aborts = Arc::new(AtomicUsize::new(0));
     let waits = Arc::new(AtomicUsize::new(0));
     drop(failing_builder(Arc::clone(&aborts), Arc::clone(&waits)).build());
-    assert_eq!(aborts.load(Ordering::SeqCst), 1);
-    assert_eq!(waits.load(Ordering::SeqCst), 0);
+    assert_eq!(
+        aborts.load(Ordering::SeqCst),
+        1,
+        "dropping the failure must still abort the completed resource once"
+    );
+    assert_eq!(
+        waits.load(Ordering::SeqCst),
+        0,
+        "dropping the failure must not start a rollback wait"
+    );
 }
 
 #[test]
 fn test_graph_failure_has_no_cleanup_and_runs_no_factories() {
-    use qubit_ioc::BuildError;
     let calls = Arc::new(AtomicUsize::new(0));
     let count = Arc::clone(&calls);
     let mut builder = ContainerBuilder::new().wait_policy(WaitPolicy::unbounded());
@@ -179,9 +234,19 @@ fn test_graph_failure_has_no_cleanup_and_runs_no_factories() {
         .expect("register invalid graph");
     builder.root::<Resource>();
     let mut failure = ready(builder.build_async()).err().expect("missing dependency");
-    assert!(matches!(failure.cause(), BuildError::MissingDependency { .. }));
-    assert!(failure.take_cleanup().is_none());
-    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    assert!(
+        matches!(failure.cause(), BuildError::MissingDependency { .. }),
+        "an unresolvable dependency must fail before any factory runs"
+    );
+    assert!(
+        failure.take_cleanup().is_none(),
+        "a graph failure owns nothing, so it must not hand out a rollback handle"
+    );
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        0,
+        "graph validation must reject the registration before any factory runs"
+    );
 }
 
 #[test]
@@ -191,23 +256,20 @@ fn test_factory_failure_without_managed_resources_has_no_cleanup() {
         .register_factory::<Failing, _>(&[], |_| Err(FactoryError::new(std::io::Error::other("failed"))))
         .expect("register failure");
     let (_, cleanup) = builder.build_all().err().expect("factory failure").into_parts();
-    assert!(cleanup.is_none());
+    assert!(
+        cleanup.is_none(),
+        "a build without managed resources has nothing to roll back"
+    );
 }
 
 #[test]
 fn test_build_failure_is_send_sync() {
     fn assert_send_sync<T: Send + Sync>() {}
-    assert_send_sync::<qubit_ioc::BuildFailure>();
+    assert_send_sync::<BuildFailure>();
 }
 
 #[test]
 fn test_cleanup_timeout_continues_other_waits_and_retains_dependency_store() {
-    use std::sync::Mutex;
-    use std::time::Duration;
-
-    use qubit_ioc::BindingKey;
-    use qubit_ioc::ShutdownMode;
-    use qubit_ioc::ShutdownPhase;
     struct DependencyValue;
     struct Other;
     let dependency = Arc::new(DependencyValue);
@@ -264,7 +326,11 @@ fn test_cleanup_timeout_continues_other_waits_and_retains_dependency_store() {
     let error = ready(cleanup.wait()).expect_err("pending wait reaches its deadline");
     assert_eq!(error.report().mode(), ShutdownMode::Immediate);
     assert_eq!(error.report().incomplete(), [BindingKey::of::<Other>(None)]);
-    assert_eq!(error.report().failures().len(), 1);
+    assert_eq!(
+        error.report().failures().len(),
+        1,
+        "only the pending component may report a termination-wait failure"
+    );
     assert_eq!(error.report().failures()[0].phase, ShutdownPhase::TerminationWait);
     assert_eq!(
         *events.lock().expect("events"),
@@ -274,8 +340,6 @@ fn test_cleanup_timeout_continues_other_waits_and_retains_dependency_store() {
 
 #[test]
 fn test_factory_panic_propagates_and_only_aborts_completed_resources() {
-    use std::panic::AssertUnwindSafe;
-    use std::panic::catch_unwind;
     for asynchronous in [false, true] {
         let aborts = Arc::new(AtomicUsize::new(0));
         let waits = Arc::new(AtomicUsize::new(0));
@@ -308,8 +372,16 @@ fn test_factory_panic_propagates_and_only_aborts_completed_resources() {
         }))
         .expect_err("factory panic propagates");
         assert_eq!(panic.downcast_ref::<&str>(), Some(&"factory unwind"));
-        assert_eq!(aborts.load(Ordering::SeqCst), 1);
-        assert_eq!(waits.load(Ordering::SeqCst), 0);
+        assert_eq!(
+            aborts.load(Ordering::SeqCst),
+            1,
+            "the completed resource must be aborted even when a factory unwinds"
+        );
+        assert_eq!(
+            waits.load(Ordering::SeqCst),
+            0,
+            "an unwinding build must not start a rollback wait"
+        );
     }
 }
 
@@ -341,9 +413,18 @@ fn test_cancelled_build_does_not_create_cleanup_wait() {
         build
             .as_mut()
             .poll(&mut Context::from_waker(Waker::noop()))
-            .is_pending()
+            .is_pending(),
+        "a pending async factory must leave the build future pending"
     );
     drop(build);
-    assert_eq!(aborts.load(Ordering::SeqCst), 1);
-    assert_eq!(waits.load(Ordering::SeqCst), 0);
+    assert_eq!(
+        aborts.load(Ordering::SeqCst),
+        1,
+        "cancelling the pending build must still abort the completed resource"
+    );
+    assert_eq!(
+        waits.load(Ordering::SeqCst),
+        0,
+        "a cancelled build must not create a cleanup wait"
+    );
 }

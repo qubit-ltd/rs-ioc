@@ -17,6 +17,7 @@ use qubit_ioc::Application;
 use qubit_ioc::BindingKey;
 use qubit_ioc::BuildError;
 use qubit_ioc::ContainerBuilder;
+use qubit_ioc::Dependency;
 use qubit_ioc::Managed;
 use qubit_ioc::ShutdownMode;
 use qubit_ioc::ShutdownPhase;
@@ -233,7 +234,7 @@ fn test_each_entry_receives_an_independent_termination_deadline() {
         })
         .expect("register dependency");
     builder
-        .register_managed_factory::<u64, _>(&[qubit_ioc::Dependency::of::<u32>()], move |_| {
+        .register_managed_factory::<u64, _>(&[Dependency::of::<u32>()], move |_| {
             Ok(Managed::new(Arc::new(2), |_| Ok(())).with_wait(move |_| {
                 Box::pin(async move {
                     waiting_second.await;

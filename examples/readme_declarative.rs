@@ -5,6 +5,9 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
+//! Assembles a declarative service whose dependency is bound to a trait object.
+
+use std::error::Error;
 use std::sync::Arc;
 
 use qubit_ioc::Application;
@@ -29,7 +32,7 @@ struct Greeter {
     greeting: Arc<dyn Greeting>,
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), Box<dyn Error>> {
     let mut builder = Application::builder();
     builder.install::<English>()?;
     builder.install::<Greeter>()?;

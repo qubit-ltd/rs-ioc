@@ -13,6 +13,7 @@ use std::sync::Arc;
 use qubit_config::Config;
 use qubit_ioc::ContainerBuilder;
 use qubit_ioc::Dependency;
+use qubit_ioc::FactoryError;
 use qubit_ioc::config::deserialize_properties;
 use qubit_ioc::config::get_value;
 use serde::Deserialize;
@@ -39,11 +40,11 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mut builder = ContainerBuilder::new().with_config(config)?;
     builder.register_factory::<String, _>(&[Dependency::of::<Config>()], |context| {
-        let config = context.get::<Config>().map_err(qubit_ioc::FactoryError::new)?;
+        let config = context.get::<Config>().map_err(FactoryError::new)?;
         config
             .get_interpolated::<String>("service.endpoint")
             .map(Arc::new)
-            .map_err(qubit_ioc::FactoryError::new)
+            .map_err(FactoryError::new)
     })?;
     let application = builder.build_all()?;
     let context = application.context();

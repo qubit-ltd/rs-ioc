@@ -5,12 +5,15 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
+//! Assembles an application manually, without procedural macros.
+
+use std::error::Error;
 use std::sync::Arc;
 
 use qubit_ioc::ContainerBuilder;
 use qubit_ioc::Dependency;
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<(), Box<dyn Error>> {
     let mut builder = ContainerBuilder::new();
     builder.register_instance(Arc::new(String::from("hello")))?;
     builder.register_factory::<usize, _>(&[Dependency::of::<String>()], |context| {

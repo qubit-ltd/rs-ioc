@@ -240,7 +240,10 @@ fn test_optional_dependency_is_none_only_when_missing() {
     builder.root::<OptionalRoot>();
     let application = builder.build().expect("missing optional is allowed");
     let context = application.context();
-    assert!(context.get::<OptionalRoot>().expect("root").0.is_none());
+    assert!(
+        context.get::<OptionalRoot>().expect("root").0.is_none(),
+        "an optional dependency with no candidate must resolve to None"
+    );
 }
 
 #[test]
@@ -270,7 +273,10 @@ fn test_optional_dependency_rejects_ambiguity() {
         )
         .expect("two");
     builder.root::<OptionalRoot>();
-    assert!(matches!(builder.build(), Err(failure) if matches!(failure.cause(), BuildError::AmbiguousBinding { .. })));
+    assert!(
+        matches!(builder.build(), Err(failure) if matches!(failure.cause(), BuildError::AmbiguousBinding { .. })),
+        "two candidates for one optional dependency must be reported as ambiguous"
+    );
 }
 
 #[test]
@@ -351,10 +357,16 @@ fn test_active_profiles_replace_previous_selection_without_running_factories() {
             )
             .expect("register profile factory");
     }
-    assert!(calls.lock().expect("calls").is_empty());
+    assert!(
+        calls.lock().expect("calls").is_empty(),
+        "profile selection must be resolved before any factory runs"
+    );
     let application = builder.build_all().expect("dev definition is filtered out");
     let context = application.context();
-    assert!(context.get_by_id::<u8>("env.dev").is_err());
+    assert!(
+        context.get_by_id::<u8>("env.dev").is_err(),
+        "the previously selected dev definition must be replaced by prod"
+    );
     assert_eq!(calls.lock().expect("calls").as_slice(), ["env.prod", "env.common"]);
     drop(application);
 
@@ -382,10 +394,22 @@ fn test_active_profiles_replace_previous_selection_without_running_factories() {
         .build_all()
         .expect("only default and profile-free definitions remain");
     let context = application.context();
-    assert!(context.get_by_id::<&str>("env.default").is_ok());
-    assert!(context.get_by_id::<&str>("env.common").is_ok());
-    assert!(context.get_by_id::<&str>("env.dev").is_err());
-    assert!(context.get_by_id::<&str>("env.prod").is_err());
+    assert!(
+        context.get_by_id::<&str>("env.default").is_ok(),
+        "the default profile must stay selected without an explicit active profile"
+    );
+    assert!(
+        context.get_by_id::<&str>("env.common").is_ok(),
+        "a profile-free definition must survive an empty active profile list"
+    );
+    assert!(
+        context.get_by_id::<&str>("env.dev").is_err(),
+        "a non-selected named profile must be filtered out"
+    );
+    assert!(
+        context.get_by_id::<&str>("env.prod").is_err(),
+        "a non-selected named profile must be filtered out"
+    );
 }
 
 #[test]
@@ -433,8 +457,14 @@ fn test_graph_error_prevents_all_factory_side_effects() {
         })
         .expect("register root");
     builder.root::<MissingRoot>();
-    assert!(matches!(builder.build(), Err(failure) if matches!(failure.cause(), BuildError::MissingDependency { .. })));
-    assert!(events.lock().expect("events").is_empty());
+    assert!(
+        matches!(builder.build(), Err(failure) if matches!(failure.cause(), BuildError::MissingDependency { .. })),
+        "a missing dependency must fail the build with a structured error"
+    );
+    assert!(
+        events.lock().expect("events").is_empty(),
+        "a graph error must be detected before any factory side effect"
+    );
 }
 
 #[test]

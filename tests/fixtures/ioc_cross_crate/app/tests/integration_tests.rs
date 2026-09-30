@@ -12,13 +12,14 @@ use std::sync::Arc;
 use qubit_config::Config;
 use qubit_config::ConfigError;
 use qubit_ioc::BuildError;
-use qubit_ioc_fixture_app::AppService;
-use qubit_ioc_fixture_app::DiskRepository;
-use qubit_ioc_fixture_app::Greeting;
-use qubit_ioc_fixture_app::MemoryRepository;
-use qubit_ioc_fixture_app::PreviewMarker;
-use qubit_ioc_fixture_app::Repository;
+use qubit_ioc::ContainerBuilder;
 use qubit_ioc_fixture_app::assemble;
+use qubit_ioc_fixture_contracts::Repository;
+use qubit_ioc_fixture_providers::AppService;
+use qubit_ioc_fixture_providers::DiskRepository;
+use qubit_ioc_fixture_providers::Greeting;
+use qubit_ioc_fixture_providers::MemoryRepository;
+use qubit_ioc_fixture_providers::PreviewMarker;
 
 /// Creates the configuration snapshot used by linked providers.
 fn fixture_config() -> Config {
@@ -85,9 +86,6 @@ fn test_linked_properties_keep_original_config_error() {
 
 #[test]
 fn test_uninstalled_cross_crate_root_is_reported() {
-    use qubit_ioc::ContainerBuilder;
-    use qubit_ioc::BuildError;
-
     let mut builder = ContainerBuilder::new();
     builder.root::<AppService>();
     assert!(matches!(builder.build(), Err(failure) if matches!(failure.cause(), BuildError::MissingRoot { .. })));

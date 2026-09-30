@@ -9,9 +9,9 @@
 
 use std::sync::Arc;
 
-use qubit_ioc::ShutdownMode;
 use qubit_ioc::ContainerBuilder;
 use qubit_ioc::Managed;
+use qubit_ioc::ShutdownMode;
 
 fn main() {
     let builder = ContainerBuilder::new();

@@ -7,11 +7,19 @@
 // =============================================================================
 
 use std::sync::Arc;
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
 
+use qubit_ioc::BindingKey;
 use qubit_ioc::BindingOptions;
 use qubit_ioc::ContainerBuilder;
 use qubit_ioc::Definition;
+use qubit_ioc::DefinitionSource;
+use qubit_ioc::Dependency;
+use qubit_ioc::Managed;
+use qubit_ioc::RegistrationError;
 use qubit_ioc::WaitPolicy;
+use tokio::runtime::Builder;
 
 trait Repository: Send + Sync {
     fn value(&self) -> u32;
@@ -43,15 +51,6 @@ fn test_public_definition_alias_shares_one_concrete_instance() {
     assert!(Arc::ptr_eq(&projected, &alias));
     assert_eq!(alias.value(), 42);
 }
-
-use std::sync::atomic::AtomicUsize;
-use std::sync::atomic::Ordering;
-
-use qubit_ioc::BindingKey;
-use qubit_ioc::DefinitionSource;
-use qubit_ioc::Dependency;
-use qubit_ioc::Managed;
-use qubit_ioc::RegistrationError;
 
 /// Stable explicit source for exact diagnostic assertions.
 fn source() -> DefinitionSource {
@@ -260,7 +259,7 @@ fn test_definition_supports_all_construction_sources_once() {
         let mut builder = ContainerBuilder::new().wait_policy(WaitPolicy::unbounded());
         builder.register_definition(definition).expect("register source");
         assert_eq!(calls.load(Ordering::SeqCst), usize::from(kind == 0));
-        let application = tokio::runtime::Builder::new_current_thread()
+        let application = Builder::new_current_thread()
             .build()
             .expect("executor")
             .block_on(builder.build_all_async())
