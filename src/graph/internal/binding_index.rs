@@ -79,3 +79,46 @@ impl BindingIndex {
         self.by_type.get(&type_id).map_or(&[], Vec::as_slice)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::any::TypeId;
+
+    use super::BindingIndex;
+    use crate::graph::internal::binding_location::BindingLocation;
+    use crate::graph::internal::node::Node;
+    use crate::key::BindingId;
+    use crate::key::BindingKey;
+    use crate::options::DefinitionSource;
+
+    /// Creates internal graph nodes without invoking public construction.
+    fn node(id: Option<&str>) -> Node {
+        Node {
+            location: BindingLocation {
+                definition: 0,
+                binding: 0,
+            },
+            key: BindingKey::of::<u32>(id.map(|id| BindingId::parse(id).expect("valid test ID"))),
+            source: DefinitionSource::new("ioc", "graph_tests", "graph_tests.rs", 1, 1, "index"),
+            primary: false,
+            order: 0,
+        }
+    }
+
+    #[test]
+    fn test_binding_index_retains_exact_duplicates() {
+        let nodes = [node(Some("duplicate")), node(Some("duplicate"))];
+        let index = BindingIndex::new(&nodes);
+        assert_eq!(index.by_key(&nodes[0].key), &[0, 1]);
+    }
+
+    #[test]
+    fn test_binding_index_preserves_type_registration_order_and_missing_keys() {
+        let nodes = [node(Some("z")), node(None), node(Some("a"))];
+        let index = BindingIndex::new(&nodes);
+        assert_eq!(index.by_type(TypeId::of::<u32>()), &[0, 1, 2]);
+        assert_eq!(index.by_key(&nodes[1].key), &[1]);
+        assert!(index.by_type(TypeId::of::<String>()).is_empty());
+        assert!(index.by_key(&node(Some("missing")).key).is_empty());
+    }
+}
