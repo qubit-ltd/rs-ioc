@@ -34,6 +34,7 @@ use crate::managed::Managed;
 use crate::managed::ManagedFactoryFuture;
 use crate::managed::WaitPolicy;
 use crate::options::BindingOptions;
+use crate::options::DefinitionSource;
 
 // Implements configuration snapshot registration when integration is enabled.
 #[cfg(feature = "config")]
@@ -748,6 +749,12 @@ impl ContainerBuilder {
         Construction::new(graph, policy).run_async().await
     }
 
+    /// Atomically adds an already validated complete definition to the staging
+    /// area.
+    pub(crate) fn stage_definition(&mut self, definition: PendingDefinition) -> Result<(), RegistrationError> {
+        definition.stage_into(&mut self.definitions)
+    }
+
     /// Requires explicit deadlines only when the validated selection owns
     /// managed resources.
     fn selected_wait_policy(graph: &ValidatedGraph, policy: Option<WaitPolicy>) -> Result<WaitPolicy, BuildError> {
@@ -762,6 +769,24 @@ impl ContainerBuilder {
             None if has_managed => Err(BuildError::MissingWaitPolicy),
             None => Ok(WaitPolicy::unbounded()),
         }
+    }
+
+    /// Collects the active indices and diagnostic sources of the definitions
+    /// that declare a binding for `anchor`.
+    ///
+    /// Applying one replacement needs the replacement itself, the single
+    /// original it overrides, and the ambiguity check across both; collecting
+    /// them in one pass keeps those decisions consistent and avoids rescanning
+    /// every active definition once per lookup.
+    fn anchor_occurrences(
+        active: &[(usize, PendingDefinition)],
+        anchor: &BindingKey,
+    ) -> Vec<(usize, DefinitionSource)> {
+        active
+            .iter()
+            .filter(|(_, definition)| definition.bindings.iter().any(|binding| binding.key == *anchor))
+            .map(|(index, definition)| (*index, definition.source))
+            .collect()
     }
 
     /// Filters profiles, then applies each exact-key override before graph
@@ -780,27 +805,19 @@ impl ContainerBuilder {
             .filter(|(_, definition)| profile_is_active(definition.profile.as_deref(), &active_profiles))
             .collect();
         for replacement in replacements {
+            let occurrences = Self::anchor_occurrences(&active, &replacement.anchor);
             // An inactive replacement does not affect bindings in active profiles.
-            let Some((_, replacement_definition)) = active.iter().find(|(index, definition)| {
-                *index == replacement.definition_index
-                    && definition
-                        .bindings
-                        .iter()
-                        .any(|binding| binding.key == replacement.anchor)
-            }) else {
+            let Some(slot) = occurrences
+                .iter()
+                .position(|(index, _)| *index == replacement.definition_index)
+            else {
                 continue;
             };
-            let replacement_source = replacement_definition.source;
-            let originals: Vec<_> = active
+            let replacement_source = occurrences[slot].1;
+            let originals: Vec<DefinitionSource> = occurrences
                 .iter()
                 .filter(|(index, _)| *index < replacement.definition_index)
-                .flat_map(|(_, definition)| {
-                    definition
-                        .bindings
-                        .iter()
-                        .filter(|binding| binding.key == replacement.anchor)
-                        .map(|_| definition.source)
-                })
+                .map(|(_, source)| *source)
                 .collect();
             match originals.as_slice() {
                 [] => {
@@ -818,15 +835,13 @@ impl ContainerBuilder {
                     });
                 }
             }
-            let original_index = active.iter().find_map(|(index, definition)| {
-                (*index < replacement.definition_index
-                    && definition
-                        .bindings
-                        .iter()
-                        .any(|binding| binding.key == replacement.anchor))
-                .then_some(*index)
-            });
-            let Some(original_index) = original_index else { continue };
+            let Some((original_index, _)) = occurrences
+                .iter()
+                .find(|(index, _)| *index < replacement.definition_index)
+                .copied()
+            else {
+                continue;
+            };
             let original_sources = active
                 .iter()
                 .find(|(index, _)| *index == original_index)
@@ -861,11 +876,5 @@ impl ContainerBuilder {
             active_profiles,
             roots,
         ))
-    }
-
-    /// Atomically adds an already validated complete definition to the staging
-    /// area.
-    pub(crate) fn stage_definition(&mut self, definition: PendingDefinition) -> Result<(), RegistrationError> {
-        definition.stage_into(&mut self.definitions)
     }
 }

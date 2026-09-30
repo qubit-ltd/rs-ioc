@@ -7,8 +7,12 @@
 // =============================================================================
 //! Explicit builder registration and validated construction.
 
+// Owns the `ComponentDefinition` registration contract and its inherent
+// implementation.
 mod component_definition;
+// Owns the `ContainerBuilder` state and its inherent implementation.
 mod container_builder;
+// Owns the private construction, validation, replacement, and path helpers.
 mod internal;
 
 pub use component_definition::ComponentDefinition;

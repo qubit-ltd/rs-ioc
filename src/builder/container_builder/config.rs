@@ -23,13 +23,13 @@ impl ContainerBuilder {
     /// registration returns [`RegistrationError`]; a second active `Config`
     /// binding with the same key is reported when the builder is built.
     ///
-    /// # Returns
-    ///
-    /// The builder containing the registered shared configuration snapshot.
-    ///
     /// # Parameters
     ///
     /// `config` is the shared configuration snapshot to register.
+    ///
+    /// # Returns
+    ///
+    /// The builder containing the registered shared configuration snapshot.
     ///
     /// # Errors
     ///
