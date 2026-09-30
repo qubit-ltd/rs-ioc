@@ -20,6 +20,27 @@ use crate::managed::WaitPolicy;
 /// Dropping this owner requests abort without creating or polling waits.
 /// Use [`Self::begin_shutdown`] to observe cleanup results and await
 /// termination.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_ioc::Application;
+/// use qubit_ioc::ShutdownMode;
+///
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// let mut builder = Application::builder();
+/// builder.register_instance(std::sync::Arc::new(String::from("hello")))?;
+/// builder.root::<String>();
+///
+/// let application = builder.build()?;
+/// assert_eq!(*application.context().get::<String>()?, "hello");
+///
+/// // Ownership moves into the handle, which stays observable until it drops.
+/// let shutdown = application.begin_shutdown(ShutdownMode::Immediate);
+/// assert!(shutdown.pending().is_empty());
+/// # Ok(())
+/// # }
+/// ```
 #[must_use = "retain the application owner until shutdown is requested"]
 pub struct Application {
     /// Shared immutable component queries and observable lifecycle state.
@@ -48,6 +69,7 @@ impl Application {
 
     /// Borrows the cloneable component query handle.
     #[must_use]
+    #[inline]
     pub fn context(&self) -> &ApplicationContext {
         &self.context
     }
@@ -57,6 +79,14 @@ impl Application {
     /// Immediate mode requests every abort before returning. Graceful mode
     /// starts the first request when the returned handle's wait is polled.
     /// Callback failures are retained in the handle's report.
+    ///
+    /// # Panics
+    ///
+    /// Panics if this owner no longer holds its cleanup journal. The journal
+    /// is created with the application and is only taken by
+    /// [`Self::begin_shutdown`] or by [`Drop`], both of which consume or
+    /// exclusively borrow the owner, so the assertion cannot fail for an
+    /// application obtained from a successful build.
     pub fn begin_shutdown(mut self, mode: ShutdownMode) -> ShutdownHandle {
         self.context.publish_state(ApplicationState::ShuttingDown);
         ShutdownHandle::new(

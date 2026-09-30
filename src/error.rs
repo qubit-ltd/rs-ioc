@@ -8,13 +8,26 @@
 //! Structured errors for registration, graph validation, construction, and
 //! lookup.
 
+// Owns the `BuildAccessError` family raised when a factory resolves an
+// undeclared dependency.
 mod build_access_error;
+// Owns the `BuildError` family raised while validating and constructing the
+// component graph.
 mod build_error;
+// Owns `BuildFailure`, the immediate construction failure that also owns the
+// deferred rollback handle.
 mod build_failure;
+// Owns `FactoryError`, wrapping a user factory failure or a configuration read
+// failure.
 mod factory_error;
+// Owns the private error metadata shared by the error owners above.
 mod internal;
+// Owns `InvalidBindingId`, raised for identifiers outside the binding grammar.
 mod invalid_binding_id;
+// Owns the `RegistrationError` family raised while registering definitions.
 mod registration_error;
+// Owns the `ResolveError` family raised when querying built component
+// instances.
 mod resolve_error;
 
 pub use build_access_error::BuildAccessError;

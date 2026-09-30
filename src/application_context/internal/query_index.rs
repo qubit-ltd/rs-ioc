@@ -14,6 +14,8 @@ use self::type_positions::TypePositions;
 use super::BuiltBinding;
 use crate::key::BindingKey;
 
+// Owns the registration-ordered and collection-ordered position lists that back
+// the typed lookups exposed by [`QueryIndex`].
 mod type_positions;
 
 /// Positions in the stable binding vector for typed and named lookups.
@@ -54,6 +56,12 @@ impl QueryIndex {
 
     /// Returns active binding positions for one Rust type in registration
     /// order.
+    ///
+    /// # Returns
+    ///
+    /// A borrowed slice of positions into the binding vector this index was
+    /// built from, in registration order, or an empty slice when `type_id` has
+    /// no active binding. The slice borrows `self` and performs no allocation.
     #[inline]
     #[must_use]
     pub(crate) fn by_type(&self, type_id: TypeId) -> &[usize] {
@@ -63,6 +71,15 @@ impl QueryIndex {
     }
 
     /// Returns active binding positions for one Rust type in collection order.
+    ///
+    /// The same positions as [`Self::by_type`], reordered by the collection
+    /// precedence `order`, then binding id, then definition source.
+    ///
+    /// # Returns
+    ///
+    /// A borrowed slice of positions into the binding vector this index was
+    /// built from, in collection order, or an empty slice when `type_id` has no
+    /// active binding. The slice borrows `self` and performs no allocation.
     #[inline]
     #[must_use]
     pub(crate) fn by_type_collection(&self, type_id: TypeId) -> &[usize] {
@@ -72,6 +89,14 @@ impl QueryIndex {
     }
 
     /// Returns the position for one exact typed key, if present.
+    ///
+    /// # Returns
+    ///
+    /// `Some(position)` with the position of the binding carrying exactly this
+    /// type and binding id, or `None` when no active binding carries that key,
+    /// which includes keys removed while de-duplicating overrides. Positions
+    /// are only meaningful relative to the binding vector given to
+    /// [`Self::new`].
     #[inline]
     #[must_use]
     pub(crate) fn by_key(&self, key: &BindingKey) -> Option<usize> {
@@ -81,6 +106,8 @@ impl QueryIndex {
 
 #[cfg(test)]
 mod tests {
+    use std::any::TypeId;
+
     use super::QueryIndex;
     use crate::application_context::BuiltBinding;
     use crate::key::BindingId;
@@ -88,12 +115,12 @@ mod tests {
     use crate::options::DefinitionSource;
 
     #[test]
-    fn collection_positions_use_collection_order_without_changing_registration_order() {
+    fn test_collection_positions_use_collection_order_without_changing_registration_order() {
         let bindings = [binding("zeta", 1), binding("alpha", 1), binding("middle", 0)];
         let index = QueryIndex::new(&bindings);
 
-        assert_eq!(index.by_type(std::any::TypeId::of::<u8>()), [0, 1, 2]);
-        assert_eq!(index.by_type_collection(std::any::TypeId::of::<u8>()), [2, 1, 0]);
+        assert_eq!(index.by_type(TypeId::of::<u8>()), [0, 1, 2]);
+        assert_eq!(index.by_type_collection(TypeId::of::<u8>()), [2, 1, 0]);
     }
 
     /// Creates test metadata for one typed binding.

@@ -7,6 +7,7 @@
 // =============================================================================
 //! Deferred alias declarations used during complete-definition validation.
 
+// Holds the alias draft type and its validation function alias.
 mod alias_draft;
 
 pub(super) use alias_draft::AliasDraft;

@@ -19,6 +19,21 @@ use crate::options::DefinitionSource;
 ///
 /// `T` may be a concrete type or a thread-safe trait object. Factories and
 /// interface projectors execute only when the container constructs the graph.
+///
+/// # Examples
+///
+/// ```
+/// use std::sync::Arc;
+///
+/// use qubit_ioc::Definition;
+///
+/// struct Repository;
+///
+/// let definition = Definition::<Repository>::builder()
+///     .instance(Arc::new(Repository))
+///     .build()
+///     .expect("a concrete instance validates");
+/// ```
 pub struct Definition<T: ?Sized + Send + Sync + 'static> {
     /// Validated concrete binding and all its aliases.
     pub(super) pending: PendingDefinition,

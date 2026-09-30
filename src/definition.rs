@@ -7,9 +7,12 @@
 // =============================================================================
 //! Complete public component definitions and their consuming builders.
 
+// Owns the `Definition` production type and its inherent implementation.
 #[path = "definition/definition.rs"]
 mod component_definition;
+// Owns the `DefinitionBuilder` production type and its inherent implementation.
 mod definition_builder;
+// Owns the private alias-draft helper type shared by the definition builders.
 mod internal;
 
 pub use component_definition::Definition;

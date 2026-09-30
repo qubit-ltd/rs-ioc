@@ -7,6 +7,8 @@
 // =============================================================================
 //! Read-only queries over a successfully built component graph.
 
+// Owns the private shared query data, binding metadata, and lookup indexes
+// backing every clone of this context.
 mod internal;
 
 use std::any::TypeId;
@@ -52,6 +54,12 @@ pub struct ApplicationContext {
 impl ApplicationContext {
     /// Publishes a successfully constructed store and its exact binding
     /// metadata.
+    ///
+    /// # Parameters
+    ///
+    /// `store` is the instance store holding every constructed component, and
+    /// `bindings` lists the exact binding metadata in registration order; both
+    /// are moved into the shared context and never mutated afterwards.
     pub(crate) fn new(store: InstanceStore, bindings: Vec<BuiltBinding>) -> Self {
         Self {
             inner: Arc::new(ContextInner::new(store, bindings)),
@@ -59,6 +67,16 @@ impl ApplicationContext {
     }
 
     /// Returns the latest lifecycle state published by the unique owner.
+    ///
+    /// The value is loaded with acquire ordering, so a clone that observes a
+    /// new state also observes the components already published for it.
+    ///
+    /// # Returns
+    ///
+    /// The most recently published [`ApplicationState`], or
+    /// [`ApplicationState::Incomplete`] if the stored discriminant is not one
+    /// this version recognises.
+    #[inline]
     #[must_use]
     pub fn state(&self) -> ApplicationState {
         match self.inner.state.load(Ordering::Acquire) {
@@ -67,11 +85,6 @@ impl ApplicationContext {
             2 => ApplicationState::Closed,
             _ => ApplicationState::Incomplete,
         }
-    }
-
-    /// Publishes a lifecycle transition to all query clones.
-    pub(crate) fn publish_state(&self, state: ApplicationState) {
-        self.inner.state.store(state as u8, Ordering::Release);
     }
 
     /// Returns the active source and earlier sources replaced for one exact
@@ -207,8 +220,47 @@ impl ApplicationContext {
             .collect()
     }
 
+    /// Publishes a lifecycle transition to all query clones.
+    ///
+    /// Only the application owner calls this after construction, so query
+    /// clones observe the transition without any locking.
+    ///
+    /// # Parameters
+    ///
+    /// `state` is the lifecycle transition to publish to every clone sharing
+    /// this context; it is stored with release ordering.
+    pub(crate) fn publish_state(&self, state: ApplicationState) {
+        self.inner.state.store(state as u8, Ordering::Release);
+    }
+
     /// Resolves one named or unnamed query from candidates already in this
     /// context.
+    ///
+    /// A request that carries an exact ID matches only bindings with that ID.
+    /// An unnamed request prefers the unique primary binding when exactly one
+    /// primary candidate matches; every other selection reports a structured
+    /// [`ResolveError`] instead of guessing.
+    ///
+    /// # Parameters
+    ///
+    /// `request` is the typed key whose ID filter and type filter are applied,
+    /// and `candidates` are the binding indexes already filtered by the
+    /// requested type.
+    ///
+    /// # Returns
+    ///
+    /// The index into the context binding table of the selected binding.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ResolveError::MissingComponent`] when no candidate matches and
+    /// [`ResolveError::AmbiguousBinding`] when several match without a unique
+    /// primary selection.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the counted match or primary match has no recorded index,
+    /// which the single-assignment loop above cannot produce.
     fn select(&self, request: &BindingKey, candidates: &[usize]) -> Result<usize, ResolveError> {
         let mut matching_count = 0;
         let mut selected = None;
@@ -253,6 +305,23 @@ impl ApplicationContext {
     }
 
     /// Clones an `Arc<T>` that must exist after successful construction.
+    ///
+    /// The store is keyed by the registered binding key, so the value is
+    /// already shared and this lookup only clones the existing handle. `T` must
+    /// match the type the binding was registered with.
+    ///
+    /// # Parameters
+    ///
+    /// `key` is the key of a binding published by the application owner.
+    ///
+    /// # Returns
+    ///
+    /// A new handle to the shared component value.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `key` is absent from the store or its stored value is not a
+    /// `T`; only a violated construction invariant can trigger this.
     fn read<T: ?Sized + Send + Sync + 'static>(&self, key: &BindingKey) -> Arc<T> {
         self.inner
             .store

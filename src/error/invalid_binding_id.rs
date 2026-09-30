@@ -28,6 +28,18 @@ pub struct InvalidBindingId {
 
 impl InvalidBindingId {
     /// Records the original invalid text for diagnostics.
+    ///
+    /// The text is copied, so the caller keeps ownership of its input string
+    /// and may reuse or free it immediately.
+    ///
+    /// # Parameters
+    ///
+    /// * `value` - Rejected identifier text, copied into the error.
+    ///
+    /// # Returns
+    ///
+    /// Returns an error owning the rejected text for later reporting.
+    #[must_use]
     pub fn new(value: &str) -> Self {
         Self {
             value: value.to_owned(),
@@ -35,6 +47,13 @@ impl InvalidBindingId {
     }
 
     /// Returns the original invalid text.
+    ///
+    /// The borrow stays valid while `self` is borrowed and performs no
+    /// allocation.
+    ///
+    /// # Returns
+    ///
+    /// Returns the caller's original spelling of the rejected identifier.
     #[must_use]
     #[inline]
     pub fn value(&self) -> &str {

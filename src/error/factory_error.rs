@@ -35,6 +35,17 @@ pub struct FactoryError {
 
 impl FactoryError {
     /// Wraps a user error without discarding its source chain.
+    ///
+    /// The wrapper takes ownership of `source`, so later mutation of the
+    /// caller's error state is not observed here.
+    ///
+    /// # Parameters
+    ///
+    /// * `source` - Any owned, thread-safe error kept as the reported cause.
+    ///
+    /// # Returns
+    ///
+    /// Returns a wrapper whose configuration-read context is `None`.
     #[must_use]
     pub fn new<E: Error + Send + Sync + 'static>(source: E) -> Self {
         Self {
@@ -48,6 +59,21 @@ impl FactoryError {
     /// The path is the Config lookup key; `target` names the field, parameter,
     /// or properties type being constructed. Construction uses both to report
     /// [`crate::error::BuildError::ConfigReadFailed`].
+    ///
+    /// Both text arguments are copied, so the caller keeps ownership of its
+    /// configuration key and target strings.
+    ///
+    /// # Parameters
+    ///
+    /// * `source` - Owned configuration error kept as the reported cause.
+    /// * `path_key` - Borrowed lookup key, copied into the read context.
+    /// * `target` - Borrowed field, parameter, or properties name, copied into
+    ///   the read context.
+    ///
+    /// # Returns
+    ///
+    /// Returns a wrapper that additionally carries `Some` read context with
+    /// the copied key and target.
     #[cfg(feature = "config")]
     #[must_use]
     pub(crate) fn config_read<E: Error + Send + Sync + 'static>(source: E, path_key: &str, target: &str) -> Self {

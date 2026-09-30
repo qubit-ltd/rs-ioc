@@ -6,6 +6,53 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 //! Application-level component assembly and sharing for the Qubit ecosystem.
+//!
+//! A container describes every shared component once, validates the whole
+//! dependency graph before any factory runs, and builds the reachable set into
+//! an [`Application`]. A missing or ambiguous component therefore fails while
+//! the application starts instead of on a later request.
+//!
+//! [`Definition`]s bind component types to an identifier, a scope and a
+//! factory. They are staged on a [`ContainerBuilder`], roots are selected, and
+//! [`ContainerBuilder::build`] returns the [`Application`] that owns the built
+//! instances. [`Application::context`] hands out a cloneable, read-only
+//! [`ApplicationContext`] that resolves a component by its type or by an
+//! explicit [`BindingKey`]; the clones stay valid until the application is
+//! dropped, and a clone may outlive a completed shutdown.
+//!
+//! A component that owns an external resource is produced by a [`Managed`]
+//! factory, so the application can shut it down. A managed graph requires an
+//! explicit [`WaitPolicy`], and a normal exit calls
+//! [`Application::begin_shutdown`] and awaits the returned
+//! [`ShutdownHandle`].
+//!
+//! Registration order does not matter. A component is only reachable from
+//! outside after it is selected as a root, so [`ContainerBuilder::build`]
+//! requires at least one selected root and constructs nothing else.
+//!
+//! # Examples
+//!
+//! ```
+//! use std::sync::Arc;
+//!
+//! use qubit_ioc::ContainerBuilder;
+//! use qubit_ioc::Dependency;
+//!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! let mut builder = ContainerBuilder::new();
+//! builder.register_instance(Arc::new(String::from("hello")))?;
+//! builder.register_factory::<usize, _>(&[Dependency::of::<String>()], |context| {
+//!     let message = context.get::<String>().expect("declared dependency");
+//!     Ok(Arc::new(message.len()))
+//! })?;
+//! builder.root::<usize>();
+//!
+//! let application = builder.build()?;
+//! let context = application.context();
+//! assert_eq!(*context.get::<usize>()?, 5);
+//! # Ok(())
+//! # }
+//! ```
 
 pub use crate as qubit_ioc;
 

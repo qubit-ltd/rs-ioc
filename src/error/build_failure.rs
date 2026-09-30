@@ -20,6 +20,17 @@ use crate::managed::ShutdownHandle;
 /// All managed aborts have been requested before this value is returned. Waits
 /// begin only when the caller takes the cleanup handle and drives `wait()`.
 /// Dropping the failure never starts waits or repeats completed abort requests.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_ioc::BuildError;
+/// use qubit_ioc::BuildFailure;
+///
+/// let mut failure = BuildFailure::from(BuildError::NoRootsSelected);
+/// assert!(matches!(failure.cause(), BuildError::NoRootsSelected));
+/// assert!(failure.take_cleanup().is_none());
+/// ```
 #[must_use = "inspect the cause and explicitly handle any pending cleanup"]
 pub struct BuildFailure {
     /// Original graph, configuration, or factory error with its complete
@@ -31,6 +42,17 @@ pub struct BuildFailure {
 
 impl BuildFailure {
     /// Packages the cause with unique rollback ownership, if resources exist.
+    ///
+    /// # Parameters
+    ///
+    /// * `cause` - The structured construction error reported to the caller.
+    /// * `cleanup` - `Some` only when managed resources still need aborts and
+    ///   waits; `None` when construction failed before creating any.
+    ///
+    /// # Returns
+    ///
+    /// Returns a failure that owns the boxed cause and the optional cleanup
+    /// handle behind its mutex.
     pub(crate) fn new(cause: BuildError, cleanup: Option<ShutdownHandle>) -> Self {
         Self {
             cause: Box::new(cause),
@@ -39,12 +61,27 @@ impl BuildFailure {
     }
 
     /// Returns the original construction error, including paths and sources.
+    ///
+    /// The borrow stays valid while `self` is borrowed and performs no
+    /// allocation and no lock acquisition.
+    ///
+    /// # Returns
+    ///
+    /// Returns a shared reference to the boxed [`BuildError`].
+    #[inline]
     pub fn cause(&self) -> &BuildError {
         &self.cause
     }
 
-    /// Takes rollback ownership once; returns `None` after it has been taken or
-    /// when construction failed before creating any managed resources.
+    /// Takes rollback ownership once; no waits start until the caller drives
+    /// the returned handle.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Some(handle)` the first time it is called on a failure that
+    /// still owns managed rollback work. Returns `None` when ownership was
+    /// already taken by an earlier call, or when construction failed before
+    /// creating any managed resource.
     pub fn take_cleanup(&mut self) -> Option<ShutdownHandle> {
         self.cleanup
             .get_mut()
@@ -53,8 +90,13 @@ impl BuildFailure {
     }
 
     /// Consumes the failure into its original error and remaining cleanup
-    /// owner. No waits are started; `None` means no managed cleanup remains
-    /// to take.
+    /// owner. No waits are started.
+    ///
+    /// # Returns
+    ///
+    /// Returns the original [`BuildError`] together with the still-owned
+    /// cleanup handle, or `None` in that second position when no managed
+    /// cleanup remains to take.
     pub fn into_parts(self) -> (BuildError, Option<ShutdownHandle>) {
         (
             *self.cause,
