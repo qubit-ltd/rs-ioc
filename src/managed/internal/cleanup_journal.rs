@@ -60,6 +60,8 @@ impl CleanupJournal {
     }
 
     /// Returns whether construction has produced no managed cleanup entries.
+    #[must_use]
+    #[inline]
     pub(crate) fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }

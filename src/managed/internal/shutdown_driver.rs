@@ -97,23 +97,17 @@ impl ShutdownDriver {
         for index in (0..self.entries.len()).rev() {
             self.abort_entry(index);
         }
-        if let Some(mut active) = self.active.take() {
-            if active.phase == ShutdownPhase::GracefulWait {
-                active.phase = ShutdownPhase::TerminationWait;
-                match self.deadline(active.index, false) {
-                    Ok(deadline) => {
-                        active.deadline = deadline;
-                        self.active = Some(active);
-                    }
-                    Err(()) => self.entries[active.index].state = EntryState::Incomplete,
-                }
-            } else {
-                self.active = Some(active);
-            }
+        if let Some(active) = self.active.take() {
+            self.restore_active(active);
         }
     }
 
     /// Returns all bindings whose termination has not been confirmed.
+    ///
+    /// The keys are collected in reverse construction order on every call, so
+    /// the result owns its own storage and stays valid after the driver is
+    /// dropped.
+    #[must_use]
     pub(crate) fn pending(&self) -> Vec<BindingKey> {
         self.entries
             .iter()
@@ -143,6 +137,8 @@ impl ShutdownDriver {
 
     /// Drives requests and waits until pending or the final report is ready.
     /// Panics from user callbacks and future polls are retained as failures.
+    /// The loop only takes an observation it installed itself in the same
+    /// iteration, so its internal invariant never fails.
     pub(crate) fn poll(&mut self, context: &mut Context<'_>) -> Poll<ShutdownReport> {
         if let Some(report) = &self.report {
             return Poll::Ready(report.clone());
@@ -152,63 +148,19 @@ impl ShutdownDriver {
                 if self.cursor == 0 {
                     return Poll::Ready(self.finish());
                 }
-                self.cursor -= 1;
-                let index = self.cursor;
-                if matches!(self.entries[index].state, EntryState::Done | EntryState::Incomplete) {
+                if !self.start_next() {
                     continue;
                 }
-                if self.mode == ShutdownMode::Graceful {
-                    self.request_graceful(index);
-                }
-                if matches!(self.entries[index].state, EntryState::Done | EntryState::Incomplete) {
-                    continue;
-                }
-                let Some(wait) = self.entries[index].action.wait.take() else {
-                    // A successful request with no wait promises synchronous termination.
-                    self.complete_entry(index);
-                    continue;
-                };
-                let future = match start_wait(wait) {
-                    Ok(future) => future,
-                    Err(error) => {
-                        self.fail(index, ShutdownPhase::Wait, error);
-                        self.abort_entry(index);
-                        self.entries[index].state = EntryState::Incomplete;
-                        continue;
-                    }
-                };
-                let graceful = self.entries[index].state == EntryState::GracefulRequested;
-                let deadline = match self.deadline(index, graceful) {
-                    Ok(deadline) => deadline,
-                    Err(()) => {
-                        self.abort_entry(index);
-                        self.entries[index].state = EntryState::Incomplete;
-                        continue;
-                    }
-                };
-                self.active = Some(ActiveWait {
-                    index,
-                    future,
-                    deadline,
-                    phase: if graceful {
-                        ShutdownPhase::GracefulWait
-                    } else {
-                        ShutdownPhase::TerminationWait
-                    },
-                });
             }
 
-            let mut active = self.active.take().expect("active wait initialized before polling");
-            let waited = poll_wait_once(&mut active.future, context);
-            match waited {
+            let mut active = self.active.take().expect("active wait installed before polling");
+            match poll_wait_once(&mut active.future, context) {
                 Poll::Ready(Ok(())) => {
                     self.complete_entry(active.index);
                     continue;
                 }
                 Poll::Ready(Err(error)) => {
-                    self.fail(active.index, ShutdownPhase::Wait, error);
-                    self.abort_entry(active.index);
-                    self.entries[active.index].state = EntryState::Incomplete;
+                    self.fail_incomplete(active.index, ShutdownPhase::Wait, error);
                     continue;
                 }
                 Poll::Pending => {}
@@ -224,39 +176,113 @@ impl ShutdownDriver {
                     self.active = Some(active);
                     return Poll::Pending;
                 }
-                Some(Err(payload)) => {
-                    self.fail(
-                        active.index,
-                        ShutdownPhase::Deadline,
-                        panic_cleanup_error("deadline future", payload),
-                    );
-                    self.abort_entry(active.index);
-                    self.entries[active.index].state = EntryState::Incomplete;
-                }
-                Some(Ok(Poll::Ready(()))) => {
-                    self.fail(
-                        active.index,
-                        active.phase,
-                        CleanupError::new(std::io::Error::new(
-                            std::io::ErrorKind::TimedOut,
-                            "component shutdown deadline expired",
-                        )),
-                    );
-                    self.abort_entry(active.index);
-                    if active.phase == ShutdownPhase::GracefulWait {
-                        active.phase = ShutdownPhase::TerminationWait;
-                        match self.deadline(active.index, false) {
-                            Ok(deadline) => {
-                                active.deadline = deadline;
-                                self.active = Some(active);
-                            }
-                            Err(()) => self.entries[active.index].state = EntryState::Incomplete,
-                        }
-                    } else {
-                        self.entries[active.index].state = EntryState::Incomplete;
-                    }
-                }
+                Some(Err(payload)) => self.fail_incomplete(
+                    active.index,
+                    ShutdownPhase::Deadline,
+                    panic_cleanup_error("deadline future", payload),
+                ),
+                Some(Ok(Poll::Ready(()))) => self.expire(active),
             }
+        }
+    }
+
+    /// Claims the next entry from the reverse cursor and installs its wait.
+    /// Returns `false` when the entry was already finalized, terminated
+    /// synchronously, or failed before any wait started, so the caller should
+    /// advance to the next entry without polling. Requires `cursor > 0`.
+    fn start_next(&mut self) -> bool {
+        self.cursor -= 1;
+        let index = self.cursor;
+        if matches!(self.entries[index].state, EntryState::Done | EntryState::Incomplete) {
+            return false;
+        }
+        if self.mode == ShutdownMode::Graceful {
+            self.request_graceful(index);
+        }
+        if matches!(self.entries[index].state, EntryState::Done | EntryState::Incomplete) {
+            return false;
+        }
+        let Some(wait) = self.entries[index].action.wait.take() else {
+            // A successful request with no wait promises synchronous termination.
+            self.complete_entry(index);
+            return false;
+        };
+        let future = match start_wait(wait) {
+            Ok(future) => future,
+            Err(error) => {
+                self.fail_incomplete(index, ShutdownPhase::Wait, error);
+                return false;
+            }
+        };
+        let graceful = self.entries[index].state == EntryState::GracefulRequested;
+        let deadline = match self.deadline(index, graceful) {
+            Ok(deadline) => deadline,
+            Err(()) => {
+                self.abort_entry(index);
+                self.entries[index].state = EntryState::Incomplete;
+                return false;
+            }
+        };
+        self.active = Some(ActiveWait {
+            index,
+            future,
+            deadline,
+            phase: if graceful {
+                ShutdownPhase::GracefulWait
+            } else {
+                ShutdownPhase::TerminationWait
+            },
+        });
+        true
+    }
+
+    /// Restores a taken observation, giving a graceful wait one fresh
+    /// termination budget and leaving a termination wait unchanged. A budget
+    /// factory panic marks the entry incomplete instead of reinstalling the
+    /// observation.
+    fn restore_active(&mut self, mut active: ActiveWait) {
+        if active.phase != ShutdownPhase::GracefulWait {
+            self.active = Some(active);
+            return;
+        }
+        active.phase = ShutdownPhase::TerminationWait;
+        match self.deadline(active.index, false) {
+            Ok(deadline) => {
+                active.deadline = deadline;
+                self.active = Some(active);
+            }
+            Err(()) => self.entries[active.index].state = EntryState::Incomplete,
+        }
+    }
+
+    /// Records one failure, sends abort, and finalizes the entry as
+    /// incomplete. The three steps always follow a failed wait or budget, so
+    /// no active observation is left installed.
+    fn fail_incomplete(&mut self, index: usize, phase: ShutdownPhase, error: CleanupError) {
+        self.fail(index, phase, error);
+        self.abort_entry(index);
+        self.entries[index].state = EntryState::Incomplete;
+    }
+
+    /// Handles an expired budget: the failure is recorded in the phase that
+    /// owned the budget, abort is sent, and a graceful entry receives one
+    /// termination budget instead of being finalized immediately.
+    fn expire(&mut self, active: ActiveWait) {
+        let index = active.index;
+        let phase = active.phase;
+        self.fail(
+            index,
+            phase,
+            CleanupError::new(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "component shutdown deadline expired",
+            )),
+        );
+        self.abort_entry(index);
+        if phase == ShutdownPhase::GracefulWait {
+            self.restore_active(active);
+        } else {
+            self.entries[index].state = EntryState::Incomplete;
         }
     }
 
@@ -322,6 +348,26 @@ impl ShutdownDriver {
     }
 
     /// Creates one budget and captures timer factory panics as Deadline errors.
+    ///
+    /// A budget is created at most once per phase of a single entry; the policy
+    /// decides whether the phase is budgeted at all.
+    ///
+    /// # Parameters
+    ///
+    /// * `index` - Position of the entry in construction order, used to
+    ///   attribute a factory panic to the right binding.
+    /// * `graceful` - Whether the budget covers the graceful phase instead of
+    ///   the termination phase.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Some(future))` - The phase is budgeted and `future` must be polled
+    ///   alongside the component wait.
+    /// * `Ok(None)` - The policy budgets this phase with no timer at all, so
+    ///   the caller keeps waiting on the component alone.
+    /// * `Err(())` - The timer factory panicked. The panic is already recorded
+    ///   as a `ShutdownPhase::Deadline` failure for `index`, and the entry must
+    ///   not wait any further.
     fn deadline(&mut self, index: usize, graceful: bool) -> Result<Option<DeadlineFuture>, ()> {
         match catch_unwind(AssertUnwindSafe(|| self.policy.deadline(graceful))) {
             Ok(deadline) => Ok(deadline),
