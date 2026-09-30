@@ -23,11 +23,33 @@ use crate::ir::BindingOptions;
 use crate::ir::ComponentIr;
 use crate::ir::DependencyIr;
 use crate::ir::DependencyKind;
+use crate::ir::FieldIr;
 
 /// Emits the original struct, a typed factory and its linked registration
 /// entry.
 ///
-/// Returns a span-aware error if an activation attribute cannot be normalized.
+/// The [`ComponentIr`] is destructured, so the caller keeps no handle on it
+/// afterwards, and the returned tokens are the original struct followed by the
+/// `ComponentDefinition` implementation. Every declared field contributes
+/// exactly one graph request inside `register` and one resolved value inside
+/// the factory closure, each prefixed by the field's activation conditions, and
+/// a field that reads configuration is wrapped in the runtime's configuration
+/// guard on both sides. A field the validator already rejected is re-emitted as
+/// its compile error with a diverging initializer, so the rest of the struct
+/// still type-checks while the macro reports the original diagnostic.
+///
+/// # Errors
+///
+/// Returns the span-aware [`syn::Error`] produced when an activation attribute
+/// cannot be normalized, so the caller points at the offending attribute
+/// instead of emitting a definition that silently lost its `cfg` conditions.
+///
+/// # Panics
+///
+/// Never panics for validated input. Fields whose kind the validator already
+/// rejected are emitted as compile errors before any request mapping runs, so
+/// the `unreachable!` in the request and access mappers is only reachable when
+/// the intermediate representation is internally inconsistent.
 pub(crate) fn expand(value: ComponentIr, context: &ExpansionContext) -> Result<TokenStream> {
     let ComponentIr {
         item,
@@ -50,45 +72,8 @@ pub(crate) fn expand(value: ComponentIr, context: &ExpansionContext) -> Result<T
             ::core::line!(), ::core::column!(), ::core::stringify!(#item_name),
         )
     };
-    let mut dependencies = Vec::with_capacity(fields.len());
-    let mut initializers = Vec::with_capacity(fields.len());
-    let mut validation_errors = Vec::new();
-    for field in &fields {
-        let field_ident = &field.ident;
-        let conditions = &field.conditions;
-        if let Some(error) = &field.validation_error {
-            let error = error.to_compile_error();
-            validation_errors.push(quote!(#(#conditions)* #error));
-            initializers.push(quote!(#(#conditions)* #field_ident: loop {}));
-            continue;
-        }
-        let dependency = &field.dependency;
-        let request = if matches!(dependency.kind, DependencyKind::Value { .. }) {
-            value::config_request(runtime)
-        } else {
-            dependency_tokens(dependency, runtime)
-        };
-        let request = if matches!(dependency.kind, DependencyKind::Value { .. }) {
-            quote!(#runtime::__private::require_config! { #request })
-        } else {
-            request
-        };
-        dependencies.push(quote! {
-            #(#conditions)* {
-                let #request_ident = #request;
-                if !#dependencies_ident.contains(&#request_ident) {
-                    #dependencies_ident.push(#request_ident);
-                }
-            }
-        });
-        let expression = field_expression(dependency, field_ident, runtime, &context_ident);
-        let expression = if matches!(dependency.kind, DependencyKind::Value { .. }) {
-            quote!(#runtime::__private::require_config! { #expression })
-        } else {
-            expression
-        };
-        initializers.push(quote!(#(#conditions)* #field_ident: #expression));
-    }
+    let (dependencies, initializers, validation_errors) =
+        field_bindings(&fields, runtime, &request_ident, &dependencies_ident, &context_ident);
 
     let construct = if matches!(item.fields, Fields::Unit) {
         quote!(#ident)
@@ -101,16 +86,7 @@ pub(crate) fn expand(value: ComponentIr, context: &ExpansionContext) -> Result<T
     } else {
         quote!(#[allow(unreachable_code)])
     };
-    let mut aliases = Vec::with_capacity(options.binds.len());
-    for bind in &options.binds {
-        let alias_options = options_tokens(&options, runtime, true);
-        aliases.push(quote! {
-            .bind::<#bind, _>(#alias_options, |concrete| {
-                let alias: ::std::sync::Arc<#bind> = concrete;
-                alias
-            })
-        });
-    }
+    let aliases = alias_bindings(&options, runtime);
 
     let generated = quote! {
         #(#validation_errors)*
@@ -143,7 +119,122 @@ pub(crate) fn expand(value: ComponentIr, context: &ExpansionContext) -> Result<T
     Ok(quote! { #item #generated })
 }
 
+/// Maps every declared field onto its registration request, struct
+/// initializer and validation error, in declaration order.
+///
+/// The returned vectors are the three parallel halves the generated
+/// `ComponentDefinition` impl splices together: `dependencies` goes inside
+/// `register`, `initializers` builds the struct literal inside the factory
+/// closure, and `validation_errors` is emitted ahead of the impl. A field the
+/// validator already rejected contributes only a compile error plus a diverging
+/// initializer, so it never reaches request or access mapping and the caller's
+/// `#[allow(unreachable_code)]` decision depends solely on whether this list is
+/// non-empty.
+#[must_use]
+fn field_bindings(
+    fields: &[FieldIr],
+    runtime: &TokenStream,
+    request_ident: &Ident,
+    dependencies_ident: &Ident,
+    context_ident: &Ident,
+) -> (Vec<TokenStream>, Vec<TokenStream>, Vec<TokenStream>) {
+    let mut dependencies = Vec::with_capacity(fields.len());
+    let mut initializers = Vec::with_capacity(fields.len());
+    let mut validation_errors = Vec::new();
+    for field in fields {
+        let field_ident = &field.ident;
+        let conditions = &field.conditions;
+        if let Some(error) = &field.validation_error {
+            let error = error.to_compile_error();
+            validation_errors.push(quote!(#(#conditions)* #error));
+            initializers.push(quote!(#(#conditions)* #field_ident: loop {}));
+            continue;
+        }
+        let dependency = &field.dependency;
+        let request = request_tokens(dependency, runtime);
+        dependencies.push(quote! {
+            #(#conditions)* {
+                let #request_ident = #request;
+                if !#dependencies_ident.contains(&#request_ident) {
+                    #dependencies_ident.push(#request_ident);
+                }
+            }
+        });
+        let expression = field_expression(dependency, field_ident, runtime, context_ident);
+        let expression = config_guard(dependency, expression, runtime);
+        initializers.push(quote!(#(#conditions)* #field_ident: #expression));
+    }
+    (dependencies, initializers, validation_errors)
+}
+
+/// Emits one `.bind` builder step per declared interface alias.
+///
+/// The alias options are identical for every bind, so they are built once
+/// outside the loop; each step only differs by the aliased type parameter.
+#[must_use]
+fn alias_bindings(options: &BindingOptions, runtime: &TokenStream) -> Vec<TokenStream> {
+    let alias_options = options_tokens(options, runtime, true);
+    options
+        .binds
+        .iter()
+        .map(|bind| {
+            quote! {
+                .bind::<#bind, _>(#alias_options, |concrete| {
+                    let alias: ::std::sync::Arc<#bind> = concrete;
+                    alias
+                })
+            }
+        })
+        .collect()
+}
+
+/// Emits the graph request for one field, guarding configuration-backed fields.
+///
+/// A [`DependencyKind::Value`] field never reaches [`dependency_tokens`], which
+/// rejects that kind, so it is delegated to
+/// [`crate::expand::value::config_request`] and wrapped in the runtime's
+/// configuration guard. Every other kind takes the plain graph declaration
+/// and needs no guard.
+#[must_use]
+fn request_tokens(dependency: &DependencyIr, runtime: &TokenStream) -> TokenStream {
+    if matches!(dependency.kind, DependencyKind::Value { .. }) {
+        let request = value::config_request(runtime);
+        quote!(#runtime::__private::require_config! { #request })
+    } else {
+        dependency_tokens(dependency, runtime)
+    }
+}
+
+/// Wraps a resolved field expression in the configuration guard when needed.
+///
+/// The expression is produced by [`field_expression`], which already routes a
+/// [`DependencyKind::Value`] field to [`crate::expand::value::read_value`], so
+/// building it eagerly stays correct for every kind and only the guard decision
+/// depends on the dependency kind.
+#[must_use]
+fn config_guard(dependency: &DependencyIr, expression: TokenStream, runtime: &TokenStream) -> TokenStream {
+    if matches!(dependency.kind, DependencyKind::Value { .. }) {
+        quote!(#runtime::__private::require_config! { #expression })
+    } else {
+        expression
+    }
+}
+
 /// Converts one normalized dependency into its graph declaration.
+///
+/// A [`DependencyKind::Required`] field is mandatory, an
+/// [`DependencyKind::Optional`] field is resolved leniently, and a
+/// [`DependencyKind::All`] field ignores any declared id because the runtime
+/// collects every binding of the type. A [`DependencyKind::Value`] field is
+/// rejected, because configuration reads are routed through
+/// [`request_tokens`] instead of a graph edge.
+///
+/// # Panics
+///
+/// Panics on a [`DependencyKind::Value`] dependency. Callers must route that
+/// kind through [`request_tokens`] first, which only happens for a field the
+/// validator accepted.
+#[must_use]
 fn dependency_tokens(dependency: &DependencyIr, runtime: &TokenStream) -> TokenStream {
     let requested_type = &dependency.requested_type;
     match (&dependency.kind, &dependency.id) {
@@ -163,6 +254,13 @@ fn dependency_tokens(dependency: &DependencyIr, runtime: &TokenStream) -> TokenS
 }
 
 /// Builds one field from the exact request registered above or a Config read.
+///
+/// A [`DependencyKind::Value`] field is delegated to
+/// [`crate::expand::value::read_value`], which emits a configuration lookup
+/// instead of a context resolution. Every other kind selects the matching
+/// accessor for its identifier form and propagates a lookup failure as a
+/// [`crate::ir`] `FactoryError` through the enclosing factory closure.
+#[must_use]
 fn field_expression(
     dependency: &DependencyIr,
     field_ident: &Ident,
@@ -189,6 +287,11 @@ fn field_expression(
 }
 
 /// Uses interface ordering metadata only on interface aliases when any exist.
+///
+/// `selection` is false for the concrete binding, which never carries
+/// interface projection ordering, and true for every generated alias so that
+/// `primary` and `order` reach the runtime binding options.
+#[must_use]
 fn options_tokens(options: &BindingOptions, runtime: &TokenStream, selection: bool) -> TokenStream {
     let id = optional_string(&options.id);
     let profile = optional_string(&options.profile);
@@ -205,6 +308,12 @@ fn options_tokens(options: &BindingOptions, runtime: &TokenStream, selection: bo
 }
 
 /// Keeps an omitted literal as `None` and preserves supplied text exactly.
+///
+/// The literal is cloned into the generated code, so an absent value stays a
+/// plain `None` instead of an empty string that the runtime would treat as a
+/// configured id or profile.
+#[must_use]
+#[inline]
 fn optional_string(value: &Option<LitStr>) -> TokenStream {
     match value {
         Some(value) => quote!(::std::option::Option::Some(#value.to_owned())),

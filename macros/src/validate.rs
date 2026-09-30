@@ -12,6 +12,7 @@ use syn::Item;
 use syn::Result;
 use syn::spanned::Spanned;
 
+use self::internal::ValidatedOptions;
 use crate::internal::RuntimePath;
 use crate::ir::Declaration;
 use crate::ir::MacroKind;
@@ -24,9 +25,41 @@ mod configuration_properties;
 mod internal;
 mod options;
 
-use internal::ValidatedOptions;
-
 /// Validates a parsed declaration and normalizes it for its later expander.
+///
+/// This is the second stage of the macro pipeline and the entry point of the
+/// `validate` domain. It normalizes the attribute options once, then routes the
+/// declaration to the submodule that owns its kind: the local semantic checks
+/// themselves live in `bean`, `component`, `configuration`,
+/// `configuration_properties` and `options`. The call runs entirely inside the
+/// proc-macro process, reads no files, and keeps no state across invocations.
+///
+/// # Parameters
+///
+/// `raw` is the declaration produced by `crate::parse`; it is consumed here
+/// because routing moves its item and option list into the owning submodule.
+/// `runtime` is the resolved runtime crate identity; of the four routes only
+/// the bean route uses it, to recognise `Managed<T>` factory return types, and
+/// it is borrowed rather than moved.
+///
+/// # Returns
+///
+/// `Ok` with a [`Declaration`] whose variant records which route ran:
+/// `Component` for the component, service and repository kinds;
+/// `Bean` for a function factory; `Configuration` for an inline module; and
+/// `ConfigurationProperties` for a prefix declaration struct. The value is
+/// exactly what `crate::expand::dispatch` consumes next, so validation never
+/// emits tokens itself.
+///
+/// # Errors
+///
+/// Returns the first error of the pipeline. Option problems surface from
+/// `options::validate_options` before routing starts, so an unknown key,
+/// duplicate key, missing required option or out-of-range value is reported
+/// without any item being inspected. Otherwise a mismatch between the attribute
+/// kind and the annotated item, such as `#[bean]` on a struct, returns a
+/// [`syn::Error`] anchored at the item span whose message names the attribute,
+/// and any semantic rejection from the owning submodule is returned unchanged.
 pub(crate) fn validate(raw: RawDeclaration, runtime: &RuntimePath) -> Result<Declaration> {
     let kind = raw.kind;
     let options = options::validate_options(kind, raw.options)?;

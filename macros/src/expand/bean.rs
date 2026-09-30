@@ -23,7 +23,32 @@ use crate::ir::DependencyIr;
 use crate::ir::DependencyKind;
 use crate::ir::OutputShape;
 
-/// Emits the original callable function and its registration marker.
+/// Emits the original callable function together with the generated
+/// registration marker and its `ComponentDefinition` implementation.
+///
+/// The [`BeanIr`] is consumed, and the returned tokens are the original item
+/// followed by the marker struct, so the factory keeps its call signature while
+/// registration becomes a separate `install` step. Every declared parameter is
+/// re-emitted twice: once as a graph request inside `register` and once as a
+/// resolved access inside the factory closure, each prefixed by the parameter's
+/// `#[cfg]` conditions so conditional injection survives expansion. Parameters
+/// that read configuration are additionally wrapped in the runtime's
+/// configuration guard on both sides.
+///
+/// # Errors
+///
+/// Returns the [`syn::Error`] produced while the generated tokens are parsed,
+/// which surfaces an inconsistent intermediate representation to the macro
+/// caller instead of emitting code that cannot compile.
+///
+/// # Panics
+///
+/// Panics when a declared parameter carries no graph request, because every
+/// parameter kind maps to at least one request, and when a managed bean
+/// declares an `Arc` output shape, because a managed handle cannot be recovered
+/// from a shared pointer. Both conditions are rejected earlier during
+/// validation, so reaching them means the intermediate representation is
+/// internally inconsistent.
 pub(crate) fn expand(value: BeanIr, context: &ExpansionContext) -> Result<TokenStream> {
     let BeanIr {
         item,
@@ -45,15 +70,8 @@ pub(crate) fn expand(value: BeanIr, context: &ExpansionContext) -> Result<TokenS
         .iter()
         .map(|param| {
             let conditions = &param.conditions;
-            let request = dependency_requests(&[&param.dependency], runtime)
-                .into_iter()
-                .next()
-                .expect("each parameter has a dependency request");
-            let request = if matches!(param.dependency.kind, DependencyKind::Value { .. }) {
-                quote!(#runtime::__private::require_config! { #request })
-            } else {
-                request
-            };
+            let request = dependency_request(&param.dependency, runtime);
+            let request = require_config(&param.dependency, request, runtime);
             quote!(#(#conditions)* #request)
         })
         .collect::<Vec<_>>();
@@ -71,11 +89,7 @@ pub(crate) fn expand(value: BeanIr, context: &ExpansionContext) -> Result<TokenS
         .map(|(index, param)| {
             let ident = &arguments[index];
             let access = dependency_access(&param.dependency, &param.ident, runtime, &context);
-            let access = if matches!(param.dependency.kind, DependencyKind::Value { .. }) {
-                quote!(#runtime::__private::require_config! { #access })
-            } else {
-                access
-            };
+            let access = require_config(&param.dependency, access, runtime);
             let conditions = &param.conditions;
             quote!(#(#conditions)* let #ident = #access;)
         })
@@ -89,68 +103,44 @@ pub(crate) fn expand(value: BeanIr, context: &ExpansionContext) -> Result<TokenS
         })
         .collect::<Vec<_>>();
     let invocation = quote!(#function(#(#invocation_arguments),*));
-    let invocation = if item.sig.asyncness.is_some() {
+    let is_async = item.sig.asyncness.is_some();
+    let invocation = if is_async {
         quote!(#invocation.await)
     } else {
         invocation
     };
-    let wrap = match output.shape {
-        OutputShape::Bare => quote!(::std::sync::Arc::new(#invocation)),
-        OutputShape::Arc => invocation.clone(),
-        OutputShape::ResultBare => {
-            quote!(::std::sync::Arc::new(#invocation.map_err(#runtime::FactoryError::new)?))
-        }
-        OutputShape::ResultArc => quote!(#invocation.map_err(#runtime::FactoryError::new)?),
+    let value = shaped_output(&invocation, output.shape, output.managed, runtime);
+    let (output_type, factory_type, factory_method) = match (output.managed, is_async) {
+        (true, true) => (
+            quote!(#runtime::Managed<#component_type>),
+            quote!(#runtime::ManagedFactoryFuture<#component_type>),
+            quote!(managed_async_factory),
+        ),
+        (true, false) => (
+            quote!(#runtime::Managed<#component_type>),
+            quote!(::core::result::Result<#runtime::Managed<#component_type>, #runtime::FactoryError>),
+            quote!(managed_factory),
+        ),
+        (false, true) => (
+            quote!(::std::sync::Arc<#component_type>),
+            quote!(#runtime::FactoryFuture<#component_type>),
+            quote!(async_factory),
+        ),
+        (false, false) => (
+            quote!(::std::sync::Arc<#component_type>),
+            quote!(::core::result::Result<::std::sync::Arc<#component_type>, #runtime::FactoryError>),
+            quote!(factory),
+        ),
     };
-    let factory = if output.managed {
-        let managed_wrap = match output.shape {
-            OutputShape::Bare => invocation.clone(),
-            OutputShape::ResultBare => quote!(#invocation.map_err(#runtime::FactoryError::new)?),
-            OutputShape::Arc | OutputShape::ResultArc => {
-                unreachable!("managed bean cannot also be an Arc output")
-            }
-        };
-        if item.sig.asyncness.is_some() {
-            quote!(|#context| -> #runtime::ManagedFactoryFuture<#component_type> {
-                ::std::boxed::Box::pin(async move {
-                    #(#accesses)*
-                    let #output_ident: #runtime::Managed<#component_type> = #managed_wrap;
-                    ::core::result::Result::Ok(#output_ident)
-                })
-            })
-        } else {
-            quote!(|#context| -> ::core::result::Result<#runtime::Managed<#component_type>, #runtime::FactoryError> {
-                #(#accesses)*
-                let #output_ident: #runtime::Managed<#component_type> = #managed_wrap;
-                ::core::result::Result::Ok(#output_ident)
-            })
-        }
-    } else if item.sig.asyncness.is_some() {
-        quote!(|#context| -> #runtime::FactoryFuture<#component_type> {
-            ::std::boxed::Box::pin(async move {
-                #(#accesses)*
-                let #output_ident: ::std::sync::Arc<#component_type> = #wrap;
-                ::core::result::Result::Ok(#output_ident)
-            })
-        })
-    } else {
-        quote!(|#context| -> ::core::result::Result<::std::sync::Arc<#component_type>, #runtime::FactoryError> {
-            #(#accesses)*
-            let #output_ident: ::std::sync::Arc<#component_type> = #wrap;
-            ::core::result::Result::Ok(#output_ident)
-        })
-    };
-    let factory_method = if output.managed {
-        if item.sig.asyncness.is_some() {
-            quote!(managed_async_factory)
-        } else {
-            quote!(managed_factory)
-        }
-    } else if item.sig.asyncness.is_some() {
-        quote!(async_factory)
-    } else {
-        quote!(factory)
-    };
+    let factory = factory_closure(
+        &context,
+        &accesses,
+        &output_ident,
+        &output_type,
+        &value,
+        &factory_type,
+        is_async,
+    );
     let aliases = options.binds.iter().map(|target| {
         quote! {
             .bind::<#target, _>(#alias_options, |concrete| {
@@ -199,6 +189,69 @@ pub(crate) fn expand(value: BeanIr, context: &ExpansionContext) -> Result<TokenS
     Ok(quote! { #item #generated })
 }
 
+/// Wraps a request or access expression in the config requirement guard when
+/// the dependency reads a configuration value.
+fn require_config(dependency: &DependencyIr, expression: TokenStream, runtime: &TokenStream) -> TokenStream {
+    if matches!(dependency.kind, DependencyKind::Value { .. }) {
+        quote!(#runtime::__private::require_config! { #expression })
+    } else {
+        expression
+    }
+}
+
+/// Applies the declared output shape to one call expression, wrapping results
+/// into `FactoryError` and shared handles into `Arc` where the shape asks for
+/// it.
+///
+/// Managed outputs must be produced directly by the bean, so an `Arc` shape is
+/// rejected because the managed handle cannot be recovered from a shared
+/// pointer.
+fn shaped_output(invocation: &TokenStream, shape: OutputShape, managed: bool, runtime: &TokenStream) -> TokenStream {
+    let fallible = match shape {
+        OutputShape::ResultBare | OutputShape::ResultArc => {
+            quote!(#invocation.map_err(#runtime::FactoryError::new)?)
+        }
+        OutputShape::Bare | OutputShape::Arc => invocation.clone(),
+    };
+    match (managed, shape) {
+        (true, OutputShape::Arc | OutputShape::ResultArc) => {
+            unreachable!("managed bean cannot also be an Arc output")
+        }
+        (_, OutputShape::Bare | OutputShape::ResultBare) if !managed => {
+            quote!(::std::sync::Arc::new(#fallible))
+        }
+        _ => fallible,
+    }
+}
+
+/// Emits the closure passed to the definition builder, resolving every
+/// declared parameter and returning the shaped bean value.
+///
+/// Asynchronous beans are boxed into a future so the generated closure keeps a
+/// single signature shape for the builder.
+fn factory_closure(
+    context: &Ident,
+    accesses: &[TokenStream],
+    output_ident: &Ident,
+    output_type: &TokenStream,
+    value: &TokenStream,
+    factory_type: &TokenStream,
+    is_async: bool,
+) -> TokenStream {
+    let body = quote! {
+        #(#accesses)*
+        let #output_ident: #output_type = #value;
+        ::core::result::Result::Ok(#output_ident)
+    };
+    if is_async {
+        quote!(|#context| -> #factory_type {
+            ::std::boxed::Box::pin(async move { #body })
+        })
+    } else {
+        quote!(|#context| -> #factory_type { #body })
+    }
+}
+
 /// Converts a function name such as `db_pool` to its `DbPoolBean` marker.
 pub(super) fn default_marker(function: &Ident) -> Ident {
     let raw = function.unraw().to_string();
@@ -238,34 +291,24 @@ fn binding_options(options: &BindingOptions, concrete_has_aliases: bool, runtime
     })
 }
 
-/// Converts parameter IR into graph requests, sharing one Config request for
-/// value inputs.
-fn dependency_requests(params: &[&DependencyIr], runtime: &TokenStream) -> Vec<TokenStream> {
-    let mut requests = Vec::with_capacity(params.len());
-    let mut config_requested = false;
-    for dependency in params {
-        let target = &dependency.requested_type;
-        let request = match &dependency.kind {
-            DependencyKind::Required => match &dependency.id {
-                Some(id) => quote!(#runtime::Dependency::with_id::<#target>(#id)),
-                None => quote!(#runtime::Dependency::of::<#target>()),
-            },
-            DependencyKind::Optional => match &dependency.id {
-                Some(id) => quote!(#runtime::Dependency::optional_with_id::<#target>(#id)),
-                None => quote!(#runtime::Dependency::optional::<#target>()),
-            },
-            DependencyKind::All => quote!(#runtime::Dependency::all::<#target>()),
-            DependencyKind::Value { .. } => {
-                if config_requested {
-                    continue;
-                }
-                config_requested = true;
-                value::config_request(runtime)
-            }
-        };
-        requests.push(request);
+/// Converts one parameter IR entry into its graph request.
+///
+/// A `Value` dependency always maps to the shared `Config` request; the
+/// generated `register` body removes duplicates before building the definition.
+fn dependency_request(dependency: &DependencyIr, runtime: &TokenStream) -> TokenStream {
+    let target = &dependency.requested_type;
+    match &dependency.kind {
+        DependencyKind::Required => match &dependency.id {
+            Some(id) => quote!(#runtime::Dependency::with_id::<#target>(#id)),
+            None => quote!(#runtime::Dependency::of::<#target>()),
+        },
+        DependencyKind::Optional => match &dependency.id {
+            Some(id) => quote!(#runtime::Dependency::optional_with_id::<#target>(#id)),
+            None => quote!(#runtime::Dependency::optional::<#target>()),
+        },
+        DependencyKind::All => quote!(#runtime::Dependency::all::<#target>()),
+        DependencyKind::Value { .. } => value::config_request(runtime),
     }
-    requests
 }
 
 /// Reads one declared request and wraps any impossible access failure as a
@@ -298,11 +341,13 @@ fn dependency_access(
 #[cfg(test)]
 mod tests {
     use proc_macro2::Span;
+    use quote::ToTokens;
     use quote::quote;
     use syn::File;
     use syn::Ident;
     use syn::Item;
     use syn::ItemFn;
+    use syn::LitStr;
     use syn::Type;
     use syn::parse_quote;
     use syn::parse2;
@@ -310,15 +355,35 @@ mod tests {
     use crate::expand::ExpansionContext;
     use crate::ir::BeanIr;
     use crate::ir::BindingOptions;
+    use crate::ir::DependencyIr;
+    use crate::ir::DependencyKind;
     use crate::ir::OutputIr;
     use crate::ir::OutputShape;
+    use crate::ir::ParamIr;
     use crate::ir::SourceIr;
 
     /// Expands a callable bean with the selected marker through the real
     /// expander.
     fn expand_bean(marker: Option<Ident>) -> File {
-        let item: ItemFn = parse_quote! {
-            pub fn foo_bar() -> u8 { 1 }
+        expand_bean_with(marker, OutputShape::Bare, false, false, Vec::new())
+    }
+
+    /// Expands a bean with the selected output strategy and parameters.
+    fn expand_bean_with(
+        marker: Option<Ident>,
+        shape: OutputShape,
+        managed: bool,
+        is_async: bool,
+        params: Vec<ParamIr>,
+    ) -> File {
+        let item: ItemFn = if is_async {
+            parse_quote! {
+                pub async fn foo_bar() -> u8 { 1 }
+            }
+        } else {
+            parse_quote! {
+                pub fn foo_bar() -> u8 { 1 }
+            }
         };
         let source = SourceIr {
             item: item.sig.ident.clone(),
@@ -334,10 +399,10 @@ mod tests {
                 profile: None,
             },
             marker,
-            params: Vec::new(),
+            params,
             output: OutputIr {
-                shape: OutputShape::Bare,
-                managed: false,
+                shape,
+                managed,
                 component_type: parse_quote!(u8),
             },
             source,
@@ -347,6 +412,20 @@ mod tests {
         };
         let tokens = super::expand(value, &context).expect("bean expansion should succeed");
         parse2(tokens).expect("generated bean should be valid Rust AST")
+    }
+
+    /// Renders one generated item so shape and builder method choices can be
+    /// asserted on the exact emitted text.
+    fn registration_tokens(generated: &File) -> String {
+        let registration = generated
+            .items
+            .iter()
+            .find_map(|item| match item {
+                Item::Impl(implementation) if implementation.trait_.is_some() => Some(implementation),
+                _ => None,
+            })
+            .expect("expected registration trait impl");
+        registration.to_token_stream().to_string()
     }
 
     /// Checks both the marker definition and the target of its registration
@@ -380,6 +459,59 @@ mod tests {
         assert!(target.path.is_ident(expected));
     }
 
+    /// Asserts that the registration body contains the expected fragment,
+    /// reporting the whole rendering when the shape strategy changes.
+    fn assert_registration_contains(generated: &File, expected: &str) {
+        let rendering = registration_tokens(generated);
+        assert!(
+            rendering.contains(expected),
+            "expected registration to contain `{expected}`, rendered: {rendering}"
+        );
+    }
+
+    /// Asserts that the registration body does not contain the fragment.
+    fn assert_registration_lacks(generated: &File, unexpected: &str) {
+        let rendering = registration_tokens(generated);
+        assert!(
+            !rendering.contains(unexpected),
+            "expected registration to avoid `{unexpected}`, rendered: {rendering}"
+        );
+    }
+
+    /// Builds one required dependency for the given requested type.
+    fn required_dependency(requested_type: Type) -> DependencyIr {
+        DependencyIr {
+            kind: DependencyKind::Required,
+            requested_type,
+            id: None,
+        }
+    }
+
+    /// Builds one configuration-reading dependency for the given path.
+    fn value_dependency(requested_type: Type, path: &str) -> DependencyIr {
+        DependencyIr {
+            kind: DependencyKind::Value {
+                path: LitStr::new(path, Span::call_site()),
+            },
+            requested_type,
+            id: None,
+        }
+    }
+
+    /// Builds one unconditional parameter for the given dependency.
+    fn parameter(name: &str, dependency: DependencyIr) -> ParamIr {
+        ParamIr {
+            ident: parse_str_ident(name),
+            conditions: Vec::new(),
+            dependency,
+        }
+    }
+
+    /// Parses a plain parameter name.
+    fn parse_str_ident(name: &str) -> Ident {
+        Ident::new(name, Span::call_site())
+    }
+
     #[test]
     fn test_bean_emits_default_pascal_case_marker() {
         assert_marker(&expand_bean(None), "FooBarBean");
@@ -388,5 +520,109 @@ mod tests {
     #[test]
     fn test_bean_emits_marker_override() {
         assert_marker(&expand_bean(Some(parse_quote!(CustomFactory))), "CustomFactory");
+    }
+
+    #[test]
+    fn test_bean_wraps_bare_output_in_arc_and_uses_sync_factory() {
+        let generated = expand_bean_with(None, OutputShape::Bare, false, false, Vec::new());
+        assert_registration_contains(&generated, ":: std :: sync :: Arc :: new (foo_bar ())");
+        assert_registration_contains(&generated, ". factory (");
+        assert_registration_lacks(&generated, "FactoryError :: new");
+    }
+
+    #[test]
+    fn test_bean_passes_arc_output_through_without_wrapping() {
+        let generated = expand_bean_with(None, OutputShape::Arc, false, false, Vec::new());
+        assert_registration_contains(
+            &generated,
+            "let __qubit_ioc_output_0 : :: std :: sync :: Arc < u8 > = foo_bar () ;",
+        );
+        assert_registration_lacks(&generated, "Arc :: new");
+    }
+
+    #[test]
+    fn test_bean_maps_fallible_bare_output_error_before_wrapping() {
+        let generated = expand_bean_with(None, OutputShape::ResultBare, false, false, Vec::new());
+        assert_registration_contains(
+            &generated,
+            ":: std :: sync :: Arc :: new (foo_bar () . map_err (:: qubit_ioc :: FactoryError :: new) ?)",
+        );
+    }
+
+    #[test]
+    fn test_bean_maps_fallible_arc_output_error_without_wrapping() {
+        let generated = expand_bean_with(None, OutputShape::ResultArc, false, false, Vec::new());
+        assert_registration_contains(
+            &generated,
+            "let __qubit_ioc_output_0 : :: std :: sync :: Arc < u8 > = foo_bar () . map_err (:: qubit_ioc :: FactoryError :: new) ? ;",
+        );
+        assert_registration_lacks(&generated, "Arc :: new");
+    }
+
+    #[test]
+    fn test_bean_boxes_async_bare_output_in_a_factory_future() {
+        let generated = expand_bean_with(None, OutputShape::Bare, false, true, Vec::new());
+        assert_registration_contains(&generated, ". async_factory (");
+        assert_registration_contains(&generated, "Box :: pin (async move");
+        assert_registration_contains(&generated, "-> :: qubit_ioc :: FactoryFuture < u8 >");
+    }
+
+    #[test]
+    fn test_bean_emits_managed_closure_without_arc_wrapping() {
+        let generated = expand_bean_with(None, OutputShape::Bare, true, false, Vec::new());
+        assert_registration_contains(&generated, ". managed_factory (");
+        assert_registration_contains(
+            &generated,
+            "let __qubit_ioc_output_0 : :: qubit_ioc :: Managed < u8 > = foo_bar () ;",
+        );
+        assert_registration_lacks(&generated, "Arc :: new");
+    }
+
+    #[test]
+    fn test_bean_emits_managed_async_factory_future() {
+        let generated = expand_bean_with(None, OutputShape::Bare, true, true, Vec::new());
+        assert_registration_contains(&generated, ". managed_async_factory (");
+        assert_registration_contains(&generated, "-> :: qubit_ioc :: ManagedFactoryFuture < u8 >");
+    }
+
+    #[test]
+    fn test_bean_maps_managed_fallible_output_error_without_arc() {
+        let generated = expand_bean_with(None, OutputShape::ResultBare, true, false, Vec::new());
+        assert_registration_contains(
+            &generated,
+            ":: qubit_ioc :: Managed < u8 > = foo_bar () . map_err (:: qubit_ioc :: FactoryError :: new) ? ;",
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "managed bean cannot also be an Arc output")]
+    fn test_bean_rejects_managed_arc_output() {
+        let _ = expand_bean_with(None, OutputShape::Arc, true, false, Vec::new());
+    }
+
+    #[test]
+    fn test_bean_declares_graph_request_and_context_access_for_each_parameter() {
+        let parameter = parameter("dep", required_dependency(parse_quote!(u16)));
+        let generated = expand_bean_with(None, OutputShape::Bare, false, false, vec![parameter]);
+        assert_registration_contains(&generated, ":: qubit_ioc :: Dependency :: of :: < u16 > ()");
+        assert_registration_contains(
+            &generated,
+            "__qubit_ioc_context_0 . get :: < u16 > () . map_err (:: qubit_ioc :: FactoryError :: new) ?",
+        );
+        assert_registration_contains(&generated, "foo_bar (__qubit_ioc_argument_0)");
+    }
+
+    #[test]
+    fn test_bean_wraps_config_value_dependencies_in_the_config_guard() {
+        let parameter = parameter("value", value_dependency(parse_quote!(u32), "app.port"));
+        let generated = expand_bean_with(None, OutputShape::Bare, false, false, vec![parameter]);
+        let rendering = registration_tokens(&generated);
+        let guard = ":: qubit_ioc :: __private :: require_config !";
+        let guarded = rendering.matches(guard).count();
+        assert_eq!(
+            guarded, 2,
+            "config dependency must be guarded on both request and access: {rendering}"
+        );
+        assert_registration_contains(&generated, ":: qubit_ioc :: config :: get_value_for :: < u32 >");
     }
 }

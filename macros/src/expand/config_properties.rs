@@ -10,6 +10,7 @@
 use proc_macro2::TokenStream;
 use quote::quote;
 use quote::quote_spanned;
+use syn::LitStr;
 use syn::Result;
 
 use crate::expand::ExpansionContext;
@@ -17,6 +18,33 @@ use crate::expand::internal_ident;
 use crate::ir::ConfigurationPropertiesIr;
 
 /// Emits the user's struct and its config-dependent typed factory.
+///
+/// The [`ConfigurationPropertiesIr`] is destructured, so the caller keeps no
+/// handle on it afterwards, and the emitted stream is the original struct
+/// followed by a `ComponentDefinition` implementation wrapped in the runtime's
+/// configuration bridge macro. The bridge makes a program that declares a
+/// configuration-backed definition fail to compile with an actionable message
+/// when the configuration support is not enabled, instead of failing later with
+/// an unresolved `Config` request.
+///
+/// The generated `register` method always declares exactly one graph request,
+/// for the bridge `Config` type, and binds `id` and `profile` from the
+/// declaration while leaving omitted properties as `None`. The factory first
+/// resolves `Config` from the resolution context, mapping a missing value to
+/// the runtime's `FactoryError`, and then deserializes the properties for
+/// `prefix` and the declaring item name, so the configuration key space stays
+/// derived from the declaration rather than from user input at run time. The
+/// returned value is wrapped in an `Arc` because the definition is shared.
+///
+/// The tokens never reach the compiled program as data: expansion happens once
+/// per declaration, at compile time, and discards the intermediate
+/// representation immediately.
+///
+/// # Errors
+///
+/// Returns a span-aware [`syn::Error`] when the validation stage rejected the
+/// declaration, so the caller reports the original diagnostic instead of
+/// emitting a definition that cannot be built.
 pub(crate) fn expand(value: ConfigurationPropertiesIr, context: &ExpansionContext) -> Result<TokenStream> {
     let ConfigurationPropertiesIr {
         item,
@@ -39,14 +67,8 @@ pub(crate) fn expand(value: ConfigurationPropertiesIr, context: &ExpansionContex
             ::core::line!(), ::core::column!(), ::core::stringify!(#item_name),
         )
     };
-    let id = options.id.as_ref().map_or_else(
-        || quote!(::std::option::Option::None),
-        |id| quote!(::std::option::Option::Some(#id.to_owned())),
-    );
-    let profile = options.profile.as_ref().map_or_else(
-        || quote!(::std::option::Option::None),
-        |profile| quote!(::std::option::Option::Some(#profile.to_owned())),
-    );
+    let id = optional_owned_literal(options.id.as_ref());
+    let profile = optional_owned_literal(options.profile.as_ref());
     let primary = options.primary;
     let order = options.order;
 
@@ -92,18 +114,41 @@ pub(crate) fn expand(value: ConfigurationPropertiesIr, context: &ExpansionContex
     })
 }
 
+/// Maps an optional declared property onto the binding-option token form.
+///
+/// A property the declaration omitted becomes `Option::None`, and a declared
+/// literal becomes `Option::Some(<literal>.to_owned())` so the generated
+/// program owns its copy of the text instead of borrowing the validator's
+/// value. Both `id` and `profile` share this mapping so the emitted binding
+/// options stay consistent.
+///
+/// The mapping is a single expression over one borrowed literal and allocates
+/// nothing beyond the returned token stream, so it is inlined into its two
+/// call sites in [`expand`].
+#[must_use]
+#[inline]
+fn optional_owned_literal(value: Option<&LitStr>) -> TokenStream {
+    value.map_or_else(
+        || quote!(::std::option::Option::None),
+        |literal| quote!(::std::option::Option::Some(#literal.to_owned())),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use proc_macro2::Span;
+    use proc_macro2::TokenStream;
     use quote::quote;
     use syn::AngleBracketedGenericArguments;
     use syn::Expr;
     use syn::File;
     use syn::GenericArgument;
     use syn::ImplItem;
+    use syn::ImplItemFn;
     use syn::Item;
     use syn::ItemStruct;
     use syn::Lit;
+    use syn::Member;
     use syn::Path;
     use syn::PathArguments;
     use syn::Stmt;
@@ -134,6 +179,73 @@ mod tests {
             panic!("expected Config type argument");
         };
         assert_path(&config.path, &["renamed_ioc", "__private", "codegen_v1", "Config"]);
+    }
+
+    /// Navigates from generated tokens to the bridged registration method.
+    fn generated_register(tokens: TokenStream) -> ImplItemFn {
+        let generated: File = parse2(tokens).expect("generated config properties should be valid Rust AST");
+        let Item::Macro(bridge) = &generated.items[1] else {
+            panic!("expected config feature bridge macro")
+        };
+        let bridged: File = parse2(bridge.mac.tokens.clone()).expect("bridge contents should be valid Rust AST");
+        let Item::Impl(registration) = &bridged.items[0] else {
+            panic!("expected registration impl")
+        };
+        registration
+            .items
+            .iter()
+            .find_map(|item| match item {
+                ImplItem::Fn(function) if function.sig.ident == "register" => Some(function.clone()),
+                _ => None,
+            })
+            .expect("expected registration method")
+    }
+
+    /// Returns the initializer of one field of the generated binding options.
+    fn binding_options_field<'a>(register: &'a ImplItemFn, name: &str) -> &'a Expr {
+        let Stmt::Local(options) = &register.block.stmts[0] else {
+            panic!("expected binding options declaration")
+        };
+        let Expr::Struct(options) = options
+            .init
+            .as_ref()
+            .expect("expected binding options initializer")
+            .expr
+            .as_ref()
+        else {
+            panic!("expected binding options literal")
+        };
+        let field = options
+            .fields
+            .iter()
+            .find(|field| match &field.member {
+                Member::Named(ident) => ident == name,
+                Member::Unnamed(_) => false,
+            })
+            .unwrap_or_else(|| panic!("expected `{name}` binding option"));
+        &field.expr
+    }
+
+    /// Checks that a declared binding option is emitted as an owned `Some`.
+    fn assert_owned_some(value: &Expr, expected: &str) {
+        let Expr::Call(some) = value else {
+            panic!("expected Option::Some value")
+        };
+        let Expr::Path(constructor) = some.func.as_ref() else {
+            panic!("expected Option::Some call")
+        };
+        assert_path(&constructor.path, &["std", "option", "Option", "Some"]);
+        let Expr::MethodCall(owned) = &some.args[0] else {
+            panic!("expected owned literal argument")
+        };
+        assert_eq!(owned.method, "to_owned");
+        let Expr::Lit(literal) = owned.receiver.as_ref() else {
+            panic!("expected string literal receiver")
+        };
+        let Lit::Str(text) = &literal.lit else {
+            panic!("expected string literal")
+        };
+        assert_eq!(text.value(), expected);
     }
 
     #[test]
@@ -291,5 +403,35 @@ mod tests {
             panic!("expected string prefix")
         };
         assert_eq!(prefix.value(), "server.settings");
+    }
+
+    #[test]
+    fn test_config_properties_forwards_declared_id_and_profile() {
+        let item: ItemStruct = parse_quote! {
+            struct Settings { port: u16 }
+        };
+        let source = SourceIr {
+            item: item.ident.clone(),
+            span: Span::call_site(),
+        };
+        let value = ConfigurationPropertiesIr {
+            item,
+            prefix: parse_quote!("server.settings"),
+            options: BindingOptions {
+                id: Some(parse_quote!("server.settings.id")),
+                binds: Vec::new(),
+                primary: false,
+                order: 0,
+                profile: Some(parse_quote!("production")),
+            },
+            source,
+        };
+        let context = ExpansionContext {
+            runtime: quote!(::renamed_ioc),
+        };
+        let tokens = super::expand(value, &context).expect("config properties expansion should succeed");
+        let register = generated_register(tokens);
+        assert_owned_some(binding_options_field(&register, "id"), "server.settings.id");
+        assert_owned_some(binding_options_field(&register, "profile"), "production");
     }
 }
