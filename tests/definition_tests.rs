@@ -73,7 +73,9 @@ fn test_definition_validation_errors_preserve_source_and_do_not_execute_callback
         .err()
         .expect("missing source");
     match error {
-        RegistrationError::MissingDefinitionFactory { definition } => assert_eq!(definition, source()),
+        RegistrationError::MissingDefinitionFactory { definition } => {
+            assert_eq!(definition, source())
+        }
         other => panic!("unexpected error: {other:?}"),
     }
     let calls = Arc::new(AtomicUsize::new(0));

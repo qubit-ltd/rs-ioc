@@ -303,7 +303,9 @@ mod tests {
             .parse_args_with(Punctuated::<Meta, Comma>::parse_terminated)
             .expect("bean options should be valid attribute arguments");
         options.into_iter().find_map(|option| {
-            let Meta::NameValue(option) = option else { return None };
+            let Meta::NameValue(option) = option else {
+                return None;
+            };
             if !option.path.is_ident("profile") {
                 return None;
             }

@@ -124,7 +124,9 @@ impl RuntimePath {
     /// itself a type.
     #[must_use]
     pub(crate) fn managed_argument<'a>(&self, ty: &'a Type) -> Option<&'a Type> {
-        let Type::Path(type_path) = ty else { return None };
+        let Type::Path(type_path) = ty else {
+            return None;
+        };
         if type_path.qself.is_some() {
             return None;
         }
