@@ -10,6 +10,7 @@
 use std::sync::Arc;
 
 use crate::key::BindingKey;
+use crate::managed::CleanupError;
 use crate::managed::ShutdownFailure;
 use crate::managed::ShutdownMode;
 
@@ -54,6 +55,8 @@ pub struct ShutdownReport {
     incomplete: Arc<[BindingKey]>,
     /// Components using abort in place of an unsupported graceful request.
     fallbacks: Arc<[BindingKey]>,
+    /// Failure from creating, polling, or expiring the overall deadline.
+    overall_failure: Option<Arc<CleanupError>>,
 }
 
 impl ShutdownReport {
@@ -88,12 +91,14 @@ impl ShutdownReport {
         failures: Vec<ShutdownFailure>,
         incomplete: Vec<BindingKey>,
         fallbacks: Vec<BindingKey>,
+        overall_failure: Option<Arc<CleanupError>>,
     ) -> Self {
         Self {
             mode,
             failures: failures.into(),
             incomplete: incomplete.into(),
             fallbacks: fallbacks.into(),
+            overall_failure,
         }
     }
 
@@ -125,6 +130,14 @@ impl ShutdownReport {
         &self.fallbacks
     }
 
+    /// Returns an overall deadline failure, if the total shutdown budget
+    /// expired or its timer failed.
+    #[must_use]
+    #[inline]
+    pub fn overall_failure(&self) -> Option<&CleanupError> {
+        self.overall_failure.as_deref()
+    }
+
     /// Whether termination was confirmed for every managed component.
     #[must_use]
     #[inline]
@@ -136,6 +149,6 @@ impl ShutdownReport {
     #[must_use]
     #[inline]
     pub fn is_success(&self) -> bool {
-        self.is_complete() && self.failures.is_empty()
+        self.is_complete() && self.failures.is_empty() && self.overall_failure.is_none()
     }
 }

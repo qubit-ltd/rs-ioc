@@ -9,6 +9,7 @@
 
 use std::panic::AssertUnwindSafe;
 use std::panic::catch_unwind;
+use std::sync::Arc;
 use std::task::Context;
 use std::task::Poll;
 
@@ -52,6 +53,11 @@ pub(crate) struct ShutdownDriver {
     failures: Vec<ShutdownFailure>,
     /// Concrete entries lacking graceful support that used abort instead.
     fallbacks: Vec<BindingKey>,
+    /// Whether the first wait poll has initialized the total shutdown timer.
+    overall_started: bool,
+    /// Timer and failure for the complete shutdown budget.
+    overall_deadline: Option<DeadlineFuture>,
+    overall_failure: Option<Arc<CleanupError>>,
     /// Immutable result once every entry is finalized or abandoned.
     report: Option<ShutdownReport>,
 }
@@ -78,6 +84,9 @@ impl ShutdownDriver {
             active: None,
             failures: Vec::new(),
             fallbacks: Vec::new(),
+            overall_started: false,
+            overall_deadline: None,
+            overall_failure: None,
             report: None,
         };
         if mode == ShutdownMode::Immediate {
@@ -143,10 +152,26 @@ impl ShutdownDriver {
         if let Some(report) = &self.report {
             return Poll::Ready(report.clone());
         }
+        if self.active.is_none() && self.cursor == 0 {
+            return Poll::Ready(self.finish());
+        }
+        if !self.overall_started {
+            self.overall_started = true;
+            match catch_unwind(AssertUnwindSafe(|| self.policy.overall_deadline())) {
+                Ok(deadline) => self.overall_deadline = deadline,
+                Err(payload) => {
+                    self.overall_failure = Some(Arc::new(panic_cleanup_error("overall deadline factory", payload)));
+                    return Poll::Ready(self.expire_overall());
+                }
+            }
+        }
         loop {
             if self.active.is_none() {
                 if self.cursor == 0 {
                     return Poll::Ready(self.finish());
+                }
+                if self.poll_overall_deadline(context).is_ready() {
+                    return Poll::Ready(self.expire_overall());
                 }
                 if !self.start_next() {
                     continue;
@@ -174,7 +199,6 @@ impl ShutdownDriver {
             match deadline {
                 None | Some(Ok(Poll::Pending)) => {
                     self.active = Some(active);
-                    return Poll::Pending;
                 }
                 Some(Err(payload)) => self.fail_incomplete(
                     active.index,
@@ -183,7 +207,60 @@ impl ShutdownDriver {
                 ),
                 Some(Ok(Poll::Ready(()))) => self.expire(active),
             }
+            if let Some(active) = self.active.take() {
+                match self.poll_overall_deadline(context) {
+                    Poll::Ready(()) => {
+                        self.active = Some(active);
+                        return Poll::Ready(self.expire_overall());
+                    }
+                    Poll::Pending => {
+                        self.active = Some(active);
+                        return Poll::Pending;
+                    }
+                }
+            }
         }
+    }
+
+    /// Polls the one retained whole-shutdown timer and stores timer failures.
+    fn poll_overall_deadline(&mut self, context: &mut Context<'_>) -> Poll<()> {
+        let Some(deadline) = self.overall_deadline.as_mut() else {
+            return Poll::Pending;
+        };
+        match catch_unwind(AssertUnwindSafe(|| deadline.as_mut().poll(context))) {
+            Ok(Poll::Pending) => Poll::Pending,
+            Ok(Poll::Ready(())) => {
+                self.overall_failure = Some(Arc::new(CleanupError::new(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    "overall shutdown deadline expired",
+                ))));
+                Poll::Ready(())
+            }
+            Err(payload) => {
+                self.overall_failure = Some(Arc::new(panic_cleanup_error("overall deadline future", payload)));
+                Poll::Ready(())
+            }
+        }
+    }
+
+    /// Aborts all unfinished entries without creating any further wait timer.
+    fn expire_overall(&mut self) -> ShutdownReport {
+        if self.overall_failure.is_none() {
+            self.overall_failure = Some(Arc::new(CleanupError::new(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "overall shutdown deadline expired",
+            ))));
+        }
+        for index in (0..self.entries.len()).rev() {
+            self.abort_entry(index);
+        }
+        self.active = None;
+        for entry in &mut self.entries {
+            if entry.state != EntryState::Done {
+                entry.state = EntryState::Incomplete;
+            }
+        }
+        self.finish()
     }
 
     /// Claims the next entry from the reverse cursor and installs its wait.
@@ -410,6 +487,7 @@ impl ShutdownDriver {
             std::mem::take(&mut self.failures),
             self.pending(),
             std::mem::take(&mut self.fallbacks),
+            self.overall_failure.clone(),
         );
         self.context.publish_state(if report.is_complete() {
             ApplicationState::Closed

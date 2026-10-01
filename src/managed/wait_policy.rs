@@ -55,6 +55,8 @@ type DeadlineFactory = Arc<dyn Fn(Duration) -> DeadlineFuture + Send + Sync>;
 pub struct WaitPolicy {
     /// Graceful and termination budgets with their runtime's timer factory.
     bounded: Option<(Duration, Duration, DeadlineFactory)>,
+    /// Optional whole-shutdown budget, started by the first `wait` poll.
+    overall: Option<Duration>,
 }
 
 impl WaitPolicy {
@@ -86,6 +88,38 @@ impl WaitPolicy {
     {
         Self {
             bounded: Some((grace, termination, Arc::new(timer))),
+            overall: None,
+        }
+    }
+
+    /// Uses per-component graceful and termination budgets plus one total
+    /// shutdown budget.
+    ///
+    /// The total budget starts when `ShutdownHandle::wait` is first polled and
+    /// continues across cancellation and abort upgrades. On expiry, the driver
+    /// requests abort for every unfinished component and reports any component
+    /// whose termination remains unconfirmed. A timer cannot interrupt a
+    /// blocking callback or future poll.
+    ///
+    /// # Parameters
+    ///
+    /// * `grace` - budget for each component's graceful wait.
+    /// * `termination` - budget for each component's termination wait.
+    /// * `total` - budget for the complete shutdown attempt.
+    /// * `timer` - creates owned deadline futures on the executor polling
+    ///   shutdown.
+    ///
+    /// # Returns
+    ///
+    /// A bounded policy with per-component and whole-shutdown deadlines.
+    #[must_use]
+    pub fn bounded_with_total<F>(grace: Duration, termination: Duration, total: Duration, timer: F) -> Self
+    where
+        F: Fn(Duration) -> DeadlineFuture + Send + Sync + 'static,
+    {
+        Self {
+            bounded: Some((grace, termination, Arc::new(timer))),
+            overall: Some(total),
         }
     }
 
@@ -97,7 +131,10 @@ impl WaitPolicy {
     #[must_use]
     #[inline]
     pub fn unbounded() -> Self {
-        Self { bounded: None }
+        Self {
+            bounded: None,
+            overall: None,
+        }
     }
 
     /// Creates the selected budget's timer, or returns `None` when unbounded.
@@ -119,5 +156,13 @@ impl WaitPolicy {
         self.bounded
             .as_ref()
             .map(|(grace, termination, timer)| timer(if graceful { *grace } else { *termination }))
+    }
+
+    /// Creates the total shutdown timer if this policy has one.
+    /// The driver catches a panic from the user-supplied factory.
+    pub(crate) fn overall_deadline(&self) -> Option<DeadlineFuture> {
+        let duration = self.overall?;
+        let (_, _, timer) = self.bounded.as_ref()?;
+        Some(timer(duration))
     }
 }

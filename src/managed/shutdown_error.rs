@@ -30,7 +30,12 @@ use crate::managed::ShutdownReport;
 ///
 /// [`ShutdownReport`]: crate::managed::ShutdownReport
 #[derive(Clone, Debug, Error)]
-#[error("shutdown observed {} failure(s) and {} incomplete component(s)", report.failures().len(), report.incomplete().len())]
+#[error(
+    "shutdown observed {} failure(s), {} incomplete component(s), overall deadline failed: {}",
+    report.failures().len(),
+    report.incomplete().len(),
+    report.overall_failure().is_some()
+)]
 pub struct ShutdownError {
     /// Observations captured when the attempt ended.
     ///

@@ -83,6 +83,26 @@ impl Timers {
         })
     }
 
+    /// Supplies graceful, termination, and overall budgets through one gate
+    /// per timer creation.
+    #[allow(dead_code)]
+    pub fn policy_with_total(&self, total: Duration) -> WaitPolicy {
+        let timers = self.clone();
+        WaitPolicy::bounded_with_total(
+            Duration::from_secs(13),
+            Duration::from_secs(7),
+            total,
+            move |duration| {
+                let gate = Gate::default();
+                timers.calls.lock().expect("timers lock").push(TimerCall {
+                    duration,
+                    gate: gate.clone(),
+                });
+                Box::pin(gate)
+            },
+        )
+    }
+
     /// Returns all requested budgets in creation order.
     pub fn durations(&self) -> Vec<Duration> {
         self.calls
