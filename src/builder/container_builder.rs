@@ -10,6 +10,7 @@
 use std::sync::Arc;
 
 use super::ComponentDefinition;
+use super::FactoryArgs;
 use super::internal::Construction;
 use super::internal::replacement::Replacement;
 use super::internal::validation::profile_source;
@@ -238,6 +239,47 @@ impl ContainerBuilder {
         self.register_factory_with(dependencies, BindingOptions::default(), factory)
     }
 
+    /// Stages a synchronous factory whose typed parameter tuple also declares
+    /// its graph dependencies.
+    ///
+    /// Supported arguments are `Arc<T>`, `Option<Arc<T>>`, and `Vec<Arc<T>>`;
+    /// tuples support up to eight parameters. Repeated identical requests are
+    /// declared once while every tuple position receives its own shared
+    /// handle. Use [`Self::register_factory`] when the factory needs named
+    /// requests or a custom dependency view.
+    ///
+    /// # Type Parameters
+    ///
+    /// * `T` - component type produced by the factory.
+    /// * `A` - typed argument tuple implementing [`FactoryArgs`].
+    /// * `F` - one-shot function from the resolved tuple to a shared component.
+    ///
+    /// # Parameters
+    ///
+    /// * `factory` - closure receiving exactly the arguments described by `A`.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` after staging the definition.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RegistrationError`] for invalid generated requests or binding
+    /// options. Missing and ambiguous requests are returned later by `build`.
+    #[track_caller]
+    pub fn register_injected_factory<T, A, F>(&mut self, factory: F) -> Result<(), RegistrationError>
+    where
+        T: ?Sized + Send + Sync + 'static,
+        A: FactoryArgs,
+        F: FnOnce(A) -> Result<Arc<T>, FactoryError> + Send + 'static,
+    {
+        let dependencies = A::dependencies();
+        self.register_factory::<T, _>(&dependencies, move |context| {
+            let arguments = A::resolve(&context).map_err(FactoryError::new)?;
+            factory(arguments)
+        })
+    }
+
     /// Stages a one-shot synchronous factory of `T` with binding options.
     ///
     /// Duplicate requests or invalid IDs and profiles fail at registration;
@@ -319,6 +361,46 @@ impl ContainerBuilder {
         F: FnOnce(BuildContext) -> Result<Managed<T>, FactoryError> + Send + 'static,
     {
         self.register_managed_factory_with(dependencies, BindingOptions::default(), factory)
+    }
+
+    /// Stages a managed synchronous factory whose typed parameter tuple also
+    /// declares its graph dependencies.
+    ///
+    /// Argument types and tuple limits match
+    /// [`Self::register_injected_factory`]. The resulting `Managed<T>`
+    /// enters the same rollback and shutdown path as a factory registered
+    /// through [`Self::register_managed_factory`].
+    ///
+    /// # Type Parameters
+    ///
+    /// * `T` - managed component type.
+    /// * `A` - typed argument tuple implementing [`FactoryArgs`].
+    /// * `F` - one-shot function from the resolved tuple to `Managed<T>`.
+    ///
+    /// # Parameters
+    ///
+    /// * `factory` - closure receiving the resolved typed arguments.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` after staging the definition.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RegistrationError`] for invalid generated requests or binding
+    /// options. Graph resolution errors are returned later by `build`.
+    #[track_caller]
+    pub fn register_injected_managed_factory<T, A, F>(&mut self, factory: F) -> Result<(), RegistrationError>
+    where
+        T: ?Sized + Send + Sync + 'static,
+        A: FactoryArgs,
+        F: FnOnce(A) -> Result<Managed<T>, FactoryError> + Send + 'static,
+    {
+        let dependencies = A::dependencies();
+        self.register_managed_factory::<T, _>(&dependencies, move |context| {
+            let arguments = A::resolve(&context).map_err(FactoryError::new)?;
+            factory(arguments)
+        })
     }
 
     /// Stages a one-shot managed synchronous factory with binding options.

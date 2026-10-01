@@ -86,6 +86,8 @@ pub use binding::FactoryFuture;
 pub use build_context::BuildContext;
 pub use builder::ComponentDefinition;
 pub use builder::ContainerBuilder;
+pub use builder::FactoryArg;
+pub use builder::FactoryArgs;
 pub use definition::Definition;
 pub use definition::DefinitionBuilder;
 pub use dependency::Dependency;
