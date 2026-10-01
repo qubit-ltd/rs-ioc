@@ -1,5 +1,17 @@
 # qubit-ioc 用户手册
 
+## 类型化工厂与应用关闭预算
+
+同步手工工厂可使用 `register_injected_factory` 和
+`register_injected_managed_factory`，由类型化参数元组生成依赖图请求：`Arc<T>` 表示必需，
+`Option<Arc<T>>` 表示可选，`Vec<Arc<T>>` 表示请求全部候选。支持零至八个参数。需要 ID、
+异步工厂或更多参数时，继续使用现有注册方法。
+
+托管关闭可使用 `WaitPolicy::bounded_with_total(grace, termination, total, timer)` 增加
+应用级预算。计时器在 `wait()` 首次 poll 时启动，取消等待后仍然保留。到期时会请求未确认
+组件 abort，并通过 `ShutdownReport::overall_failure()` 报告。总时限无法中断同步阻塞工作。
+完整契约见[生命周期说明](lifecycle.zh_CN.md)。
+
 [English user guide](user_guide.md) · [项目 README](../README.zh_CN.md)
 
 本手册面向使用 `qubit-ioc` 0.3.0 发布候选的 Rust 应用开发者，介绍如何在启动时组装

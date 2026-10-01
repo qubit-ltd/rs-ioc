@@ -42,6 +42,14 @@ The `macros` and `config` features are independent. Configuration attributes
 such as `#[value]` and `#[ConfigurationProperties]` require both features;
 enabling `config` alone does not enable the macros.
 
+Manual synchronous factories can use `register_injected_factory` and
+`register_injected_managed_factory` to derive dependency requests from typed
+argument tuples (`Arc<T>`, `Option<Arc<T>>`, and `Vec<Arc<T>>`, up to eight
+arguments). Managed shutdown can optionally use
+`WaitPolicy::bounded_with_total(grace, termination, total, timer)` for one
+application-wide budget in addition to per-component budgets. See the
+[lifecycle guide](doc/lifecycle.md) for deadline and reporting semantics.
+
 ## Quick start: assemble a greeting service
 
 Suppose a service needs a greeting implementation from another crate. Declare

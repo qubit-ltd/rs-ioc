@@ -1,5 +1,24 @@
 # 托管组件生命周期
 
+## 应用级关闭时限
+
+`WaitPolicy::bounded(grace, termination, timer)` 保留逐组件时限。需要应用级预算时，
+使用 `bounded_with_total(grace, termination, total, timer)`。总时限在
+`ShutdownHandle::wait()` 首次被 poll 时启动；借用的 wait future 被取消或关闭模式升级后
+仍复用同一计时器，调用 `abort()` 也不会重置。空应用、`abandon()` 和 Drop 不启动总计时器。
+
+总计时器到期后，IoC 会请求所有未确认托管组件 abort，并在
+`ShutdownReport::overall_failure()` 记录原因。仍未确认的组件列入 `incomplete()`；
+此前的失败和回退信息会保留。`is_complete()` 表示已确认终止，`is_success()` 还要求没有
+全局失败。时限无法中断同步回调、一次阻塞的 future poll 或析构函数。
+
+## 类型化同步工厂
+
+`register_injected_factory` 和 `register_injected_managed_factory` 接收显式参数元组。
+`Arc<T>` 声明必需请求，`Option<Arc<T>>` 声明可选请求，`Vec<Arc<T>>` 声明集合请求。
+元组支持零至八个参数；完全相同的请求在依赖图中去重，但每个参数都会分别解析并传给
+工厂。需要 ID、异步工厂或更多参数时继续使用现有注册方法。
+
 [English lifecycle guide](lifecycle.md) · [中文用户手册](user_guide.zh_CN.md)
 
 本文适用于 `qubit-ioc` 0.3.0。装配阶段只登记托管工厂，资源在所选依赖图验证通过后

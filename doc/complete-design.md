@@ -1,5 +1,38 @@
 # qubit-ioc Current Design
 
+## Typed synchronous registration and total deadline
+
+Manual synchronous factories may accept typed tuples from zero to eight
+arguments. `Arc<T>`, `Option<Arc<T>>`, and `Vec<Arc<T>>` map to required,
+optional, and collection graph requests. The requests and factory values come
+from the same tuple type, and duplicate identical requests are deduplicated.
+For example:
+
+```rust
+use std::error::Error;
+use std::sync::Arc;
+use qubit_ioc::ContainerBuilder;
+
+fn build() -> Result<(), Box<dyn Error>> {
+    let mut builder = ContainerBuilder::new();
+    builder.register_instance(Arc::new(String::from("service")))?;
+    builder.register_injected_factory::<usize, (Arc<String>,), _>(|(name,)| {
+        Ok(Arc::new(name.len()))
+    })?;
+    builder.root::<usize>();
+    let _application = builder.build()?;
+    Ok(())
+}
+```
+
+`WaitPolicy::bounded_with_total(grace, termination, total, timer)` adds one
+application-wide budget beginning at the first `wait()` poll. The report
+exposes its failure through `overall_failure()` and keeps unconfirmed resources
+in `incomplete()`. `is_success()` is false after an overall failure even when
+all abort requests succeeded. The deadline cannot preempt synchronous work or
+a single blocking poll. The [lifecycle guide](lifecycle.md) specifies
+cancellation and tie-breaking behavior.
+
 > This document describes the implemented design and public contracts of
 > `qubit-ioc` 0.3.0 release candidate. For usage, see the [English user guide](user_guide.md) or
 > [中文用户手册](user_guide.zh_CN.md). Historical design notes remain available

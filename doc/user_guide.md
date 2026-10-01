@@ -1,5 +1,21 @@
 # qubit-ioc User Guide
 
+## Typed factories and application shutdown budgets
+
+For synchronous manual factories, `register_injected_factory` and
+`register_injected_managed_factory` derive graph requests from a typed argument
+tuple: `Arc<T>` is required, `Option<Arc<T>>` is optional, and `Vec<Arc<T>>`
+requests all candidates. Zero through eight arguments are supported. The
+existing registration methods remain available for IDs, async factories, and
+larger signatures.
+
+For managed shutdown, `WaitPolicy::bounded_with_total(grace, termination,
+total, timer)` adds an application-wide budget. It starts when `wait()` is
+first polled; cancellation preserves it. Expiry requests abort for unconfirmed
+components and appears in `ShutdownReport::overall_failure()`. A total deadline
+cannot interrupt synchronous blocking work. See the [lifecycle guide](lifecycle.md)
+for the full contract.
+
 [中文用户手册](user_guide.zh_CN.md) · [README](../README.md)
 
 This guide is for Rust application authors using the `qubit-ioc` 0.3.0 release candidate

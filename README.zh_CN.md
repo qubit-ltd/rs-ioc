@@ -38,6 +38,12 @@ qubit-ioc = { version = "0.3", path = "../rs-ioc" }
 `macros` 与 `config` 可独立启用。`#[value]` 和 `#[ConfigurationProperties]`
 需要同时启用这两个 feature；只启用 `config` 不会导出这些宏。
 
+同步手工工厂可使用 `register_injected_factory` 和
+`register_injected_managed_factory`，由类型化参数元组
+（`Arc<T>`、`Option<Arc<T>>`、`Vec<Arc<T>>`，最多 8 个参数）生成依赖请求。
+托管关闭还可使用 `WaitPolicy::bounded_with_total(grace, termination, total, timer)`
+增加应用级总时限，同时保留逐组件时限。时限与报告语义见[生命周期说明](doc/lifecycle.zh_CN.md)。
+
 ## 快速开始：组装问候服务
 
 假设应用需要跨 crate 注入问候服务。先声明具体组件及其 trait 绑定，再让服务通过

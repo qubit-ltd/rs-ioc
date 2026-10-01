@@ -13,6 +13,13 @@ has not been published to crates.io. The [bilingual migration guide](doc/lifecyc
   its handle is first polled; `Immediate` requests all aborts before returning.
   Selected managed graphs require explicit `WaitPolicy`; real applications use
   bounded grace and termination deadlines with an application-driven timer.
+- `WaitPolicy::bounded_with_total` adds an optional application-wide shutdown
+  budget. Its failure is available as `ShutdownReport::overall_failure()` and
+  contributes to `is_success()`; blocking synchronous work remains uninterruptible.
+- Synchronous manual factories can use `register_injected_factory` and
+  `register_injected_managed_factory` with zero-to-eight typed arguments:
+  `Arc<T>`, `Option<Arc<T>>`, and `Vec<Arc<T>>` derive required, optional, and
+  collection dependencies. Existing manual and async registration remains available.
 - Sync and async builds now immediately return `BuildFailure` with the original
   `cause()` and optional `take_cleanup()` / `into_parts()` handle. Applications
   explicitly wait to observe rollback. `BuildError::CleanupFailed` is removed.

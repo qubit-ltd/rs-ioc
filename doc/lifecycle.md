@@ -1,5 +1,31 @@
 # Managed Application Lifecycle
 
+## Application-wide shutdown deadline
+
+`WaitPolicy::bounded(grace, termination, timer)` retains per-component
+deadlines. Use `bounded_with_total(grace, termination, total, timer)` to add an
+application-wide deadline. Its timer starts on the first poll of
+`ShutdownHandle::wait()` and is reused if that borrowed future is cancelled or
+the shutdown mode is upgraded. It does not restart for `abort()`. Empty
+applications, `abandon()`, and Drop do not start it.
+
+When the total timer expires, IoC requests abort for every unconfirmed managed
+component and records the cause in `ShutdownReport::overall_failure()`. Pending
+components appear in `incomplete()`; prior failures and fallbacks remain in the
+report. `is_complete()` means termination was confirmed, while `is_success()`
+also requires that no overall failure occurred. A deadline cannot interrupt a
+synchronous callback, one blocking future poll, or a destructor.
+
+## Typed synchronous factories
+
+`register_injected_factory` and `register_injected_managed_factory` take an
+explicit parameter tuple. `Arc<T>` declares a required request,
+`Option<Arc<T>>` an optional request, and `Vec<Arc<T>>` a collection request.
+Tuples support zero through eight arguments. Repeated identical requests are
+deduplicated in the graph while each argument receives its own resolved value.
+Use the existing registration methods for IDs, async factories, or larger
+signatures.
+
 [中文生命周期说明](lifecycle.zh_CN.md) · [User guide](user_guide.md)
 
 This guide describes `qubit-ioc` 0.3.0. Register managed factories during

@@ -1,5 +1,33 @@
 # qubit-ioc 当前设计
 
+## 类型化同步注册与总关闭时限
+
+手工同步工厂可接收零至八个类型化元组参数。`Arc<T>`、`Option<Arc<T>>` 和
+`Vec<Arc<T>>` 分别生成必需、可选和集合依赖请求。依赖请求与工厂实际读取的值来自同一
+元组类型；完全相同的请求会去重。例如：
+
+```rust
+use std::error::Error;
+use std::sync::Arc;
+use qubit_ioc::ContainerBuilder;
+
+fn build() -> Result<(), Box<dyn Error>> {
+    let mut builder = ContainerBuilder::new();
+    builder.register_instance(Arc::new(String::from("service")))?;
+    builder.register_injected_factory::<usize, (Arc<String>,), _>(|(name,)| {
+        Ok(Arc::new(name.len()))
+    })?;
+    builder.root::<usize>();
+    let _application = builder.build()?;
+    Ok(())
+}
+```
+
+`WaitPolicy::bounded_with_total(grace, termination, total, timer)` 增加应用级预算，在
+首次 poll `wait()` 时启动。总时限失败由 `overall_failure()` 暴露，未确认资源仍列于
+`incomplete()`。总失败会令 `is_success()` 返回 false，即使 abort 请求均成功。它无法
+抢占同步工作或一次阻塞的 poll。取消与边界优先级见[生命周期说明](lifecycle.zh_CN.md)。
+
 > 本文描述当前实现（0.3.0 发布候选）的设计与公开契约。英文版见[Current Design](complete-design.md)。历史设计背景见[容器内核草案](design.zh_CN.md)和[注解草案](annotation-design.zh_CN.md)；接入步骤见[中文用户手册](user_guide.zh_CN.md)与[English user guide](user_guide.md)。实现和测试是事实依据，本文不承诺未在公开 API 中提供的能力。
 
 ## 1. 目标与边界
