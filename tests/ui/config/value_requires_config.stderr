@@ -1,7 +1,7 @@
 error: qubit-ioc: #[value] and #[ConfigurationProperties] require the `config` feature
-  --> tests/ui/config/value_requires_config.rs:13:1
+  --> tests/ui/config/value_requires_config.rs:12:1
    |
-13 | #[Component]
+12 | #[Component]
    | ^^^^^^^^^^^^
    |
    = note: this error originates in the macro `::qubit_ioc::__private::require_config` which comes from the expansion of the attribute macro `Component` (in Nightly builds, run with -Z macro-backtrace for more info)

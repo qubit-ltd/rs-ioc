@@ -16,5 +16,4 @@ fn ignored(application: Application) {
 
 fn main() {}
 
-// qubit-style: allow test-file-name
 // This is a trybuild source fixture, not a test module.

@@ -5,7 +5,6 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-// qubit-style: allow test-file-name
 // This is a trybuild source fixture, not a test module.
 
 use qubit_ioc::Component;

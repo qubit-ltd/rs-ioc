@@ -18,4 +18,3 @@ struct Consumer {
 
 fn main() {}
 
-// qubit-style: allow test-file-name

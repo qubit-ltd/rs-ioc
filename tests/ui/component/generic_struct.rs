@@ -14,4 +14,3 @@ struct Generic<T> {
 
 fn main() {}
 
-// qubit-style: allow test-file-name

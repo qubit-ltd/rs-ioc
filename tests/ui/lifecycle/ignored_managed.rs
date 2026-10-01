@@ -15,5 +15,4 @@ fn main() {
     Managed::new(Arc::new(1_u8), |_| Ok(()));
 }
 
-// qubit-style: allow test-file-name
 // This is a trybuild source fixture, not a test module.

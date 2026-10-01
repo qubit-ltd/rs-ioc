@@ -3,14 +3,19 @@ format = 1
 [[exceptions]]
 rule = "explicit-imports"
 path = "tests/fixtures/managed_paths/canonical/src/main.rs"
-reason = "The canonical and absolute runtime paths are compile-time inputs under test for Managed output recognition."
-
-[[exceptions]]
-rule = "explicit-imports"
-path = "tests/fixtures/managed_paths/renamed/src/main.rs"
-reason = "The renamed and absolute crate paths are compile-time inputs under test for Managed output recognition."
+reason = "Canonical and absolute runtime paths are compile-time inputs under test for Managed output recognition."
 
 [[exceptions]]
 rule = "explicit-imports"
 path = "tests/fixtures/managed_paths/keyword/src/main.rs"
-reason = "The raw-keyword and absolute crate paths are compile-time inputs under test for Managed output recognition."
+reason = "Raw-keyword and absolute crate paths are compile-time inputs under test for Managed output recognition."
+
+[[exceptions]]
+rule = "explicit-imports"
+path = "tests/fixtures/managed_paths/renamed/src/main.rs"
+reason = "Renamed and absolute crate paths are compile-time inputs under test for Managed output recognition."
+
+[[exceptions]]
+rule = "public-type-layout"
+path = "src/graph.rs"
+reason = "This module intentionally groups multiple public types for dispatch."

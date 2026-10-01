@@ -12,4 +12,3 @@ struct TupleStruct(u32);
 
 fn main() {}
 
-// qubit-style: allow test-file-name

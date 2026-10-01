@@ -14,4 +14,3 @@ struct NotARepository;
 
 fn main() {}
 
-// qubit-style: allow test-file-name
