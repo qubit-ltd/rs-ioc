@@ -26,7 +26,7 @@ deduplicated in the graph while each argument receives its own resolved value.
 Use the existing registration methods for IDs, async factories, or larger
 signatures.
 
-[中文生命周期说明](lifecycle.zh_CN.md) · [User guide](user_guide.md)
+[中文生命周期说明](lifecycle.zh_CN.md) · [User guide](user_guide.md) · [Managed adapter guide](managed-adapters.md)
 
 This guide describes `qubit-ioc` 0.3.0. Register managed factories during
 assembly, then create each resource inside its factory after graph validation.
@@ -128,13 +128,17 @@ panic still propagates; cancellation or unwinding requests abort without wait.
 
 ## Request contracts and shutdown ordering
 
-`Managed::new(value, abort)` requires a synchronous, non-blocking cancellation
-request. It must not join, block on a future or condition variable, execute
+Choose the completion contract when constructing a managed value.
+`Managed::synchronous(value, stop)` is for a stop callback whose successful
+return means the resource has terminated. For a background resource, use
+`Managed::asynchronous(value, abort, wait)`: `abort` is a synchronous,
+non-blocking cancellation request, and `wait` confirms termination. The abort
+request must not join, block on a future or condition variable, execute
 business handlers, or perform unbounded I/O. `.with_graceful_stop(request)`
 requests draining of this component: close its own admission without closing
-its dependencies. `.with_wait(wait)` confirms resource termination. Without a
-wait action, a successful stop callback must mean termination is already
-complete; a ready future must not stand in for an unfinished worker.
+its dependencies. A ready wait future must not stand in for an unfinished
+worker. The [adapter guide](managed-adapters.md) shows both constructors and
+ticket-based waits.
 
 - `application.begin_shutdown(ShutdownMode::Graceful)` transfers ownership and
   publishes ShuttingDown. The first request runs when `wait()` is polled.

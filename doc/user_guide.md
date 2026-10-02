@@ -179,7 +179,9 @@ runs. A graph-validation error likewise prevents construction. A later
 factory failure can still roll back resources from earlier managed factories.
 
 For a bean that starts a worker, create the worker inside the factory and
-return `Managed<T>` with a stop action and, when needed, `.with_wait(...)`.
+return `Managed::asynchronous(value, abort, wait)` so shutdown can confirm its
+termination. Use `Managed::synchronous(value, stop)` only when successful stop
+already means termination is complete.
 Configure a bounded `WaitPolicy` before building any selected managed graph.
 Retain the returned `Application`; clones of `application.context()` may remain
 alive while it shuts down. For normal exit, call
@@ -359,10 +361,13 @@ it does not establish that a resource still admits work.
 Create managed resources inside managed factories, after graph validation. For
 an already-running external resource, register its `Arc<T>` and retain shutdown
 ownership in the application. Managed graphs need an explicit bounded
-`WaitPolicy` in real applications. `Managed::new` supplies a non-blocking abort
-request; `.with_graceful_stop` can request draining; `.with_wait` confirms
-termination. At normal exit choose Graceful and await the handle. Graceful
-requests begin on the first `wait` poll and run consumer-by-consumer before
+`WaitPolicy` in real applications. Choose `Managed::synchronous` when a
+successful stop callback confirms termination, or `Managed::asynchronous` to
+pair a non-blocking abort request with a required termination wait.
+`.with_graceful_stop` can request draining. The
+[managed adapter guide](managed-adapters.md) explains these contracts and
+ticket ownership. At normal exit choose Graceful and await the handle.
+Graceful requests begin on the first `wait` poll and run consumer-by-consumer before
 their dependencies. Immediate requests all aborts before returning the handle.
 The [lifecycle guide](lifecycle.md) supplies the complete failure and business
 exit flow, and [app_lifecycle](../examples/app_lifecycle.rs) runs a worker.

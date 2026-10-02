@@ -161,8 +161,11 @@ cargo +1.94.0 run --example readme_beans --no-default-features --features macros
 `BuildError::AsyncRequired`；图验证失败同样不会启动构造。后续工厂仍可能失败，
 此时先前完成的托管工厂所移交的资源会参与回滚。
 
-bean 需要启动 worker 时，在工厂内部创建它，并返回带 stop 回调的 `Managed<T>`；
-需要等待终止时再追加 `.with_wait(...)`。选中托管图时先配置 bounded `WaitPolicy`，并保留构建返回的 `Application`；
+bean 需要启动 worker 时，在工厂内部创建它，并返回
+`Managed::asynchronous(value, abort, wait)`，让关闭流程确认 worker 终止。
+只有 stop 成功返回就意味着资源已终止时，才使用
+`Managed::synchronous(value, stop)`。选中托管图时先配置 bounded
+`WaitPolicy`，并保留构建返回的 `Application`；
 `application.context()` 的克隆在关闭期间也可存在。正常退出调用
 `application.begin_shutdown(ShutdownMode::Graceful)` 并等待句柄的 `wait()`；
 失败和取消走 Immediate abort。[生命周期说明](lifecycle.zh_CN.md)提供完整的
@@ -315,8 +318,10 @@ cargo test --manifest-path tests/fixtures/ioc_cross_crate/Cargo.toml
 
 托管资源应在图验证通过后由托管工厂创建。已运行的外部资源用
 `register_instance(Arc<T>)` 注入，应用自己负责关闭。真实应用的托管图应配置
-bounded `WaitPolicy`。`Managed::new` 提供非阻塞 abort 请求，
-`.with_graceful_stop` 可请求排空，`.with_wait` 确认终止。正常退出选 Graceful 并等待
+bounded `WaitPolicy`。stop 成功返回即确认终止时使用 `Managed::synchronous`；
+需要先非阻塞请求 abort、再等待终止时使用 `Managed::asynchronous`。
+`.with_graceful_stop` 可请求排空；两种构造方式及 ticket 的保存方式见
+[托管资源适配指南](managed-adapters.zh_CN.md)。正常退出选 Graceful 并等待
 句柄；Graceful 从首次轮询 `wait` 才开始逐个请求，消费者终止后才处理其依赖。
 Immediate 在返回句柄前向全部托管组件请求 abort。[生命周期说明](lifecycle.zh_CN.md)
 包含构建失败和业务退出的完整流程，[app_lifecycle](../examples/app_lifecycle.rs)

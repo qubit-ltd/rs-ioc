@@ -129,7 +129,10 @@ Graceful 请求从首次轮询 `wait()` 开始；`ShutdownMode::Immediate` 会�
 `begin_shutdown` 返回前请求全部 abort。
 选中托管定义时必须配置 `WaitPolicy`；实际应用用 `WaitPolicy::bounded` 和由应用驱动的
 计时器。自定义工厂与 trait alias 可使用公开的 `Definition::builder()` 和
-`register_definition`。完整关闭与 0.3 迁移步骤见[生命周期指南](doc/lifecycle.zh_CN.md)。
+`register_definition`。stop 成功即确认终止时选择 `Managed::synchronous`；需要
+先发送非阻塞停止请求、再等待终止时选择 `Managed::asynchronous`。具体适配方式见
+[托管资源适配指南](doc/managed-adapters.zh_CN.md)，完整关闭与 0.3 迁移步骤见
+[生命周期指南](doc/lifecycle.zh_CN.md)。
 
 `#[value]` 与 `ConfigurationProperties` 读取保存的原始值，不会自动插值。
 结构化反序列化默认拒绝未知字段。需要插值时，可在工厂中显式调用
@@ -192,7 +195,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 ## 延伸阅读
 
 按[中文用户手册](doc/user_guide.zh_CN.md)或[English user guide](doc/user_guide.md)
-完成安装、构建、诊断和关闭流程。在源码目录运行 `cargo doc --no-deps --open`
+完成安装、构建、诊断和关闭流程。[托管资源适配指南](doc/managed-adapters.zh_CN.md)
+及[English managed adapter guide](doc/managed-adapters.md)说明停止与等待契约。
+在源码目录运行 `cargo doc --no-deps --open`
 可查看公开 API 文档。
 
 ## 测试

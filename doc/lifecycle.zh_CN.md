@@ -19,7 +19,7 @@
 元组支持零至八个参数；完全相同的请求在依赖图中去重，但每个参数都会分别解析并传给
 工厂。需要 ID、异步工厂或更多参数时继续使用现有注册方法。
 
-[English lifecycle guide](lifecycle.md) · [中文用户手册](user_guide.zh_CN.md)
+[English lifecycle guide](lifecycle.md) · [中文用户手册](user_guide.zh_CN.md) · [托管资源适配指南](managed-adapters.zh_CN.md)
 
 本文适用于 `qubit-ioc` 0.3.0。装配阶段只登记托管工厂，资源在所选依赖图验证通过后
 才由工厂创建；成功返回 `Managed<T>` 后，资源及清理动作才移交给容器。已经启动的
@@ -108,11 +108,13 @@ where
 
 ## 请求契约与关闭顺序
 
-`Managed::new(value, abort)` 接收同步、非阻塞的取消请求。它不能 join、block_on、
-等待条件变量、执行业务 handler 或进行无界 I/O。`.with_graceful_stop(request)`
-只请求当前组件停止接收工作并排空，不能顺手关闭依赖。`.with_wait(wait)` 用来确认
-资源终止。没有 wait 时，停止回调成功必须表示终止已经完成；不能用 ready future
-冒充尚未退出的后台任务。
+创建托管值时就应选定终止确认方式。`Managed::synchronous(value, stop)` 适用于
+stop 回调成功返回就表示资源已终止的情况。后台资源使用
+`Managed::asynchronous(value, abort, wait)`：`abort` 是同步、非阻塞的取消请求，
+`wait` 用来确认终止。abort 不能 join、block_on、等待条件变量、执行业务 handler
+或进行无界 I/O。`.with_graceful_stop(request)` 只请求当前组件停止接收工作并排空，
+不能顺手关闭依赖。不能用 ready future 冒充尚未退出的后台任务。两种构造方式和
+ticket 等待见[托管资源适配指南](managed-adapters.zh_CN.md)。
 
 - `application.begin_shutdown(ShutdownMode::Graceful)` 转移所有权并发布 ShuttingDown，
   首次轮询 `wait()` 才开始请求。按逆构建顺序逐个请求消费者排空，等待它终止后才

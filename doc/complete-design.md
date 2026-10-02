@@ -206,9 +206,11 @@ requests abort but cannot wait.
 `Application` owns cleanup independently of its cloneable query context.
 Selected managed graphs require an explicit `WaitPolicy`; a real application
 uses `WaitPolicy::bounded(grace, termination, timer)` with a driven timer.
-`Managed::new` supplies a non-blocking abort request;
-`.with_graceful_stop` optionally requests draining, and `.with_wait` confirms
-termination. `Application::begin_shutdown(ShutdownMode::Graceful)` publishes
+`Managed::synchronous` requires successful stop to confirm termination;
+`Managed::asynchronous` pairs a non-blocking abort request with a termination
+wait. `.with_graceful_stop` optionally requests draining. The
+[managed adapter guide](managed-adapters.md) explains the choice and ticket
+ownership. `Application::begin_shutdown(ShutdownMode::Graceful)` publishes
 ShuttingDown and transfers ownership; its first `wait` poll begins graceful
 requests in reverse construction order, waiting for each consumer before
 stopping its dependencies. Missing graceful support falls back to abort and

@@ -103,8 +103,10 @@ provider crate 应导出显式 `register_ioc(&mut builder)`，由应用决定纳
 
 `Application` 独占生命周期，与可克隆的查询 context 分离。选中托管图须显式配置
 `WaitPolicy`；实际应用通过 `WaitPolicy::bounded(grace, termination, timer)` 和正常
-驱动的计时器设置期限。`Managed::new` 提供非阻塞 abort 请求，
-`.with_graceful_stop` 可请求排空，`.with_wait` 确认终止。
+驱动的计时器设置期限。`Managed::synchronous` 要求 stop 成功时资源已终止；
+`Managed::asynchronous` 将非阻塞的 abort 请求与终止等待配对。
+`.with_graceful_stop` 可请求排空；选择方式与 ticket 所有权见
+[托管资源适配指南](managed-adapters.zh_CN.md)。
 `Application::begin_shutdown(ShutdownMode::Graceful)` 发布 ShuttingDown 并转移所有权；
 首次轮询 `wait` 时才按逆构建顺序请求排空，每个消费者终止后才关闭其依赖。
 缺少 graceful 支持的组件降级为 abort 并进入报告的 `fallbacks()`。

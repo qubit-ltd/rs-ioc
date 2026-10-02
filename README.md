@@ -148,7 +148,11 @@ returned handle. Graceful requests start when `wait()` is first polled;
 Managed graphs require an explicit `WaitPolicy`; use
 `WaitPolicy::bounded` with an application-driven timer. Public
 `Definition::builder()` and `register_definition` support custom factories and
-trait aliases without relying on macro internals. See the [lifecycle and 0.3 migration guide](doc/lifecycle.md).
+trait aliases without relying on macro internals. Choose
+`Managed::synchronous` when successful stop confirms termination, or
+`Managed::asynchronous` to pair a non-blocking stop request with a termination
+wait. See the [managed adapter guide](doc/managed-adapters.md) and
+[lifecycle and 0.3 migration guide](doc/lifecycle.md).
 
 Config reads from `#[value]` and `ConfigurationProperties` preserve stored
 values without interpolation. Structured deserialization rejects unknown
@@ -223,6 +227,8 @@ the runnable [`app_lifecycle` example](examples/app_lifecycle.rs), and the
 
 Follow the [English user guide](doc/user_guide.md) or
 [中文用户手册](doc/user_guide.zh_CN.md) for setup, selection, errors, and shutdown.
+The [managed adapter guide](doc/managed-adapters.md) and
+[中文托管适配指南](doc/managed-adapters.zh_CN.md) explain stop and wait contracts.
 The [English current design](doc/complete-design.md) and
 [中文当前设计](doc/complete-design.zh_CN.md) describe the public contracts.
 Run `cargo doc --no-deps --open` in this checkout to browse the public API.
