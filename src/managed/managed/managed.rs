@@ -126,39 +126,6 @@ impl<T: ?Sized + Send + Sync + 'static> Managed<T> {
         }
     }
 
-    /// Creates a managed value with a synchronous abort action.
-    ///
-    /// The abort closure runs at most once during immediate shutdown, rollback,
-    /// cancellation, or drop before ownership transfer. It must only request
-    /// cancellation: it must not join, block on a future, wait on a condition
-    /// variable, invoke business handlers, or perform unbounded I/O.
-    ///
-    /// # Type Parameters
-    ///
-    /// `F` is a sendable one-shot cleanup action that consumes a shared
-    /// component handle.
-    ///
-    /// # Parameters
-    ///
-    /// `value` is the shared component exposed to lookups. `abort` requests its
-    /// immediate termination and may return a [`CleanupError`]. Without a wait
-    /// callback, returning success means resource termination is complete.
-    ///
-    /// # Returns
-    ///
-    /// A managed component with no asynchronous wait action.
-    pub fn new<F>(value: Arc<T>, abort: F) -> Self
-    where
-        F: FnOnce(Arc<T>) -> Result<(), CleanupError> + Send + 'static,
-    {
-        Self {
-            value: Some(value),
-            stop: Some(Box::new(abort)),
-            graceful: None,
-            wait: None,
-        }
-    }
-
     /// Adds a synchronous request for this component to stop accepting work
     /// and drain its existing work during graceful shutdown.
     ///
@@ -184,30 +151,6 @@ impl<T: ?Sized + Send + Sync + 'static> Managed<T> {
         F: FnOnce(Arc<T>) -> Result<(), CleanupError> + Send + 'static,
     {
         self.graceful = Some(Box::new(request));
-        self
-    }
-
-    /// Adds an asynchronous action that waits for this component to terminate.
-    ///
-    /// # Type Parameters
-    ///
-    /// `F` is a sendable one-shot callback that returns the owned wait future.
-    ///
-    /// # Parameters
-    ///
-    /// `wait` runs after stop actions during asynchronous shutdown. Dropping
-    /// this value before transfer to the container does not call it; dropping
-    /// the shutdown handle abandons waiting without starting pending callbacks.
-    ///
-    /// # Returns
-    ///
-    /// This managed component with the wait action installed, replacing any
-    /// previously configured wait action.
-    pub fn with_wait<F>(mut self, wait: F) -> Self
-    where
-        F: FnOnce(Arc<T>) -> CleanupFuture + Send + 'static,
-    {
-        self.wait = Some(Box::new(wait));
         self
     }
 
