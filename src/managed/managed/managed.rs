@@ -64,7 +64,9 @@ impl<T: ?Sized + Send + Sync + 'static> Managed<T> {
     /// The stop callback runs at most once during shutdown, rollback,
     /// cancellation, or drop before ownership transfer. A successful return
     /// means the component has terminated; there is no later wait action.
-    /// Avoid blocking indefinitely because this callback runs synchronously.
+    /// During graceful shutdown, an optional graceful callback runs first as
+    /// a request, then this stop callback confirms termination. Avoid blocking
+    /// indefinitely because both callbacks run synchronously.
     ///
     /// # Type Parameters
     ///
@@ -169,7 +171,9 @@ impl<T: ?Sized + Send + Sync + 'static> Managed<T> {
     /// `request` must only request draining of this component, without closing
     /// its dependencies or waiting for termination. It may return a
     /// [`CleanupError`]; shutdown then falls back to abort. Without this
-    /// callback, graceful shutdown uses abort for this component.
+    /// callback, graceful shutdown uses abort for this component. For a
+    /// synchronous component, a successful request is followed by its stop
+    /// callback, which must confirm termination before shutdown completes.
     ///
     /// # Returns
     ///

@@ -376,7 +376,9 @@ impl ShutdownDriver {
         };
         if self.request(index, ShutdownPhase::RequestGraceful, request) {
             if self.entries[index].action.wait.is_none() {
-                self.complete_entry(index);
+                // The graceful callback only requests termination. Without a
+                // wait, the synchronous stop must confirm it before completion.
+                self.abort_entry(index);
             } else {
                 self.entries[index].state = EntryState::GracefulRequested;
             }
