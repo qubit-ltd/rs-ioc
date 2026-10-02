@@ -226,15 +226,19 @@ static ASYNC_MANAGED_WAITS: AtomicUsize = AtomicUsize::new(0);
 
 #[bean(marker = AsyncManagedValueBean, profile = "managed_test")]
 async fn async_managed_value() -> Result<Managed<AsyncManagedValue>, BeanFailure> {
-    Ok(Managed::asynchronous(Arc::new(AsyncManagedValue), |_| {
-        ASYNC_MANAGED_STOPS.fetch_add(1, Ordering::SeqCst);
-        Ok(())
-    }, |_| {
-        Box::pin(async {
-            ASYNC_MANAGED_WAITS.fetch_add(1, Ordering::SeqCst);
+    Ok(Managed::asynchronous(
+        Arc::new(AsyncManagedValue),
+        |_| {
+            ASYNC_MANAGED_STOPS.fetch_add(1, Ordering::SeqCst);
             Ok(())
-        })
-    }))
+        },
+        |_| {
+            Box::pin(async {
+                ASYNC_MANAGED_WAITS.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            })
+        },
+    ))
 }
 
 struct FailedManagedValue;

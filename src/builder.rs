@@ -25,6 +25,6 @@ pub use component_definition::ComponentDefinition;
 pub use container_builder::ContainerBuilder;
 pub use factory_arg::FactoryArg;
 pub use factory_args::FactoryArgs;
-pub use validation_scope::ValidationScope;
 pub(crate) use internal::validation::validate_dependencies;
 pub(crate) use internal::validation::validate_options;
+pub use validation_scope::ValidationScope;

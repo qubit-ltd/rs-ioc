@@ -138,7 +138,8 @@ impl ValidatedGraph {
     /// # Errors
     ///
     /// Returns a structured [`BuildError`] for the first invalid graph or
-    /// root request. In `AllActive` mode, full-graph errors precede root errors.
+    /// root request. In `AllActive` mode, full-graph errors precede root
+    /// errors.
     pub(crate) fn validate_roots_with_scope(
         definitions: Vec<PendingDefinition>,
         active_profiles: &[String],

@@ -7,7 +7,8 @@
 // =============================================================================
 //! Scope of static graph validation for root-scoped construction.
 
-/// Selects which active definitions are checked before building requested roots.
+/// Selects which active definitions are checked before building requested
+/// roots.
 ///
 /// Both modes construct only the root dependency closure. `AllActive` checks
 /// every active definition after profile filtering and replacement, without

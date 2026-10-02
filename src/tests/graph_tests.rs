@@ -13,13 +13,13 @@ use std::sync::atomic::Ordering;
 
 use crate::binding::PendingBinding;
 use crate::binding::PendingDefinition;
+use crate::builder::ValidationScope;
 use crate::dependency::Dependency;
 use crate::error::BuildError;
 use crate::graph::ValidatedGraph;
 use crate::key::BindingId;
 use crate::key::BindingKey;
 use crate::options::DefinitionSource;
-use crate::builder::ValidationScope;
 
 struct A;
 struct B;
@@ -481,12 +481,16 @@ fn test_all_active_reports_missing_alias_outside_root_closure() {
     unused.add_alias(PendingBinding::alias::<String, String, _>(
         BindingKey::of::<String>(Some(BindingId::parse("alias").expect("valid ID"))),
         BindingKey::of::<String>(Some(BindingId::parse("missing").expect("valid ID"))),
-        false, 0, |value| value,
+        false,
+        0,
+        |value| value,
     ));
     let root = [Dependency::of::<B>()];
     let result = ValidatedGraph::validate_roots_with_scope(
         vec![instance("root", B, vec![], None, false, 0, None), unused],
-        &[], Some(&root), ValidationScope::AllActive,
+        &[],
+        Some(&root),
+        ValidationScope::AllActive,
     );
     assert!(matches!(result, Err(BuildError::MissingAliasTarget { definition, .. }) if definition.item == "unused"));
 }

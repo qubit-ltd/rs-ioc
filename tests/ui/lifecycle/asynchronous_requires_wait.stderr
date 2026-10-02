@@ -1,15 +1,15 @@
 error[E0061]: this function takes 3 arguments but 2 arguments were supplied
- --> tests/ui/lifecycle/asynchronous_requires_wait.rs:5:21
-  |
-5 |     let _resource = Managed::asynchronous(Arc::new(1_u8), |_| Ok(()));
-  |                     ^^^^^^^^^^^^^^^^^^^^^---------------------------- argument #3 is missing
-  |
+  --> tests/ui/lifecycle/asynchronous_requires_wait.rs:13:21
+   |
+13 |     let _resource = Managed::asynchronous(Arc::new(1_u8), |_| Ok(()));
+   |                     ^^^^^^^^^^^^^^^^^^^^^---------------------------- argument #3 is missing
+   |
 note: associated function defined here
- --> src/managed/managed/managed.rs
-  |
-  |     pub fn asynchronous<F, W>(value: Arc<T>, abort: F, wait: W) -> Self
-  |            ^^^^^^^^^^^^
+  --> src/managed/managed/managed.rs
+   |
+   |     pub fn asynchronous<F, W>(value: Arc<T>, abort: F, wait: W) -> Self
+   |            ^^^^^^^^^^^^
 help: provide the argument
-  |
-5 |     let _resource = Managed::asynchronous(Arc::new(1_u8), |_| Ok(()), /* wait */);
-  |                                                                     ++++++++++++
+   |
+13 |     let _resource = Managed::asynchronous(Arc::new(1_u8), |_| Ok(()), /* wait */);
+   |                                                                     ++++++++++++
