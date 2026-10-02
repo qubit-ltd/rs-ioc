@@ -15,6 +15,8 @@ use qubit_ioc::ContainerBuilder;
 use qubit_ioc::Dependency;
 use qubit_ioc::FactoryError;
 use qubit_ioc::RegistrationError;
+use qubit_ioc::ValidationScope;
+use qubit_ioc::BindingKey;
 
 struct Wanted;
 struct Unused;
@@ -25,6 +27,160 @@ struct MissingService;
 struct FailingDependency;
 struct SelectedConsumer;
 struct UnselectedConsumer;
+
+#[test]
+fn test_default_reachable_ignores_unselected_duplicate() {
+    let mut builder = ContainerBuilder::new();
+    builder.register_instance(Arc::new(Wanted)).expect("root");
+    builder.register_instance(Arc::new(Unused)).expect("first unused");
+    builder.register_instance(Arc::new(Unused)).expect("second unused");
+    builder.root::<Wanted>();
+    assert!(builder.build().is_ok());
+}
+
+#[test]
+fn test_all_active_rejects_unselected_duplicate_before_factory() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let mut builder = ContainerBuilder::new().validation_scope(ValidationScope::AllActive);
+    let factory_calls = Arc::clone(&calls);
+    builder.register_factory::<Wanted, _>(&[], move |_| {
+        factory_calls.fetch_add(1, Ordering::SeqCst);
+        Ok(Arc::new(Wanted))
+    }).expect("root factory");
+    builder.register_instance(Arc::new(Unused)).expect("first unused");
+    builder.register_instance(Arc::new(Unused)).expect("second unused");
+    builder.root::<Wanted>();
+    assert!(matches!(builder.build(), Err(failure) if matches!(failure.cause(), BuildError::DuplicateBinding { .. })));
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn test_all_active_rejects_unselected_primary_conflict() {
+    let mut builder = ContainerBuilder::new().validation_scope(ValidationScope::AllActive);
+    builder.register_instance(Arc::new(Wanted)).expect("root");
+    for id in ["first", "second"] {
+        builder.register_instance_with(Arc::new(Unused), BindingOptions {
+            id: Some(id.to_owned()), primary: true, ..BindingOptions::default()
+        }).expect("unused primary");
+    }
+    builder.root::<Wanted>();
+    assert!(matches!(builder.build(), Err(failure) if matches!(failure.cause(), BuildError::MultiplePrimaryBindings { .. })));
+}
+
+#[test]
+fn test_all_active_rejects_unselected_missing_dependency_before_factory() {
+    let mut builder = ContainerBuilder::new().validation_scope(ValidationScope::AllActive);
+    builder.register_instance(Arc::new(Wanted)).expect("root");
+    builder.register_factory::<Unused, _>(&[Dependency::of::<MissingService>()], |_| {
+        panic!("factory must not run before validation")
+    }).expect("unused factory");
+    builder.root::<Wanted>();
+    assert!(matches!(builder.build(), Err(failure) if matches!(failure.cause(), BuildError::MissingDependency { .. })));
+}
+
+#[test]
+fn test_all_active_rejects_unselected_ambiguous_dependency() {
+    let mut builder = ContainerBuilder::new().validation_scope(ValidationScope::AllActive);
+    builder.register_instance(Arc::new(Wanted)).expect("root");
+    for id in ["first", "second"] {
+        builder.register_instance_with(Arc::new(Leaf), BindingOptions {
+            id: Some(id.to_owned()), ..BindingOptions::default()
+        }).expect("candidate");
+    }
+    builder.register_factory::<Unused, _>(&[Dependency::of::<Leaf>()], |_| Ok(Arc::new(Unused))).expect("unused consumer");
+    builder.root::<Wanted>();
+    assert!(matches!(builder.build(), Err(failure) if matches!(failure.cause(), BuildError::AmbiguousBinding { .. })));
+}
+
+#[test]
+fn test_all_active_rejects_unselected_dependency_cycle() {
+    let mut builder = ContainerBuilder::new().validation_scope(ValidationScope::AllActive);
+    builder.register_instance(Arc::new(Wanted)).expect("root");
+    builder.register_factory::<Unused, _>(&[Dependency::of::<Leaf>()], |_| Ok(Arc::new(Unused))).expect("unused consumer");
+    builder.register_factory::<Leaf, _>(&[Dependency::of::<Unused>()], |_| Ok(Arc::new(Leaf))).expect("cycle member");
+    builder.root::<Wanted>();
+    assert!(matches!(builder.build(), Err(failure) if matches!(failure.cause(), BuildError::DependencyCycle { .. })));
+}
+
+#[test]
+fn test_all_active_filters_profiles_and_applies_replacement_before_preflight() {
+    let mut builder = ContainerBuilder::new().validation_scope(ValidationScope::AllActive);
+    builder.register_instance(Arc::new(Wanted)).expect("root");
+    builder.register_factory_with::<Unused, _>(&[Dependency::of::<MissingService>()], BindingOptions {
+        profile: Some("prod".to_owned()), ..BindingOptions::default()
+    }, |_| Ok(Arc::new(Unused))).expect("inactive invalid factory");
+    builder.register_instance(Arc::new(Leaf)).expect("original");
+    builder.replace_definition(BindingKey::of::<Leaf>(None), |draft| draft.register_instance(Arc::new(Leaf))).expect("replacement");
+    builder.root::<Wanted>();
+    let application = builder.build().expect("filtered and replaced graph validates");
+    assert!(application.context().get::<Wanted>().is_ok());
+    assert!(application.context().get::<Leaf>().is_err());
+}
+
+#[test]
+fn test_all_active_only_constructs_root_and_ignores_unselected_async_and_managed_factories() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let mut builder = ContainerBuilder::new().validation_scope(ValidationScope::AllActive);
+    let root_calls = Arc::clone(&calls);
+    builder.register_factory::<Wanted, _>(&[], move |_| {
+        root_calls.fetch_add(1, Ordering::SeqCst);
+        Ok(Arc::new(Wanted))
+    }).expect("root factory");
+    builder.register_async_factory::<Unused, _>(&[], |_| panic!("unselected async factory"))
+        .expect("unused async factory");
+    builder.register_managed_factory::<Leaf, _>(&[], |_| panic!("unselected managed factory"))
+        .expect("unused managed factory");
+    builder.root::<Wanted>();
+    let application = builder.build().expect("only root closure requires synchronous construction or wait policy");
+    assert!(application.context().get::<Wanted>().is_ok());
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn test_all_active_async_build_validates_before_factories() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let mut builder = ContainerBuilder::new().validation_scope(ValidationScope::AllActive);
+    let root_calls = Arc::clone(&calls);
+    builder.register_factory::<Wanted, _>(&[], move |_| {
+        root_calls.fetch_add(1, Ordering::SeqCst);
+        Ok(Arc::new(Wanted))
+    }).expect("root factory");
+    builder.register_factory::<Unused, _>(&[Dependency::of::<MissingService>()], |_| {
+        panic!("unselected factory must not run")
+    }).expect("unused invalid factory");
+    builder.root::<Wanted>();
+    let runtime = tokio::runtime::Builder::new_current_thread().build().expect("test runtime");
+    assert!(matches!(runtime.block_on(builder.build_async()), Err(failure) if matches!(failure.cause(), BuildError::MissingDependency { .. })));
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn test_all_active_async_build_only_constructs_root_closure() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let mut builder = ContainerBuilder::new().validation_scope(ValidationScope::AllActive);
+    let root_calls = Arc::clone(&calls);
+    builder.register_factory::<Wanted, _>(&[], move |_| {
+        root_calls.fetch_add(1, Ordering::SeqCst);
+        Ok(Arc::new(Wanted))
+    }).expect("root factory");
+    builder.register_managed_async_factory::<Unused, _>(&[], |_| panic!("unselected managed async factory"))
+        .expect("unused factory");
+    builder.root::<Wanted>();
+    let runtime = tokio::runtime::Builder::new_current_thread().build().expect("test runtime");
+    let application = runtime.block_on(builder.build_async()).expect("unselected managed factory needs no wait policy");
+    assert!(application.context().get::<Wanted>().is_ok());
+    assert!(application.context().get::<Unused>().is_err());
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn test_all_active_reports_graph_error_before_missing_root() {
+    let mut builder = ContainerBuilder::new().validation_scope(ValidationScope::AllActive);
+    builder.register_factory::<Unused, _>(&[Dependency::of::<MissingService>()], |_| Ok(Arc::new(Unused)))
+        .expect("invalid active factory");
+    builder.root::<Wanted>();
+    assert!(matches!(builder.build(), Err(failure) if matches!(failure.cause(), BuildError::MissingDependency { .. })));
+}
 
 #[test]
 fn test_build_all_runs_every_staged_factory_even_when_a_root_is_registered() {

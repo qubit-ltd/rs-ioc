@@ -11,6 +11,7 @@ use std::sync::Arc;
 
 use super::ComponentDefinition;
 use super::FactoryArgs;
+use super::ValidationScope;
 use super::internal::Construction;
 use super::internal::replacement::Replacement;
 use super::internal::validation::profile_source;
@@ -75,6 +76,8 @@ pub struct ContainerBuilder {
     replacements: Vec<Replacement>,
     /// Explicit lifecycle deadlines required for selected managed factories.
     wait_policy: Option<WaitPolicy>,
+    /// Static validation scope for root-scoped builds.
+    validation_scope: ValidationScope,
 }
 
 // Public structured registration/build errors retain complete paths and
@@ -99,6 +102,27 @@ impl ContainerBuilder {
     #[must_use]
     pub fn wait_policy(mut self, policy: WaitPolicy) -> Self {
         self.wait_policy = Some(policy);
+        self
+    }
+
+    /// Chooses the active definitions checked before a root-scoped build.
+    ///
+    /// The default is [`ValidationScope::Reachable`]. `AllActive` checks the
+    /// entire active graph after profile filtering and replacement, then only
+    /// constructs the requested root closure. It never runs factories outside
+    /// that closure or requires their asynchronous build mode or wait policy.
+    /// This setting does not change `build_all` or `build_all_async`.
+    ///
+    /// # Parameters
+    ///
+    /// `scope` selects the static validation range.
+    ///
+    /// # Returns
+    ///
+    /// The configured builder.
+    #[must_use]
+    pub fn validation_scope(mut self, scope: ValidationScope) -> Self {
+        self.validation_scope = scope;
         self
     }
 
@@ -748,8 +772,9 @@ impl ContainerBuilder {
             return Err(BuildError::NoRootsSelected.into());
         }
         let policy = self.wait_policy.take();
+        let scope = self.validation_scope;
         let (definitions, profiles, roots) = self.prepare_definitions()?;
-        let graph = ValidatedGraph::validate_roots(definitions, &profiles, Some(&roots))?;
+        let graph = ValidatedGraph::validate_roots_with_scope(definitions, &profiles, Some(&roots), scope)?;
         let policy = Self::selected_wait_policy(&graph, policy)?;
         graph.require_sync()?;
         Construction::new(graph, policy).run_sync()
@@ -804,8 +829,9 @@ impl ContainerBuilder {
             return Err(BuildError::NoRootsSelected.into());
         }
         let policy = self.wait_policy.take();
+        let scope = self.validation_scope;
         let (definitions, profiles, roots) = self.prepare_definitions()?;
-        let graph = ValidatedGraph::validate_roots(definitions, &profiles, Some(&roots))?;
+        let graph = ValidatedGraph::validate_roots_with_scope(definitions, &profiles, Some(&roots), scope)?;
         let policy = Self::selected_wait_policy(&graph, policy)?;
         Construction::new(graph, policy).run_async().await
     }

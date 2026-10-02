@@ -19,10 +19,12 @@ mod factory_arg;
 mod factory_args;
 // Owns the private construction, validation, replacement, and path helpers.
 mod internal;
+mod validation_scope;
 
 pub use component_definition::ComponentDefinition;
 pub use container_builder::ContainerBuilder;
 pub use factory_arg::FactoryArg;
 pub use factory_args::FactoryArgs;
+pub use validation_scope::ValidationScope;
 pub(crate) use internal::validation::validate_dependencies;
 pub(crate) use internal::validation::validate_options;

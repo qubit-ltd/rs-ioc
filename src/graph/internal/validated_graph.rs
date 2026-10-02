@@ -12,6 +12,7 @@ use std::collections::HashMap;
 use crate::binding::PendingBindingKind;
 use crate::binding::PendingDefinition;
 use crate::binding::profile_is_active;
+use crate::builder::ValidationScope;
 use crate::dependency::Dependency;
 use crate::error::BuildError;
 use crate::graph::DiagnosticPaths;
@@ -115,6 +116,35 @@ impl ValidatedGraph {
         active_profiles: &[String],
         roots: Option<&[Dependency]>,
     ) -> Result<Self, BuildError> {
+        Self::validate_roots_with_scope(definitions, active_profiles, roots, ValidationScope::Reachable)
+    }
+
+    /// Validates the requested roots, optionally checking every active
+    /// definition first. Profile filtering precedes validation; no factory or
+    /// alias projector runs during either static pass. Invalid definitions
+    /// outside the root closure are errors only in `AllActive` mode.
+    ///
+    /// # Parameters
+    ///
+    /// * `definitions` - One-shot definitions consumed into the graph.
+    /// * `active_profiles` - Profiles retained during graph validation.
+    /// * `roots` - Requested roots, or `None` for full construction.
+    /// * `scope` - Validation range when roots are requested.
+    ///
+    /// # Returns
+    ///
+    /// The graph containing only the selected binding order.
+    ///
+    /// # Errors
+    ///
+    /// Returns a structured [`BuildError`] for the first invalid graph or
+    /// root request. In `AllActive` mode, full-graph errors precede root errors.
+    pub(crate) fn validate_roots_with_scope(
+        definitions: Vec<PendingDefinition>,
+        active_profiles: &[String],
+        roots: Option<&[Dependency]>,
+        scope: ValidationScope,
+    ) -> Result<Self, BuildError> {
         let definitions: Vec<_> = definitions
             .into_iter()
             .filter(|definition| profile_is_active(definition.profile.as_deref(), active_profiles))
@@ -126,6 +156,13 @@ impl ValidatedGraph {
         }
         let index = BindingIndex::new(&nodes);
         let (edges, resolved) = resolve_edges(&definitions, &nodes, &index);
+        if roots.is_some() && scope == ValidationScope::AllActive {
+            exact_keys(&nodes)?;
+            validate_primary(&nodes)?;
+            let all_seeds = build_all_seeds(&nodes, &edges);
+            let (all_reachable, all_paths) = close_definitions(&definitions, &nodes, &edges, &all_seeds)?;
+            detect_errors_and_cycles(&nodes, &edges, &all_reachable, &all_paths)?;
+        }
         let seeds = if let Some(roots) = roots {
             select_roots(roots, &nodes, &index)?
         } else {

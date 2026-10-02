@@ -88,6 +88,7 @@ pub use builder::ComponentDefinition;
 pub use builder::ContainerBuilder;
 pub use builder::FactoryArg;
 pub use builder::FactoryArgs;
+pub use builder::ValidationScope;
 pub use definition::Definition;
 pub use definition::DefinitionBuilder;
 pub use dependency::Dependency;

@@ -19,6 +19,7 @@ use crate::graph::ValidatedGraph;
 use crate::key::BindingId;
 use crate::key::BindingKey;
 use crate::options::DefinitionSource;
+use crate::builder::ValidationScope;
 
 struct A;
 struct B;
@@ -472,6 +473,22 @@ fn test_graph_missing_alias_target_is_structured() {
     assert!(matches!(result, Err(BuildError::MissingAliasTarget {
         alias: actual_alias, target: actual_target, definition, path,
     }) if actual_alias == alias && actual_target == target && definition.item == "A" && path == vec![alias]));
+}
+
+#[test]
+fn test_all_active_reports_missing_alias_outside_root_closure() {
+    let mut unused = instance("unused", A, vec![], None, false, 0, None);
+    unused.add_alias(PendingBinding::alias::<String, String, _>(
+        BindingKey::of::<String>(Some(BindingId::parse("alias").expect("valid ID"))),
+        BindingKey::of::<String>(Some(BindingId::parse("missing").expect("valid ID"))),
+        false, 0, |value| value,
+    ));
+    let root = [Dependency::of::<B>()];
+    let result = ValidatedGraph::validate_roots_with_scope(
+        vec![instance("root", B, vec![], None, false, 0, None), unused],
+        &[], Some(&root), ValidationScope::AllActive,
+    );
+    assert!(matches!(result, Err(BuildError::MissingAliasTarget { definition, .. }) if definition.item == "unused"));
 }
 
 #[test]
