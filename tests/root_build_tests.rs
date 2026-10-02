@@ -182,6 +182,90 @@ fn test_all_active_reports_graph_error_before_missing_root() {
     assert!(matches!(builder.build(), Err(failure) if matches!(failure.cause(), BuildError::MissingDependency { .. })));
 }
 
+/// Checks the asynchronous root build's structured static error without
+/// starting any factory.
+fn assert_async_preflight_error(builder: ContainerBuilder, expected: fn(&BuildError) -> bool) {
+    let runtime = tokio::runtime::Builder::new_current_thread().build().expect("test runtime");
+    let failure = match runtime.block_on(builder.build_async()) {
+        Ok(_) => panic!("invalid active graph must fail before construction"),
+        Err(failure) => failure,
+    };
+    assert!(expected(failure.cause()), "unexpected preflight error: {}", failure.cause());
+}
+
+#[test]
+fn test_all_active_async_build_rejects_unselected_duplicate_and_primary_conflict() {
+    let mut duplicate = ContainerBuilder::new().validation_scope(ValidationScope::AllActive);
+    duplicate.register_factory::<Wanted, _>(&[], |_| panic!("root factory before preflight"))
+        .expect("root factory");
+    duplicate.register_instance(Arc::new(Unused)).expect("first unused");
+    duplicate.register_instance(Arc::new(Unused)).expect("second unused");
+    duplicate.root::<Wanted>();
+    assert_async_preflight_error(duplicate, |error| matches!(error, BuildError::DuplicateBinding { .. }));
+
+    let mut primary = ContainerBuilder::new().validation_scope(ValidationScope::AllActive);
+    primary.register_factory::<Wanted, _>(&[], |_| panic!("root factory before preflight"))
+        .expect("root factory");
+    for id in ["first", "second"] {
+        primary.register_instance_with(Arc::new(Unused), BindingOptions {
+            id: Some(id.to_owned()), primary: true, ..BindingOptions::default()
+        }).expect("unused primary");
+    }
+    primary.root::<Wanted>();
+    assert_async_preflight_error(primary, |error| matches!(error, BuildError::MultiplePrimaryBindings { .. }));
+}
+
+#[test]
+fn test_all_active_async_build_rejects_unselected_ambiguous_dependency_and_cycle() {
+    let mut ambiguous = ContainerBuilder::new().validation_scope(ValidationScope::AllActive);
+    ambiguous.register_instance(Arc::new(Wanted)).expect("root");
+    for id in ["first", "second"] {
+        ambiguous.register_instance_with(Arc::new(Leaf), BindingOptions {
+            id: Some(id.to_owned()), ..BindingOptions::default()
+        }).expect("candidate");
+    }
+    ambiguous.register_factory::<Unused, _>(&[Dependency::of::<Leaf>()], |_| panic!("unselected factory"))
+        .expect("unused consumer");
+    ambiguous.root::<Wanted>();
+    assert_async_preflight_error(ambiguous, |error| matches!(error, BuildError::AmbiguousBinding { .. }));
+
+    let mut cycle = ContainerBuilder::new().validation_scope(ValidationScope::AllActive);
+    cycle.register_instance(Arc::new(Wanted)).expect("root");
+    cycle.register_factory::<Unused, _>(&[Dependency::of::<Leaf>()], |_| panic!("unselected factory"))
+        .expect("cycle member");
+    cycle.register_factory::<Leaf, _>(&[Dependency::of::<Unused>()], |_| panic!("unselected factory"))
+        .expect("cycle member");
+    cycle.root::<Wanted>();
+    assert_async_preflight_error(cycle, |error| matches!(error, BuildError::DependencyCycle { .. }));
+}
+
+#[test]
+fn test_all_active_async_build_filters_profiles_and_applies_replacement() {
+    let mut builder = ContainerBuilder::new().validation_scope(ValidationScope::AllActive);
+    builder.register_instance(Arc::new(Wanted)).expect("root");
+    builder.register_factory_with::<Unused, _>(&[Dependency::of::<MissingService>()], BindingOptions {
+        profile: Some("prod".to_owned()), ..BindingOptions::default()
+    }, |_| panic!("inactive factory"))
+        .expect("inactive invalid factory");
+    builder.register_instance(Arc::new(Leaf)).expect("original");
+    builder.replace_definition(BindingKey::of::<Leaf>(None), |draft| draft.register_instance(Arc::new(Leaf)))
+        .expect("replacement");
+    builder.root::<Wanted>();
+    let runtime = tokio::runtime::Builder::new_current_thread().build().expect("test runtime");
+    let application = runtime.block_on(builder.build_async()).expect("filtered and replaced graph validates");
+    assert!(application.context().get::<Wanted>().is_ok());
+    assert!(application.context().get::<Leaf>().is_err());
+}
+
+#[test]
+fn test_all_active_async_build_reports_graph_error_before_missing_root() {
+    let mut builder = ContainerBuilder::new().validation_scope(ValidationScope::AllActive);
+    builder.register_factory::<Unused, _>(&[Dependency::of::<MissingService>()], |_| panic!("invalid factory"))
+        .expect("invalid active factory");
+    builder.root::<Wanted>();
+    assert_async_preflight_error(builder, |error| matches!(error, BuildError::MissingDependency { .. }));
+}
+
 #[test]
 fn test_build_all_runs_every_staged_factory_even_when_a_root_is_registered() {
     let wanted_calls = Arc::new(AtomicUsize::new(0));
