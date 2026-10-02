@@ -30,11 +30,10 @@ fn execution_services(runtime: Arc<Handle>) -> Result<Managed<ExecutionServices>
         .runtime((*runtime).clone())
         .build()
         .map_err(FactoryError::new)?;
-    Ok(Managed::new(Arc::new(services), |services| {
+    Ok(Managed::asynchronous(Arc::new(services), |services| {
         let _stop_report = services.stop();
         Ok(())
-    })
-    .with_wait(|services| {
+    }, |services| {
         Box::pin(async move {
             services.await_termination().await;
             Ok(())

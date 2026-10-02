@@ -67,7 +67,7 @@ pub type CleanupFuture = Pin<Box<dyn Future<Output = Result<(), CleanupError>> +
 /// use qubit_ioc::Managed;
 ///
 /// let factory: ManagedFactoryFuture<u32> = Box::pin(async {
-///     Ok(Managed::new(Arc::new(1), |_| Ok(())))
+///     Ok(Managed::synchronous(Arc::new(1), |_| Ok(())))
 /// });
 /// ```
 pub type ManagedFactoryFuture<T> =

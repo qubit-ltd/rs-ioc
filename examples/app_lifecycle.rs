@@ -70,9 +70,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 stop: Mutex::new(Some(stop_sender)),
                 task: Mutex::new(Some(task)),
             });
-            Ok(Managed::new(Arc::clone(&worker), request_stop)
-                .with_graceful_stop(request_stop)
-                .with_wait(|worker| {
+            Ok(Managed::asynchronous(Arc::clone(&worker), request_stop, |worker| {
                     Box::pin(async move {
                         let task = worker
                             .task
@@ -84,7 +82,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                         }
                         Ok(())
                     })
-                }))
+                })
+                .with_graceful_stop(request_stop))
         })?;
         builder.root::<Worker>();
         let application = match builder.build_async().await {

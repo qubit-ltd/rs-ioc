@@ -12,7 +12,7 @@ use std::sync::Arc;
 use qubit_ioc::Managed;
 
 fn main() {
-    Managed::new(Arc::new(1_u8), |_| Ok(()));
+    Managed::synchronous(Arc::new(1_u8), |_| Ok(()));
 }
 
 // This is a trybuild source fixture, not a test module.

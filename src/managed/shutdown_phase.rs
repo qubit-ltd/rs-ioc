@@ -26,7 +26,7 @@
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// let mut builder = Application::builder().wait_policy(WaitPolicy::unbounded());
 /// builder.register_managed_factory::<u32, _>(&[], |_| {
-///     Ok(Managed::new(std::sync::Arc::new(1_u32), |_| {
+///     Ok(Managed::synchronous(std::sync::Arc::new(1_u32), |_| {
 ///         Err(CleanupError::new(std::io::Error::other("stop failed")))
 ///     }))
 /// })?;

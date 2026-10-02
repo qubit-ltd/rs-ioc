@@ -18,7 +18,7 @@ static STOPS: AtomicUsize = AtomicUsize::new(0);
 
 #[bean]
 fn synchronous() -> Result<r#type::Managed<u32>, std::io::Error> {
-    Ok(r#type::Managed::new(Arc::new(7), |_| {
+    Ok(r#type::Managed::synchronous(Arc::new(7), |_| {
         STOPS.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }))
@@ -26,7 +26,7 @@ fn synchronous() -> Result<r#type::Managed<u32>, std::io::Error> {
 
 #[bean]
 async fn asynchronous() -> Result<::r#type::Managed<String>, std::io::Error> {
-    Ok(r#type::Managed::new(Arc::new(String::from("async")), |_| {
+    Ok(r#type::Managed::synchronous(Arc::new(String::from("async")), |_| {
         STOPS.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }))

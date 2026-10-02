@@ -65,7 +65,7 @@ fn test_managed_send_callback_can_capture_non_sync_state() {
     builder
         .register_managed_factory::<String, _>(&[], move |_| {
             let callback_state = callback_state.clone();
-            Ok(Managed::new(Arc::new(String::from("managed")), move |_| {
+            Ok(Managed::synchronous(Arc::new(String::from("managed")), move |_| {
                 callback_state.set(1);
                 Ok(())
             }))

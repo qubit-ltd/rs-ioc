@@ -33,7 +33,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     ));
     builder.register_managed_factory::<String, _>(&[], move |_| {
         let stops = Arc::clone(&captured);
-        Ok(Managed::new(Arc::new(String::from("shared")), move |_| {
+        Ok(Managed::synchronous(Arc::new(String::from("shared")), move |_| {
             stops.fetch_add(1, Ordering::SeqCst);
             Ok(())
         }))

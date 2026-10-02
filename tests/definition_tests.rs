@@ -246,12 +246,12 @@ fn test_definition_supports_all_construction_sources_once() {
             }),
             3 => Definition::<u32>::builder().managed_factory(move |_| {
                 captured.fetch_add(1, Ordering::SeqCst);
-                Ok(Managed::new(Arc::new(42), |_| Ok(())))
+                Ok(Managed::synchronous(Arc::new(42), |_| Ok(())))
             }),
             4 => Definition::<u32>::builder().managed_async_factory(move |_| {
                 Box::pin(async move {
                     captured.fetch_add(1, Ordering::SeqCst);
-                    Ok(Managed::new(Arc::new(42), |_| Ok(())))
+                    Ok(Managed::synchronous(Arc::new(42), |_| Ok(())))
                 })
             }),
             _ => unreachable!(),

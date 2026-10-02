@@ -16,7 +16,7 @@ use qubit_ioc::ShutdownMode;
 fn main() {
     let builder = ContainerBuilder::new();
     drop(builder.build_all().unwrap().begin_shutdown(ShutdownMode::Immediate));
-    drop(Managed::new(Arc::new(1_u8), |_| Ok(())));
+    drop(Managed::synchronous(Arc::new(1_u8), |_| Ok(())));
 }
 
 // This is a trybuild source fixture, not a test module.

@@ -26,7 +26,7 @@ fn test_query_clone_does_not_prevent_owner_shutdown() {
     let mut builder = ContainerBuilder::new().wait_policy(WaitPolicy::unbounded());
     builder
         .register_managed_factory::<u32, _>(&[], move |_| {
-            Ok(Managed::new(Arc::new(7), move |_| {
+            Ok(Managed::synchronous(Arc::new(7), move |_| {
                 observed.fetch_add(1, Ordering::SeqCst);
                 Ok(())
             }))
@@ -57,7 +57,7 @@ fn test_missing_wait_policy_prevents_every_factory() {
     builder
         .register_managed_factory::<u32, _>(&[], move |_| {
             observed.fetch_add(1, Ordering::SeqCst);
-            Ok(Managed::new(Arc::new(7), |_| Ok(())))
+            Ok(Managed::synchronous(Arc::new(7), |_| Ok(())))
         })
         .expect("managed registration succeeds");
     assert!(matches!(builder.build_all(), Err(failure) if matches!(failure.cause(), BuildError::MissingWaitPolicy)));
@@ -101,7 +101,7 @@ fn async_managed_builder(calls: &Arc<AtomicUsize>) -> ContainerBuilder {
     builder
         .register_managed_async_factory::<u32, _>(&[Dependency::of::<u8>()], move |_| {
             observed.fetch_add(1, Ordering::SeqCst);
-            Box::pin(async { Ok(Managed::new(Arc::new(7), |_| Ok(()))) })
+            Box::pin(async { Ok(Managed::synchronous(Arc::new(7), |_| Ok(()))) })
         })
         .expect("async managed registration succeeds");
     builder.root::<u32>();

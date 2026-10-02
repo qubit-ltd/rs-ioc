@@ -213,7 +213,7 @@ static MANAGED_GREETING_STOPS: AtomicUsize = AtomicUsize::new(0);
 
 #[bean(marker = ManagedGreetingBean, bind = dyn ManagedGreeting, profile = "managed_test")]
 fn managed_greeting() -> Managed<ManagedGreetingWorker> {
-    Managed::new(Arc::new(ManagedGreetingWorker), |_| {
+    Managed::synchronous(Arc::new(ManagedGreetingWorker), |_| {
         MANAGED_GREETING_STOPS.fetch_add(1, Ordering::SeqCst);
         Ok(())
     })
@@ -226,11 +226,10 @@ static ASYNC_MANAGED_WAITS: AtomicUsize = AtomicUsize::new(0);
 
 #[bean(marker = AsyncManagedValueBean, profile = "managed_test")]
 async fn async_managed_value() -> Result<Managed<AsyncManagedValue>, BeanFailure> {
-    Ok(Managed::new(Arc::new(AsyncManagedValue), |_| {
+    Ok(Managed::asynchronous(Arc::new(AsyncManagedValue), |_| {
         ASYNC_MANAGED_STOPS.fetch_add(1, Ordering::SeqCst);
         Ok(())
-    })
-    .with_wait(|_| {
+    }, |_| {
         Box::pin(async {
             ASYNC_MANAGED_WAITS.fetch_add(1, Ordering::SeqCst);
             Ok(())

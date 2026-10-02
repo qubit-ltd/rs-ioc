@@ -127,7 +127,7 @@ fn test_injected_managed_factory_participates_in_build_rollback() {
     let mut builder = ContainerBuilder::new().wait_policy(WaitPolicy::unbounded());
     builder
         .register_injected_managed_factory::<u32, (), _>(move |()| {
-            Ok(Managed::new(Arc::new(3_u32), move |_| {
+            Ok(Managed::synchronous(Arc::new(3_u32), move |_| {
                 observed_aborts.fetch_add(1, Ordering::SeqCst);
                 Ok(())
             }))

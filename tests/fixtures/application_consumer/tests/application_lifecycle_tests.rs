@@ -80,12 +80,11 @@ fn test_async_build_failure_stops_managed_execution_services_once() {
             .register_managed_factory::<ExecutionServices, _>(&[], move |_| {
                 let stop_count = Arc::clone(&stop_count);
                 let wait_count = Arc::clone(&wait_count);
-                Ok(Managed::new(Arc::clone(&managed_services), move |services| {
+                Ok(Managed::asynchronous(Arc::clone(&managed_services), move |services| {
                     stop_count.fetch_add(1, Ordering::SeqCst);
                     let _stop_report = services.stop();
                     Ok(())
-                })
-                .with_wait(move |services| {
+                }, move |services| {
                     wait_count.fetch_add(1, Ordering::SeqCst);
                     Box::pin(async move {
                         services.await_termination().await;
@@ -145,12 +144,11 @@ fn test_cancelling_async_build_stops_managed_execution_services_once() {
             .register_managed_factory::<ExecutionServices, _>(&[], move |_| {
                 let stop_count = Arc::clone(&stop_count);
                 let wait_count = Arc::clone(&wait_count);
-                Ok(Managed::new(Arc::clone(&managed_services), move |services| {
+                Ok(Managed::asynchronous(Arc::clone(&managed_services), move |services| {
                     stop_count.fetch_add(1, Ordering::SeqCst);
                     let _stop_report = services.stop();
                     Ok(())
-                })
-                .with_wait(move |services| {
+                }, move |services| {
                     wait_count.fetch_add(1, Ordering::SeqCst);
                     Box::pin(async move {
                         services.await_termination().await;
@@ -200,7 +198,7 @@ fn test_build_failure_stops_an_already_created_managed_resource() {
     let mut builder = ContainerBuilder::new().wait_policy(WaitPolicy::unbounded());
     builder
         .register_managed_factory::<u8, _>(&[], move |_| {
-            Ok(Managed::new(Arc::new(1), move |_| {
+            Ok(Managed::synchronous(Arc::new(1), move |_| {
                 captured.fetch_add(1, Ordering::SeqCst);
                 Ok(())
             }))

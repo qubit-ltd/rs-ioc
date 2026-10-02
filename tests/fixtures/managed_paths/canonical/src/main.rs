@@ -18,7 +18,7 @@ static STOPS: AtomicUsize = AtomicUsize::new(0);
 
 #[bean]
 fn synchronous() -> Result<qubit_ioc::Managed<u32>, std::io::Error> {
-    Ok(qubit_ioc::Managed::new(Arc::new(7), |_| {
+    Ok(qubit_ioc::Managed::synchronous(Arc::new(7), |_| {
         STOPS.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }))
@@ -26,7 +26,7 @@ fn synchronous() -> Result<qubit_ioc::Managed<u32>, std::io::Error> {
 
 #[bean]
 async fn asynchronous() -> Result<::qubit_ioc::Managed<String>, std::io::Error> {
-    Ok(qubit_ioc::Managed::new(Arc::new(String::from("async")), |_| {
+    Ok(qubit_ioc::Managed::synchronous(Arc::new(String::from("async")), |_| {
         STOPS.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }))
