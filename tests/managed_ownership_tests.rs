@@ -41,14 +41,17 @@ fn counted_builder(aborts: Arc<AtomicUsize>, waits: Arc<AtomicUsize>) -> Contain
     let mut builder = ContainerBuilder::new().wait_policy(WaitPolicy::unbounded());
     builder
         .register_managed_factory::<(), _>(&[], move |_| {
-            Ok(Managed::new(Arc::new(()), move |_| {
-                aborts.fetch_add(1, Ordering::SeqCst);
-                Ok(())
-            })
-            .with_wait(move |_| {
-                waits.fetch_add(1, Ordering::SeqCst);
-                Box::pin(async { Ok(()) })
-            }))
+            Ok(Managed::asynchronous(
+                Arc::new(()),
+                move |_| {
+                    aborts.fetch_add(1, Ordering::SeqCst);
+                    Ok(())
+                },
+                move |_| {
+                    waits.fetch_add(1, Ordering::SeqCst);
+                    Box::pin(async { Ok(()) })
+                },
+            ))
         })
         .expect("register managed component");
     builder
@@ -60,15 +63,18 @@ fn test_untransferred_managed_drop_aborts_once_without_waiting() {
     let waits = Arc::new(AtomicUsize::new(0));
     let abort_count = Arc::clone(&aborts);
     let wait_count = Arc::clone(&waits);
-    let managed = Managed::new(Arc::new("worker"), move |value| {
-        assert_eq!(*value, "worker");
-        abort_count.fetch_add(1, Ordering::SeqCst);
-        Ok(())
-    })
-    .with_wait(move |_| {
-        wait_count.fetch_add(1, Ordering::SeqCst);
-        Box::pin(async { Ok(()) })
-    });
+    let managed = Managed::asynchronous(
+        Arc::new("worker"),
+        move |value| {
+            assert_eq!(*value, "worker");
+            abort_count.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        },
+        move |_| {
+            wait_count.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async { Ok(()) })
+        },
+    );
 
     drop(managed);
 
@@ -80,7 +86,7 @@ fn test_untransferred_managed_drop_aborts_once_without_waiting() {
 fn test_untransferred_managed_drop_contains_abort_panic() {
     let aborts = Arc::new(AtomicUsize::new(0));
     let abort_count = Arc::clone(&aborts);
-    let managed = Managed::new(Arc::new(()), move |_| {
+    let managed = Managed::synchronous(Arc::new(()), move |_| {
         abort_count.fetch_add(1, Ordering::SeqCst);
         panic!("abort failed");
     });
@@ -97,7 +103,7 @@ fn test_untransferred_managed_drop_uses_abort_instead_of_graceful_request() {
     let graceful_requests = Arc::new(AtomicUsize::new(0));
     let abort_count = Arc::clone(&aborts);
     let graceful_count = Arc::clone(&graceful_requests);
-    let managed = Managed::new(Arc::new(()), move |_| {
+    let managed = Managed::synchronous(Arc::new(()), move |_| {
         abort_count.fetch_add(1, Ordering::SeqCst);
         Ok(())
     })
@@ -159,17 +165,20 @@ fn test_successful_graceful_shutdown_discards_unused_abort() {
     let mut builder = ContainerBuilder::new().wait_policy(WaitPolicy::unbounded());
     builder
         .register_managed_factory::<(), _>(&[], move |_| {
-            Ok(Managed::new(Arc::new(()), move |_| {
-                abort_count.fetch_add(1, Ordering::SeqCst);
-                Ok(())
-            })
+            Ok(Managed::asynchronous(
+                Arc::new(()),
+                move |_| {
+                    abort_count.fetch_add(1, Ordering::SeqCst);
+                    Ok(())
+                },
+                move |_| {
+                    wait_count.fetch_add(1, Ordering::SeqCst);
+                    Box::pin(async { Ok(()) })
+                },
+            )
             .with_graceful_stop(move |_| {
                 request_count.fetch_add(1, Ordering::SeqCst);
                 Ok(())
-            })
-            .with_wait(move |_| {
-                wait_count.fetch_add(1, Ordering::SeqCst);
-                Box::pin(async { Ok(()) })
             }))
         })
         .expect("register graceful component");
@@ -221,16 +230,19 @@ fn test_send_only_callbacks_allow_sending_application_and_handle() {
     builder
         .register_managed_factory::<(), _>(&[], move |_| {
             let wait_local = Cell::new(0);
-            Ok(Managed::new(Arc::new(()), move |_| {
-                local.set(local.get() + 1);
-                recorded.fetch_add(local.get(), Ordering::SeqCst);
-                Ok(())
-            })
-            .with_wait(move |_| {
-                wait_local.set(wait_local.get() + 1);
-                assert_eq!(wait_local.get(), 1);
-                Box::pin(async { Ok(()) })
-            }))
+            Ok(Managed::asynchronous(
+                Arc::new(()),
+                move |_| {
+                    local.set(local.get() + 1);
+                    recorded.fetch_add(local.get(), Ordering::SeqCst);
+                    Ok(())
+                },
+                move |_| {
+                    wait_local.set(wait_local.get() + 1);
+                    assert_eq!(wait_local.get(), 1);
+                    Box::pin(async { Ok(()) })
+                },
+            ))
         })
         .expect("register Send-only callbacks");
     let application = builder.build_all().expect("construct application");

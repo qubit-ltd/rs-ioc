@@ -45,21 +45,24 @@ fn chain(check_dependencies: bool) -> (Application, Log, Arc<AtomicUsize>) {
         .register_managed_factory::<A, _>(&[], move |_| {
             let abort = Arc::clone(&events);
             let grace = Arc::clone(&events);
-            Ok(Managed::new(Arc::new(A(AtomicBool::new(true))), move |value| {
-                value.0.store(false, Ordering::SeqCst);
-                abort.lock().expect("log lock").push("abort A".into());
-                Ok(())
-            })
+            Ok(Managed::asynchronous(
+                Arc::new(A(AtomicBool::new(true))),
+                move |value| {
+                    value.0.store(false, Ordering::SeqCst);
+                    abort.lock().expect("log lock").push("abort A".into());
+                    Ok(())
+                },
+                move |_| {
+                    Box::pin(async move {
+                        events.lock().expect("log lock").push("wait A".into());
+                        Ok(())
+                    })
+                },
+            )
             .with_graceful_stop(move |value| {
                 value.0.store(false, Ordering::SeqCst);
                 grace.lock().expect("log lock").push("grace A".into());
                 Ok(())
-            })
-            .with_wait(move |_| {
-                Box::pin(async move {
-                    events.lock().expect("log lock").push("wait A".into());
-                    Ok(())
-                })
             }))
         })
         .expect("register A");
@@ -69,21 +72,24 @@ fn chain(check_dependencies: bool) -> (Application, Log, Arc<AtomicUsize>) {
             context.get::<A>().expect("A dependency");
             let abort = Arc::clone(&events);
             let grace = Arc::clone(&events);
-            Ok(Managed::new(Arc::new(B(AtomicBool::new(true))), move |value| {
-                value.0.store(false, Ordering::SeqCst);
-                abort.lock().expect("log lock").push("abort B".into());
-                Ok(())
-            })
+            Ok(Managed::asynchronous(
+                Arc::new(B(AtomicBool::new(true))),
+                move |value| {
+                    value.0.store(false, Ordering::SeqCst);
+                    abort.lock().expect("log lock").push("abort B".into());
+                    Ok(())
+                },
+                move |_| {
+                    Box::pin(async move {
+                        events.lock().expect("log lock").push("wait B".into());
+                        Ok(())
+                    })
+                },
+            )
             .with_graceful_stop(move |value| {
                 value.0.store(false, Ordering::SeqCst);
                 grace.lock().expect("log lock").push("grace B".into());
                 Ok(())
-            })
-            .with_wait(move |_| {
-                Box::pin(async move {
-                    events.lock().expect("log lock").push("wait B".into());
-                    Ok(())
-                })
             }))
         })
         .expect("register B");
@@ -97,23 +103,26 @@ fn chain(check_dependencies: bool) -> (Application, Log, Arc<AtomicUsize>) {
             let b = context.get::<B>().expect("B dependency");
             let abort = Arc::clone(&events);
             let grace = Arc::clone(&events);
-            Ok(Managed::new(Arc::new(C), move |_| {
-                abort.lock().expect("log lock").push("abort C".into());
-                Ok(())
-            })
+            Ok(Managed::asynchronous(
+                Arc::new(C),
+                move |_| {
+                    abort.lock().expect("log lock").push("abort C".into());
+                    Ok(())
+                },
+                move |_| {
+                    Box::pin(async move {
+                        if check_dependencies {
+                            assert!(a.0.load(Ordering::SeqCst), "A must run until C completes");
+                            assert!(b.0.load(Ordering::SeqCst), "B must run until C completes");
+                        }
+                        events.lock().expect("log lock").push("wait C".into());
+                        Ok(())
+                    })
+                },
+            )
             .with_graceful_stop(move |_| {
                 grace.lock().expect("log lock").push("grace C".into());
                 Ok(())
-            })
-            .with_wait(move |_| {
-                Box::pin(async move {
-                    if check_dependencies {
-                        assert!(a.0.load(Ordering::SeqCst), "A must run until C completes");
-                        assert!(b.0.load(Ordering::SeqCst), "B must run until C completes");
-                    }
-                    events.lock().expect("log lock").push("wait C".into());
-                    Ok(())
-                })
             }))
         })
         .bind::<dyn Service, _>(BindingOptions::default(), |value| value)

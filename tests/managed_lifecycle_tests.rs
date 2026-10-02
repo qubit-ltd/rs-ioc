@@ -47,21 +47,24 @@ fn record_managed<T: Send + Sync + 'static>(
 ) -> Managed<T> {
     let stop_events = Arc::clone(&events);
     let wait_events = Arc::clone(&events);
-    Managed::new(Arc::new(value), move |_| {
-        stop_events.lock().unwrap().push(name);
-        Ok(())
-    })
-    .with_wait(move |_| {
-        Box::pin(async move {
-            wait_events.lock().unwrap().push(match name {
-                "stop A" => "wait A",
-                "stop B" => "wait B",
-                "stop C" => "wait C",
-                other => other,
-            });
+    Managed::asynchronous(
+        Arc::new(value),
+        move |_| {
+            stop_events.lock().unwrap().push(name);
             Ok(())
-        })
-    })
+        },
+        move |_| {
+            Box::pin(async move {
+                wait_events.lock().unwrap().push(match name {
+                    "stop A" => "wait A",
+                    "stop B" => "wait B",
+                    "stop C" => "wait C",
+                    other => other,
+                });
+                Ok(())
+            })
+        },
+    )
 }
 
 #[test]
@@ -106,7 +109,7 @@ fn test_sync_build_failure_stops_completed_managed_factories_once() {
     let captured = Arc::clone(&stops);
     builder
         .register_managed_factory::<First, _>(&[], move |_| {
-            Ok(Managed::new(Arc::new(First), move |_| {
+            Ok(Managed::synchronous(Arc::new(First), move |_| {
                 captured.fetch_add(1, Ordering::SeqCst);
                 Ok(())
             }))
@@ -138,16 +141,19 @@ fn test_async_build_failure_defers_waits_and_reports_both_phases() {
         .register_managed_factory::<First, _>(&[], move |_| {
             let stop_events = Arc::clone(&captured);
             let wait_events = Arc::clone(&captured);
-            Ok(Managed::new(Arc::new(First), move |_| {
-                stop_events.lock().unwrap().push("stop");
-                Err(CleanupError::new(std::io::Error::other("stop failure")))
-            })
-            .with_wait(move |_| {
-                Box::pin(async move {
-                    wait_events.lock().unwrap().push("wait");
-                    Err(CleanupError::new(std::io::Error::other("wait failure")))
-                })
-            }))
+            Ok(Managed::asynchronous(
+                Arc::new(First),
+                move |_| {
+                    stop_events.lock().unwrap().push("stop");
+                    Err(CleanupError::new(std::io::Error::other("stop failure")))
+                },
+                move |_| {
+                    Box::pin(async move {
+                        wait_events.lock().unwrap().push("wait");
+                        Err(CleanupError::new(std::io::Error::other("wait failure")))
+                    })
+                },
+            ))
         })
         .unwrap();
     builder
@@ -181,16 +187,19 @@ fn test_shutdown_continues_after_multiple_stop_and_wait_failures() {
         .register_managed_factory::<First, _>(&[], move |_| {
             let stop_events = Arc::clone(&captured);
             let wait_events = Arc::clone(&captured);
-            Ok(Managed::new(Arc::new(First), move |_| {
-                stop_events.lock().unwrap().push("stop A");
-                Err(CleanupError::new(std::io::Error::other("stop failure")))
-            })
-            .with_wait(move |_| {
-                Box::pin(async move {
-                    wait_events.lock().unwrap().push("wait A");
-                    Err(CleanupError::new(std::io::Error::other("wait failure")))
-                })
-            }))
+            Ok(Managed::asynchronous(
+                Arc::new(First),
+                move |_| {
+                    stop_events.lock().unwrap().push("stop A");
+                    Err(CleanupError::new(std::io::Error::other("stop failure")))
+                },
+                move |_| {
+                    Box::pin(async move {
+                        wait_events.lock().unwrap().push("wait A");
+                        Err(CleanupError::new(std::io::Error::other("wait failure")))
+                    })
+                },
+            ))
         })
         .unwrap();
     let captured = Arc::clone(&events);
@@ -199,16 +208,19 @@ fn test_shutdown_continues_after_multiple_stop_and_wait_failures() {
             let _first = context.get::<First>().unwrap();
             let stop_events = Arc::clone(&captured);
             let wait_events = Arc::clone(&captured);
-            Ok(Managed::new(Arc::new(Second), move |_| {
-                stop_events.lock().unwrap().push("stop B");
-                Err(CleanupError::new(std::io::Error::other("stop failure")))
-            })
-            .with_wait(move |_| {
-                Box::pin(async move {
-                    wait_events.lock().unwrap().push("wait B");
-                    Err(CleanupError::new(std::io::Error::other("wait failure")))
-                })
-            }))
+            Ok(Managed::asynchronous(
+                Arc::new(Second),
+                move |_| {
+                    stop_events.lock().unwrap().push("stop B");
+                    Err(CleanupError::new(std::io::Error::other("stop failure")))
+                },
+                move |_| {
+                    Box::pin(async move {
+                        wait_events.lock().unwrap().push("wait B");
+                        Err(CleanupError::new(std::io::Error::other("wait failure")))
+                    })
+                },
+            ))
         })
         .unwrap();
 
@@ -238,16 +250,19 @@ fn test_shutdown_continues_after_stop_panic() {
         .register_managed_factory::<First, _>(&[], move |_| {
             let stop_events = Arc::clone(&captured);
             let wait_events = Arc::clone(&captured);
-            Ok(Managed::new(Arc::new(First), move |_| {
-                stop_events.lock().unwrap().push("stop A");
-                Ok(())
-            })
-            .with_wait(move |_| {
-                Box::pin(async move {
-                    wait_events.lock().unwrap().push("wait A");
+            Ok(Managed::asynchronous(
+                Arc::new(First),
+                move |_| {
+                    stop_events.lock().unwrap().push("stop A");
                     Ok(())
-                })
-            }))
+                },
+                move |_| {
+                    Box::pin(async move {
+                        wait_events.lock().unwrap().push("wait A");
+                        Ok(())
+                    })
+                },
+            ))
         })
         .unwrap();
 
@@ -257,16 +272,19 @@ fn test_shutdown_continues_after_stop_panic() {
             let _first = context.get::<First>().unwrap();
             let stop_events = Arc::clone(&captured);
             let wait_events = Arc::clone(&captured);
-            Ok(Managed::new(Arc::new(Second), move |_| {
-                stop_events.lock().unwrap().push("stop B");
-                panic!("stop B panicked");
-            })
-            .with_wait(move |_| {
-                Box::pin(async move {
-                    wait_events.lock().unwrap().push("wait B");
-                    Ok(())
-                })
-            }))
+            Ok(Managed::asynchronous(
+                Arc::new(Second),
+                move |_| {
+                    stop_events.lock().unwrap().push("stop B");
+                    panic!("stop B panicked");
+                },
+                move |_| {
+                    Box::pin(async move {
+                        wait_events.lock().unwrap().push("wait B");
+                        Ok(())
+                    })
+                },
+            ))
         })
         .unwrap();
 
@@ -276,16 +294,19 @@ fn test_shutdown_continues_after_stop_panic() {
             let _second = context.get::<Second>().unwrap();
             let stop_events = Arc::clone(&captured);
             let wait_events = Arc::clone(&captured);
-            Ok(Managed::new(Arc::new(Third), move |_| {
-                stop_events.lock().unwrap().push("stop C");
-                Ok(())
-            })
-            .with_wait(move |_| {
-                Box::pin(async move {
-                    wait_events.lock().unwrap().push("wait C");
+            Ok(Managed::asynchronous(
+                Arc::new(Third),
+                move |_| {
+                    stop_events.lock().unwrap().push("stop C");
                     Ok(())
-                })
-            }))
+                },
+                move |_| {
+                    Box::pin(async move {
+                        wait_events.lock().unwrap().push("wait C");
+                        Ok(())
+                    })
+                },
+            ))
         })
         .unwrap();
 
@@ -319,16 +340,19 @@ fn test_async_build_failure_continues_after_stop_panic() {
         .register_managed_factory::<First, _>(&[], move |_| {
             let stop_events = Arc::clone(&captured);
             let wait_events = Arc::clone(&captured);
-            Ok(Managed::new(Arc::new(First), move |_| {
-                stop_events.lock().unwrap().push("stop A");
-                Ok(())
-            })
-            .with_wait(move |_| {
-                Box::pin(async move {
-                    wait_events.lock().unwrap().push("wait A");
+            Ok(Managed::asynchronous(
+                Arc::new(First),
+                move |_| {
+                    stop_events.lock().unwrap().push("stop A");
                     Ok(())
-                })
-            }))
+                },
+                move |_| {
+                    Box::pin(async move {
+                        wait_events.lock().unwrap().push("wait A");
+                        Ok(())
+                    })
+                },
+            ))
         })
         .unwrap();
 
@@ -337,16 +361,19 @@ fn test_async_build_failure_continues_after_stop_panic() {
         .register_managed_factory::<Second, _>(&[], move |_| {
             let stop_events = Arc::clone(&captured);
             let wait_events = Arc::clone(&captured);
-            Ok(Managed::new(Arc::new(Second), move |_| {
-                stop_events.lock().unwrap().push("stop B");
-                panic!("stop B panicked during build cleanup");
-            })
-            .with_wait(move |_| {
-                Box::pin(async move {
-                    wait_events.lock().unwrap().push("wait B");
-                    Ok(())
-                })
-            }))
+            Ok(Managed::asynchronous(
+                Arc::new(Second),
+                move |_| {
+                    stop_events.lock().unwrap().push("stop B");
+                    panic!("stop B panicked during build cleanup");
+                },
+                move |_| {
+                    Box::pin(async move {
+                        wait_events.lock().unwrap().push("wait B");
+                        Ok(())
+                    })
+                },
+            ))
         })
         .unwrap();
 
@@ -383,20 +410,23 @@ fn test_cancelled_shutdown_wait_resumes_the_same_future() {
     let captured_stops = Arc::clone(&stops);
     builder
         .register_managed_factory::<First, _>(&[], move |_| {
-            Ok(Managed::new(Arc::new(First), move |_| {
-                captured_stops.fetch_add(1, Ordering::SeqCst);
-                Ok(())
-            })
-            .with_wait(move |_| {
-                captured_calls.fetch_add(1, Ordering::SeqCst);
-                Box::pin(std::future::poll_fn(move |_| {
-                    if captured_polls.fetch_add(1, Ordering::SeqCst) == 0 {
-                        Poll::Pending
-                    } else {
-                        Poll::Ready(Ok(()))
-                    }
-                }))
-            }))
+            Ok(Managed::asynchronous(
+                Arc::new(First),
+                move |_| {
+                    captured_stops.fetch_add(1, Ordering::SeqCst);
+                    Ok(())
+                },
+                move |_| {
+                    captured_calls.fetch_add(1, Ordering::SeqCst);
+                    Box::pin(std::future::poll_fn(move |_| {
+                        if captured_polls.fetch_add(1, Ordering::SeqCst) == 0 {
+                            Poll::Pending
+                        } else {
+                            Poll::Ready(Ok(()))
+                        }
+                    }))
+                },
+            ))
         })
         .expect("register managed component");
 
@@ -435,16 +465,19 @@ fn test_cancelled_async_build_stops_completed_components_without_waiting() {
     let captured_waits = Arc::clone(&waits);
     builder
         .register_managed_factory::<First, _>(&[], move |_| {
-            Ok(Managed::new(Arc::new(First), move |_| {
-                captured_stops.fetch_add(1, Ordering::SeqCst);
-                Ok(())
-            })
-            .with_wait(move |_| {
-                Box::pin(async move {
-                    captured_waits.fetch_add(1, Ordering::SeqCst);
+            Ok(Managed::asynchronous(
+                Arc::new(First),
+                move |_| {
+                    captured_stops.fetch_add(1, Ordering::SeqCst);
                     Ok(())
-                })
-            }))
+                },
+                move |_| {
+                    Box::pin(async move {
+                        captured_waits.fetch_add(1, Ordering::SeqCst);
+                        Ok(())
+                    })
+                },
+            ))
         })
         .unwrap();
     builder
@@ -472,16 +505,19 @@ fn test_cancelled_wait_phase_has_already_stopped_all_components() {
     let captured_waits = Arc::clone(&waits);
     builder
         .register_managed_factory::<First, _>(&[], move |_| {
-            Ok(Managed::new(Arc::new(First), move |_| {
-                captured_stops.fetch_add(1, Ordering::SeqCst);
-                Ok(())
-            })
-            .with_wait(move |_| {
-                Box::pin(async move {
-                    captured_waits.fetch_add(1, Ordering::SeqCst);
-                    std::future::pending::<Result<(), CleanupError>>().await
-                })
-            }))
+            Ok(Managed::asynchronous(
+                Arc::new(First),
+                move |_| {
+                    captured_stops.fetch_add(1, Ordering::SeqCst);
+                    Ok(())
+                },
+                move |_| {
+                    Box::pin(async move {
+                        captured_waits.fetch_add(1, Ordering::SeqCst);
+                        std::future::pending::<Result<(), CleanupError>>().await
+                    })
+                },
+            ))
         })
         .unwrap();
     builder
@@ -529,7 +565,7 @@ fn test_managed_concrete_definition_with_alias_stops_once() {
             "ConcreteService",
         ))
         .managed_factory(move |_| {
-            Ok(Managed::new(Arc::new(ConcreteService), move |_| {
+            Ok(Managed::synchronous(Arc::new(ConcreteService), move |_| {
                 captured.fetch_add(1, Ordering::SeqCst);
                 Ok(())
             }))
@@ -566,7 +602,7 @@ fn test_unselected_managed_factory_is_not_invoked() {
     builder
         .register_managed_factory::<First, _>(&[], move |_| {
             factory_constructions.fetch_add(1, Ordering::SeqCst);
-            Ok(Managed::new(Arc::new(First), move |_| {
+            Ok(Managed::synchronous(Arc::new(First), move |_| {
                 factory_stops.fetch_add(1, Ordering::SeqCst);
                 Ok(())
             }))
@@ -595,7 +631,7 @@ fn test_graph_failure_does_not_create_managed_resource() {
     builder
         .register_managed_factory::<First, _>(&[], move |_| {
             factory_constructions.fetch_add(1, Ordering::SeqCst);
-            Ok(Managed::new(Arc::new(First), move |_| {
+            Ok(Managed::synchronous(Arc::new(First), move |_| {
                 factory_stops.fetch_add(1, Ordering::SeqCst);
                 Ok(())
             }))
@@ -622,7 +658,7 @@ fn test_managed_factory_registration_with_options_stops_on_explicit_shutdown() {
     let captured = Arc::clone(&stops);
     builder
         .register_managed_factory::<First, _>(&[], move |_| {
-            Ok(Managed::new(Arc::new(First), move |_| {
+            Ok(Managed::synchronous(Arc::new(First), move |_| {
                 captured.fetch_add(1, Ordering::SeqCst);
                 Ok(())
             }))
@@ -637,7 +673,7 @@ fn test_managed_factory_registration_with_options_stops_on_explicit_shutdown() {
                 ..Default::default()
             },
             move |_| {
-                Ok(Managed::new(Arc::new(Second), move |_| {
+                Ok(Managed::synchronous(Arc::new(Second), move |_| {
                     captured.fetch_add(1, Ordering::SeqCst);
                     Ok(())
                 }))
@@ -660,7 +696,7 @@ fn test_managed_async_and_sync_definitions_are_supported() {
         .register_managed_async_factory::<First, _>(&[], move |_| {
             let captured = Arc::clone(&captured);
             Box::pin(async move {
-                Ok(Managed::new(Arc::new(First), move |_| {
+                Ok(Managed::synchronous(Arc::new(First), move |_| {
                     captured.fetch_add(1, Ordering::SeqCst);
                     Ok(())
                 }))
@@ -679,7 +715,7 @@ fn test_managed_async_and_sync_definitions_are_supported() {
     let definition = Definition::<ConcreteService>::builder()
         .source(source)
         .managed_factory(move |_| {
-            Ok(Managed::new(Arc::new(ConcreteService), move |_| {
+            Ok(Managed::synchronous(Arc::new(ConcreteService), move |_| {
                 captured.fetch_add(1, Ordering::SeqCst);
                 Ok(())
             }))
@@ -714,7 +750,7 @@ fn test_managed_async_definition_constructs_and_shuts_down() {
         .managed_async_factory(move |_| {
             let captured = Arc::clone(&captured);
             Box::pin(async move {
-                Ok(Managed::new(Arc::new(ConcreteService), move |_| {
+                Ok(Managed::synchronous(Arc::new(ConcreteService), move |_| {
                     captured.fetch_add(1, Ordering::SeqCst);
                     Ok(())
                 }))
@@ -741,7 +777,7 @@ fn test_dropping_query_clone_does_not_stop_but_dropping_owner_stops_once() {
     let mut builder = ContainerBuilder::new().wait_policy(WaitPolicy::unbounded());
     builder
         .register_managed_factory::<First, _>(&[], move |_| {
-            Ok(Managed::new(Arc::new(First), move |_| {
+            Ok(Managed::synchronous(Arc::new(First), move |_| {
                 captured.fetch_add(1, Ordering::SeqCst);
                 Ok(())
             }))
@@ -766,17 +802,20 @@ fn test_explicit_drop_shutdown_stops_without_waiting() {
     let mut builder = ContainerBuilder::new().wait_policy(WaitPolicy::unbounded());
     builder
         .register_managed_factory::<First, _>(&[], move |_| {
-            Ok(Managed::new(Arc::new(First), move |_| {
-                stop_count.fetch_add(1, Ordering::SeqCst);
-                Ok(())
-            })
-            .with_wait(move |_| {
-                wait_callback_count.fetch_add(1, Ordering::SeqCst);
-                Box::pin(async move {
-                    wait_count.fetch_add(1, Ordering::SeqCst);
+            Ok(Managed::asynchronous(
+                Arc::new(First),
+                move |_| {
+                    stop_count.fetch_add(1, Ordering::SeqCst);
                     Ok(())
-                })
-            }))
+                },
+                move |_| {
+                    wait_callback_count.fetch_add(1, Ordering::SeqCst);
+                    Box::pin(async move {
+                        wait_count.fetch_add(1, Ordering::SeqCst);
+                        Ok(())
+                    })
+                },
+            ))
         })
         .expect("register managed component");
 
@@ -797,14 +836,17 @@ fn test_explicit_drop_untransferred_managed_aborts_once_without_starting_wait() 
     let waits = Arc::new(AtomicUsize::new(0));
     let stop_count = Arc::clone(&stops);
     let wait_count = Arc::clone(&waits);
-    let managed = Managed::new(Arc::new(First), move |_| {
-        stop_count.fetch_add(1, Ordering::SeqCst);
-        Ok(())
-    })
-    .with_wait(move |_| {
-        wait_count.fetch_add(1, Ordering::SeqCst);
-        Box::pin(async { Ok(()) })
-    });
+    let managed = Managed::asynchronous(
+        Arc::new(First),
+        move |_| {
+            stop_count.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        },
+        move |_| {
+            wait_count.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async { Ok(()) })
+        },
+    );
 
     drop(managed);
     assert_eq!(stops.load(Ordering::SeqCst), 1);

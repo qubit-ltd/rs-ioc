@@ -39,18 +39,21 @@ fn waiting(policy: WaitPolicy) -> (Application, Gate, Arc<AtomicUsize>, Arc<Atom
     let mut builder = ContainerBuilder::new().wait_policy(policy);
     builder
         .register_managed_factory::<u32, _>(&[], move |_| {
-            Ok(Managed::new(Arc::new(1), move |_| {
-                observed.fetch_add(1, Ordering::SeqCst);
-                Ok(())
-            })
-            .with_graceful_stop(|_| Ok(()))
-            .with_wait(move |_| {
-                created.fetch_add(1, Ordering::SeqCst);
-                Box::pin(async move {
-                    waiting.await;
+            Ok(Managed::asynchronous(
+                Arc::new(1),
+                move |_| {
+                    observed.fetch_add(1, Ordering::SeqCst);
                     Ok(())
-                })
-            }))
+                },
+                move |_| {
+                    created.fetch_add(1, Ordering::SeqCst);
+                    Box::pin(async move {
+                        waiting.await;
+                        Ok(())
+                    })
+                },
+            )
+            .with_graceful_stop(|_| Ok(())))
         })
         .expect("register waiting service");
     (
@@ -69,7 +72,7 @@ fn test_missing_policy_is_rejected_before_any_selected_factory_runs() {
     builder
         .register_managed_factory::<u32, _>(&[], move |_| {
             observed.fetch_add(1, Ordering::SeqCst);
-            Ok(Managed::new(Arc::new(1), |_| Ok(())))
+            Ok(Managed::synchronous(Arc::new(1), |_| Ok(())))
         })
         .expect("register managed service");
     assert!(matches!(builder.build_all(), Err(failure) if matches!(failure.cause(), BuildError::MissingWaitPolicy)));
@@ -225,22 +228,30 @@ fn test_each_entry_receives_an_independent_termination_deadline() {
     let mut builder = ContainerBuilder::new().wait_policy(timers.policy());
     builder
         .register_managed_factory::<u32, _>(&[], move |_| {
-            Ok(Managed::new(Arc::new(1), |_| Ok(())).with_wait(move |_| {
-                Box::pin(async move {
-                    waiting_first.await;
-                    Ok(())
-                })
-            }))
+            Ok(Managed::asynchronous(
+                Arc::new(1),
+                |_| Ok(()),
+                move |_| {
+                    Box::pin(async move {
+                        waiting_first.await;
+                        Ok(())
+                    })
+                },
+            ))
         })
         .expect("register dependency");
     builder
         .register_managed_factory::<u64, _>(&[Dependency::of::<u32>()], move |_| {
-            Ok(Managed::new(Arc::new(2), |_| Ok(())).with_wait(move |_| {
-                Box::pin(async move {
-                    waiting_second.await;
-                    Ok(())
-                })
-            }))
+            Ok(Managed::asynchronous(
+                Arc::new(2),
+                |_| Ok(()),
+                move |_| {
+                    Box::pin(async move {
+                        waiting_second.await;
+                        Ok(())
+                    })
+                },
+            ))
         })
         .expect("register consumer");
     let mut handle = builder
@@ -268,12 +279,16 @@ fn test_graceful_fallback_uses_only_termination_deadline() {
     let mut builder = ContainerBuilder::new().wait_policy(timers.policy());
     builder
         .register_managed_factory::<u32, _>(&[], move |_| {
-            Ok(Managed::new(Arc::new(1), |_| Ok(())).with_wait(move |_| {
-                Box::pin(async move {
-                    waiting.await;
-                    Ok(())
-                })
-            }))
+            Ok(Managed::asynchronous(
+                Arc::new(1),
+                |_| Ok(()),
+                move |_| {
+                    Box::pin(async move {
+                        waiting.await;
+                        Ok(())
+                    })
+                },
+            ))
         })
         .expect("register fallback service");
     let mut handle = builder

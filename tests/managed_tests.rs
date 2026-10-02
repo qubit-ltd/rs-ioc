@@ -45,12 +45,16 @@ fn managed_with_wait<T: Send + Sync + 'static>(
     events: Arc<Mutex<Vec<&'static str>>>,
     name: &'static str,
 ) -> Managed<T> {
-    Managed::new(Arc::new(value), |_| Ok(())).with_wait(move |_| {
-        Box::pin(async move {
-            events.lock().expect("event mutex is available").push(name);
-            Ok(())
-        })
-    })
+    Managed::asynchronous(
+        Arc::new(value),
+        |_| Ok(()),
+        move |_| {
+            Box::pin(async move {
+                events.lock().expect("event mutex is available").push(name);
+                Ok(())
+            })
+        },
+    )
 }
 
 #[test]
@@ -63,8 +67,11 @@ fn test_shutdown_collects_wait_callback_panic_and_continues() {
         .expect("register component A");
     builder
         .register_managed_factory::<ComponentB, _>(&[], |_| {
-            Ok(Managed::new(Arc::new(ComponentB), |_| Ok(()))
-                .with_wait(|_| -> CleanupFuture { panic!("create wait future") }))
+            Ok(Managed::asynchronous(
+                Arc::new(ComponentB),
+                |_| Ok(()),
+                |_| -> CleanupFuture { panic!("create wait future") },
+            ))
         })
         .expect("register component B");
 
@@ -88,13 +95,15 @@ fn test_shutdown_collects_wait_poll_panic_and_continues() {
         .expect("register component A");
     builder
         .register_managed_factory::<ComponentB, _>(&[], |_| {
-            Ok(
-                Managed::new(Arc::new(ComponentB), |_| Ok(())).with_wait(|_| -> CleanupFuture {
+            Ok(Managed::asynchronous(
+                Arc::new(ComponentB),
+                |_| Ok(()),
+                |_| -> CleanupFuture {
                     Box::pin(std::future::poll_fn(|_| -> Poll<Result<(), CleanupError>> {
                         panic!("poll wait future")
                     }))
-                }),
-            )
+                },
+            ))
         })
         .expect("register component B");
 
@@ -118,8 +127,11 @@ fn test_async_build_failure_collects_wait_panic_and_preserves_cause() {
         .expect("register component A");
     builder
         .register_managed_factory::<ComponentB, _>(&[], |_| {
-            Ok(Managed::new(Arc::new(ComponentB), |_| Ok(()))
-                .with_wait(|_| -> CleanupFuture { panic!("create wait future") }))
+            Ok(Managed::asynchronous(
+                Arc::new(ComponentB),
+                |_| Ok(()),
+                |_| -> CleanupFuture { panic!("create wait future") },
+            ))
         })
         .expect("register component B");
     builder
@@ -156,8 +168,10 @@ fn test_cancelled_wait_resumes_then_reports_poll_panic() {
     let captured_starts = Arc::clone(&starts);
     builder
         .register_managed_factory::<ComponentB, _>(&[], move |_| {
-            Ok(
-                Managed::new(Arc::new(ComponentB), |_| Ok(())).with_wait(move |_| -> CleanupFuture {
+            Ok(Managed::asynchronous(
+                Arc::new(ComponentB),
+                |_| Ok(()),
+                move |_| -> CleanupFuture {
                     captured_starts.fetch_add(1, Ordering::SeqCst);
                     let captured_polls = Arc::clone(&captured_polls);
                     Box::pin(std::future::poll_fn(move |_| {
@@ -167,8 +181,8 @@ fn test_cancelled_wait_resumes_then_reports_poll_panic() {
                             panic!("resumed wait future")
                         }
                     }))
-                }),
-            )
+                },
+            ))
         })
         .expect("register component B");
 

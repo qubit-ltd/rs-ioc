@@ -44,14 +44,17 @@ fn test_build_async_returns_failure_before_starting_pending_cleanup() {
     let wait_count = Arc::clone(&waits);
     builder
         .register_managed_factory::<Resource, _>(&[], move |_| {
-            Ok(Managed::new(Arc::new(Resource), move |_| {
-                abort_count.fetch_add(1, Ordering::SeqCst);
-                Ok(())
-            })
-            .with_wait(move |_| {
-                wait_count.fetch_add(1, Ordering::SeqCst);
-                Box::pin(std::future::pending())
-            }))
+            Ok(Managed::asynchronous(
+                Arc::new(Resource),
+                move |_| {
+                    abort_count.fetch_add(1, Ordering::SeqCst);
+                    Ok(())
+                },
+                move |_| {
+                    wait_count.fetch_add(1, Ordering::SeqCst);
+                    Box::pin(std::future::pending())
+                },
+            ))
         })
         .expect("register resource");
     builder
@@ -92,14 +95,17 @@ fn failing_builder(aborts: Arc<AtomicUsize>, waits: Arc<AtomicUsize>) -> Contain
     let mut builder = ContainerBuilder::new().wait_policy(WaitPolicy::unbounded());
     builder
         .register_managed_factory::<Resource, _>(&[], move |_| {
-            Ok(Managed::new(Arc::new(Resource), move |_| {
-                aborts.fetch_add(1, Ordering::SeqCst);
-                Ok(())
-            })
-            .with_wait(move |_| {
-                waits.fetch_add(1, Ordering::SeqCst);
-                Box::pin(async { Ok(()) })
-            }))
+            Ok(Managed::asynchronous(
+                Arc::new(Resource),
+                move |_| {
+                    aborts.fetch_add(1, Ordering::SeqCst);
+                    Ok(())
+                },
+                move |_| {
+                    waits.fetch_add(1, Ordering::SeqCst);
+                    Box::pin(async { Ok(()) })
+                },
+            ))
         })
         .expect("register resource");
     builder
@@ -229,7 +235,7 @@ fn test_graph_failure_has_no_cleanup_and_runs_no_factories() {
     builder
         .register_managed_factory::<Resource, _>(&[Dependency::of::<Failing>()], move |_| {
             count.fetch_add(1, Ordering::SeqCst);
-            Ok(Managed::new(Arc::new(Resource), |_| Ok(())))
+            Ok(Managed::synchronous(Arc::new(Resource), |_| Ok(())))
         })
         .expect("register invalid graph");
     builder.root::<Resource>();
@@ -283,32 +289,38 @@ fn test_cleanup_timeout_continues_other_waits_and_retains_dependency_store() {
     builder
         .register_managed_factory::<Resource, _>(&[Dependency::of::<DependencyValue>()], move |_| {
             let wait_events = Arc::clone(&recorded);
-            Ok(Managed::new(Arc::new(Resource), move |_| {
-                recorded.lock().expect("events").push("abort resource");
-                Ok(())
-            })
-            .with_wait(move |_| {
-                assert!(
-                    weak.upgrade().is_some(),
-                    "partial dependency store must survive through cleanup"
-                );
-                wait_events.lock().expect("events").push("wait resource");
-                Box::pin(async { Ok(()) })
-            }))
+            Ok(Managed::asynchronous(
+                Arc::new(Resource),
+                move |_| {
+                    recorded.lock().expect("events").push("abort resource");
+                    Ok(())
+                },
+                move |_| {
+                    assert!(
+                        weak.upgrade().is_some(),
+                        "partial dependency store must survive through cleanup"
+                    );
+                    wait_events.lock().expect("events").push("wait resource");
+                    Box::pin(async { Ok(()) })
+                },
+            ))
         })
         .expect("resource");
     let recorded = Arc::clone(&events);
     builder
         .register_managed_factory::<Other, _>(&[Dependency::of::<Resource>()], move |_| {
             let wait_events = Arc::clone(&recorded);
-            Ok(Managed::new(Arc::new(Other), move |_| {
-                recorded.lock().expect("events").push("abort other");
-                Ok(())
-            })
-            .with_wait(move |_| {
-                wait_events.lock().expect("events").push("wait other");
-                Box::pin(std::future::pending())
-            }))
+            Ok(Managed::asynchronous(
+                Arc::new(Other),
+                move |_| {
+                    recorded.lock().expect("events").push("abort other");
+                    Ok(())
+                },
+                move |_| {
+                    wait_events.lock().expect("events").push("wait other");
+                    Box::pin(std::future::pending())
+                },
+            ))
         })
         .expect("other");
     builder
@@ -348,14 +360,17 @@ fn test_factory_panic_propagates_and_only_aborts_completed_resources() {
         let wait_count = Arc::clone(&waits);
         builder
             .register_managed_factory::<Resource, _>(&[], move |_| {
-                Ok(Managed::new(Arc::new(Resource), move |_| {
-                    abort_count.fetch_add(1, Ordering::SeqCst);
-                    Ok(())
-                })
-                .with_wait(move |_| {
-                    wait_count.fetch_add(1, Ordering::SeqCst);
-                    Box::pin(async { Ok(()) })
-                }))
+                Ok(Managed::asynchronous(
+                    Arc::new(Resource),
+                    move |_| {
+                        abort_count.fetch_add(1, Ordering::SeqCst);
+                        Ok(())
+                    },
+                    move |_| {
+                        wait_count.fetch_add(1, Ordering::SeqCst);
+                        Box::pin(async { Ok(()) })
+                    },
+                ))
             })
             .expect("managed dependency");
         builder
@@ -394,14 +409,17 @@ fn test_cancelled_build_does_not_create_cleanup_wait() {
     let wait_count = Arc::clone(&waits);
     builder
         .register_managed_factory::<Resource, _>(&[], move |_| {
-            Ok(Managed::new(Arc::new(Resource), move |_| {
-                abort_count.fetch_add(1, Ordering::SeqCst);
-                Ok(())
-            })
-            .with_wait(move |_| {
-                wait_count.fetch_add(1, Ordering::SeqCst);
-                Box::pin(async { Ok(()) })
-            }))
+            Ok(Managed::asynchronous(
+                Arc::new(Resource),
+                move |_| {
+                    abort_count.fetch_add(1, Ordering::SeqCst);
+                    Ok(())
+                },
+                move |_| {
+                    wait_count.fetch_add(1, Ordering::SeqCst);
+                    Box::pin(async { Ok(()) })
+                },
+            ))
         })
         .expect("managed dependency");
     builder

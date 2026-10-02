@@ -30,7 +30,8 @@ use support::shutdown_timer::Timers;
 use support::shutdown_timer::poll_once;
 use support::shutdown_timer::ready;
 
-/// Builds a service and a dependency whose stop proves traversal continues.
+/// Builds a service and a dependency whose stop actions prove traversal
+/// continues.
 fn with_dependency(service: Managed<u64>, policy: WaitPolicy) -> (Application, Arc<AtomicUsize>) {
     let tail = Arc::new(AtomicUsize::new(0));
     let aborted = Arc::clone(&tail);
@@ -38,7 +39,7 @@ fn with_dependency(service: Managed<u64>, policy: WaitPolicy) -> (Application, A
     let mut builder = ContainerBuilder::new().wait_policy(policy);
     builder
         .register_managed_factory::<u32, _>(&[], move |_| {
-            Ok(Managed::new(Arc::new(1), move |_| {
+            Ok(Managed::synchronous(Arc::new(1), move |_| {
                 aborted.fetch_add(1, Ordering::SeqCst);
                 Ok(())
             })
@@ -56,10 +57,11 @@ fn with_dependency(service: Managed<u64>, policy: WaitPolicy) -> (Application, A
 
 #[test]
 fn test_original_cleanup_source_survives_report_clones_and_repeated_wait() {
-    let managed = Managed::new(Arc::new(2_u64), |_| {
-        Err(CleanupError::new(std::io::Error::other("original abort error")))
-    })
-    .with_wait(|_| Box::pin(async { Ok(()) }));
+    let managed = Managed::asynchronous(
+        Arc::new(2_u64),
+        |_| Err(CleanupError::new(std::io::Error::other("original abort error"))),
+        |_| Box::pin(async { Ok(()) }),
+    );
     let (application, tail) = with_dependency(managed, WaitPolicy::unbounded());
     let context = application.context().clone();
     let mut handle = application.begin_shutdown(ShutdownMode::Immediate);
@@ -93,24 +95,30 @@ fn test_pending_excludes_completed_entries_and_abort_skips_them() {
     let mut builder = ContainerBuilder::new().wait_policy(WaitPolicy::unbounded());
     builder
         .register_managed_factory::<u32, _>(&[], move |_| {
-            Ok(Managed::new(Arc::new(1), |_| Ok(()))
-                .with_graceful_stop(|_| Ok(()))
-                .with_wait(move |_| {
+            Ok(Managed::asynchronous(
+                Arc::new(1),
+                |_| Ok(()),
+                move |_| {
                     Box::pin(async move {
                         waiting.await;
                         Ok(())
                     })
-                }))
+                },
+            )
+            .with_graceful_stop(|_| Ok(())))
         })
         .expect("register pending dependency");
     builder
         .register_managed_factory::<u64, _>(&[Dependency::of::<u32>()], move |_| {
-            Ok(Managed::new(Arc::new(2), move |_| {
-                observed.fetch_add(1, Ordering::SeqCst);
-                Ok(())
-            })
-            .with_graceful_stop(|_| Ok(()))
-            .with_wait(|_| Box::pin(async { Ok(()) })))
+            Ok(Managed::asynchronous(
+                Arc::new(2),
+                move |_| {
+                    observed.fetch_add(1, Ordering::SeqCst);
+                    Ok(())
+                },
+                |_| Box::pin(async { Ok(()) }),
+            )
+            .with_graceful_stop(|_| Ok(())))
         })
         .expect("register ready consumer");
     let mut handle = builder
@@ -135,7 +143,7 @@ fn test_pending_excludes_completed_entries_and_abort_skips_them() {
 
 #[test]
 fn test_fallbacks_only_include_entries_without_graceful_callback() {
-    let managed = Managed::new(Arc::new(2_u64), |_| Ok(())).with_wait(|_| Box::pin(async { Ok(()) }));
+    let managed = Managed::asynchronous(Arc::new(2_u64), |_| Ok(()), |_| Box::pin(async { Ok(()) }));
     let (application, _) = with_dependency(managed, WaitPolicy::unbounded());
     let mut handle = application.begin_shutdown(ShutdownMode::Graceful);
     let report = ready(handle.wait()).expect("fallback success");
@@ -152,14 +160,17 @@ fn test_fallbacks_only_include_entries_without_graceful_callback() {
 fn test_termination_timeout_records_incomplete_and_continues_dependencies() {
     let gate = Gate::default();
     let timers = Timers::default();
-    let managed = Managed::new(Arc::new(2_u64), |_| Ok(()))
-        .with_graceful_stop(|_| Ok(()))
-        .with_wait(move |_| {
+    let managed = Managed::asynchronous(
+        Arc::new(2_u64),
+        |_| Ok(()),
+        move |_| {
             Box::pin(async move {
                 gate.await;
                 Ok(())
             })
-        });
+        },
+    )
+    .with_graceful_stop(|_| Ok(()));
     let (application, tail) = with_dependency(managed, timers.policy());
     let context = application.context().clone();
     let mut handle = application.begin_shutdown(ShutdownMode::Graceful);
@@ -173,7 +184,7 @@ fn test_termination_timeout_records_incomplete_and_continues_dependencies() {
     assert_eq!(error.report().incomplete(), [BindingKey::of::<u64>(None)]);
     assert_eq!(error.report().failures()[1].phase, ShutdownPhase::TerminationWait);
     assert_eq!(timers.durations(), [Duration::from_secs(13), Duration::from_secs(7)]);
-    assert_eq!(tail.load(Ordering::SeqCst), 1);
+    assert_eq!(tail.load(Ordering::SeqCst), 2);
     assert_eq!(context.state(), ApplicationState::Incomplete);
     assert!(!error.report().is_complete());
 }
@@ -182,12 +193,15 @@ fn test_termination_timeout_records_incomplete_and_continues_dependencies() {
 fn test_abandon_does_not_start_any_wait_and_records_pending_entries() {
     let starts = Arc::new(AtomicUsize::new(0));
     let observed = Arc::clone(&starts);
-    let managed = Managed::new(Arc::new(2_u64), |_| Ok(()))
-        .with_graceful_stop(|_| Ok(()))
-        .with_wait(move |_| {
+    let managed = Managed::asynchronous(
+        Arc::new(2_u64),
+        |_| Ok(()),
+        move |_| {
             observed.fetch_add(1, Ordering::SeqCst);
             Box::pin(async { Ok(()) })
-        });
+        },
+    )
+    .with_graceful_stop(|_| Ok(()));
     let (application, tail) = with_dependency(managed, WaitPolicy::unbounded());
     let context = application.context().clone();
     let report = application.begin_shutdown(ShutdownMode::Graceful).abandon();
@@ -199,7 +213,7 @@ fn test_abandon_does_not_start_any_wait_and_records_pending_entries() {
 
 #[test]
 fn test_sync_abort_error_without_wait_is_incomplete() {
-    let managed = Managed::new(Arc::new(2_u64), |_| {
+    let managed = Managed::synchronous(Arc::new(2_u64), |_| {
         Err(CleanupError::new(std::io::Error::other("cannot stop")))
     });
     let (application, _) = with_dependency(managed, WaitPolicy::unbounded());
@@ -216,17 +230,20 @@ fn test_graceful_request_error_aborts_then_waits_with_termination_budget() {
     let waiting = gate.clone();
     let aborts = Arc::new(AtomicUsize::new(0));
     let observed = Arc::clone(&aborts);
-    let managed = Managed::new(Arc::new(2_u64), move |_| {
-        observed.fetch_add(1, Ordering::SeqCst);
-        Ok(())
-    })
-    .with_graceful_stop(|_| Err(CleanupError::new(std::io::Error::other("request rejected"))))
-    .with_wait(move |_| {
-        Box::pin(async move {
-            waiting.await;
+    let managed = Managed::asynchronous(
+        Arc::new(2_u64),
+        move |_| {
+            observed.fetch_add(1, Ordering::SeqCst);
             Ok(())
-        })
-    });
+        },
+        move |_| {
+            Box::pin(async move {
+                waiting.await;
+                Ok(())
+            })
+        },
+    )
+    .with_graceful_stop(|_| Err(CleanupError::new(std::io::Error::other("request rejected"))));
     let (application, tail) = with_dependency(managed, timers.policy());
     let mut handle = application.begin_shutdown(ShutdownMode::Graceful);
     assert!(poll_once(handle.wait()).is_pending());
@@ -237,31 +254,38 @@ fn test_graceful_request_error_aborts_then_waits_with_termination_budget() {
     assert_eq!(error.report().failures()[0].phase, ShutdownPhase::RequestGraceful);
     assert!(error.report().is_complete());
     assert!(error.report().fallbacks().is_empty());
-    assert_eq!(tail.load(Ordering::SeqCst), 1);
+    assert_eq!(tail.load(Ordering::SeqCst), 2);
 }
 
 #[test]
 fn test_graceful_request_panic_is_reported_and_abort_wait_continues() {
     let aborts = Arc::new(AtomicUsize::new(0));
     let observed = Arc::clone(&aborts);
-    let managed = Managed::new(Arc::new(2_u64), move |_| {
-        observed.fetch_add(1, Ordering::SeqCst);
-        Ok(())
-    })
-    .with_graceful_stop(|_| panic!("graceful request panic"))
-    .with_wait(|_| Box::pin(async { Ok(()) }));
+    let managed = Managed::asynchronous(
+        Arc::new(2_u64),
+        move |_| {
+            observed.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        },
+        |_| Box::pin(async { Ok(()) }),
+    )
+    .with_graceful_stop(|_| panic!("graceful request panic"));
     let (application, tail) = with_dependency(managed, WaitPolicy::unbounded());
     let mut handle = application.begin_shutdown(ShutdownMode::Graceful);
     let error = ready(handle.wait()).expect_err("panic report");
     assert_eq!(error.report().failures()[0].phase, ShutdownPhase::RequestGraceful);
     assert!(error.report().is_complete());
     assert_eq!(aborts.load(Ordering::SeqCst), 1);
-    assert_eq!(tail.load(Ordering::SeqCst), 1);
+    assert_eq!(tail.load(Ordering::SeqCst), 2);
 }
 
 #[test]
 fn test_abort_panic_does_not_prevent_other_abort_requests_or_waits() {
-    let managed = Managed::new(Arc::new(2_u64), |_| panic!("abort panic")).with_wait(|_| Box::pin(async { Ok(()) }));
+    let managed = Managed::asynchronous(
+        Arc::new(2_u64),
+        |_| panic!("abort panic"),
+        |_| Box::pin(async { Ok(()) }),
+    );
     let (application, tail) = with_dependency(managed, WaitPolicy::unbounded());
     let mut handle = application.begin_shutdown(ShutdownMode::Immediate);
     assert_eq!(tail.load(Ordering::SeqCst), 1);
@@ -276,25 +300,28 @@ fn assert_wait_failure(creating: bool, panicking: bool) {
     let observed = Arc::clone(&starts);
     let aborts = Arc::new(AtomicUsize::new(0));
     let aborted = Arc::clone(&aborts);
-    let managed = Managed::new(Arc::new(2_u64), move |_| {
-        aborted.fetch_add(1, Ordering::SeqCst);
-        Ok(())
-    })
-    .with_graceful_stop(|_| Ok(()))
-    .with_wait(move |_| {
-        observed.fetch_add(1, Ordering::SeqCst);
-        assert!(!creating, "wait creation panic");
-        Box::pin(async move {
-            assert!(!panicking, "wait poll panic");
-            Err(CleanupError::new(std::io::Error::other("wait failed")))
-        })
-    });
+    let managed = Managed::asynchronous(
+        Arc::new(2_u64),
+        move |_| {
+            aborted.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        },
+        move |_| {
+            observed.fetch_add(1, Ordering::SeqCst);
+            assert!(!creating, "wait creation panic");
+            Box::pin(async move {
+                assert!(!panicking, "wait poll panic");
+                Err(CleanupError::new(std::io::Error::other("wait failed")))
+            })
+        },
+    )
+    .with_graceful_stop(|_| Ok(()));
     let (application, tail) = with_dependency(managed, WaitPolicy::unbounded());
     let mut handle = application.begin_shutdown(ShutdownMode::Graceful);
     let error = ready(handle.wait()).expect_err("wait failure");
     assert_eq!(error.report().failures()[0].phase, ShutdownPhase::Wait);
     assert_eq!(error.report().incomplete(), [BindingKey::of::<u64>(None)]);
-    assert_eq!(tail.load(Ordering::SeqCst), 1);
+    assert_eq!(tail.load(Ordering::SeqCst), 2);
     assert_eq!(aborts.load(Ordering::SeqCst), 1);
     assert!(ready(handle.wait()).is_err());
     assert_eq!(starts.load(Ordering::SeqCst), 1);
@@ -324,24 +351,27 @@ fn assert_deadline_panic(creating: bool) {
     let aborts = Arc::new(AtomicUsize::new(0));
     let observed = Arc::clone(&aborts);
     let gate = Gate::default();
-    let managed = Managed::new(Arc::new(2_u64), move |_| {
-        observed.fetch_add(1, Ordering::SeqCst);
-        Ok(())
-    })
-    .with_graceful_stop(|_| Ok(()))
-    .with_wait(move |_| {
-        Box::pin(async move {
-            gate.await;
+    let managed = Managed::asynchronous(
+        Arc::new(2_u64),
+        move |_| {
+            observed.fetch_add(1, Ordering::SeqCst);
             Ok(())
-        })
-    });
+        },
+        move |_| {
+            Box::pin(async move {
+                gate.await;
+                Ok(())
+            })
+        },
+    )
+    .with_graceful_stop(|_| Ok(()));
     let (application, tail) = with_dependency(managed, policy);
     let mut handle = application.begin_shutdown(ShutdownMode::Graceful);
     let error = ready(handle.wait()).expect_err("deadline panic");
     assert_eq!(error.report().failures()[0].phase, ShutdownPhase::Deadline);
     assert_eq!(error.report().incomplete(), [BindingKey::of::<u64>(None)]);
     assert_eq!(aborts.load(Ordering::SeqCst), 1);
-    assert_eq!(tail.load(Ordering::SeqCst), 1);
+    assert_eq!(tail.load(Ordering::SeqCst), 2);
 }
 
 #[test]

@@ -36,12 +36,15 @@ where
 {
     builder
         .register_managed_factory::<T, _>(&[], move |_| {
-            Ok(Managed::new(Arc::new(T::default()), move |_| {
-                aborts.fetch_add(1, Ordering::SeqCst);
-                Ok(())
-            })
-            .with_graceful_stop(|_| Ok(()))
-            .with_wait(|_| Box::pin(std::future::pending())))
+            Ok(Managed::asynchronous(
+                Arc::new(T::default()),
+                move |_| {
+                    aborts.fetch_add(1, Ordering::SeqCst);
+                    Ok(())
+                },
+                |_| Box::pin(std::future::pending()),
+            )
+            .with_graceful_stop(|_| Ok(())))
         })
         .expect("register managed component");
 }
@@ -89,14 +92,17 @@ fn test_cancelling_wait_does_not_restart_overall_deadline() {
     let mut builder = ContainerBuilder::new().wait_policy(timers.policy_with_total(Duration::from_secs(30)));
     builder
         .register_managed_factory::<u32, _>(&[], move |_| {
-            Ok(Managed::new(Arc::new(1), |_| Ok(()))
-                .with_graceful_stop(|_| Ok(()))
-                .with_wait(move |_| {
+            Ok(Managed::asynchronous(
+                Arc::new(1),
+                |_| Ok(()),
+                move |_| {
                     Box::pin(async move {
                         observed_wait.await;
                         Ok(())
                     })
-                }))
+                },
+            )
+            .with_graceful_stop(|_| Ok(())))
         })
         .expect("register managed component");
     let application = builder.build_all().expect("build component");
@@ -146,14 +152,17 @@ fn test_component_completion_wins_when_overall_deadline_is_also_ready() {
     let mut builder = ContainerBuilder::new().wait_policy(timers.policy_with_total(Duration::from_secs(30)));
     builder
         .register_managed_factory::<u32, _>(&[], move |_| {
-            Ok(Managed::new(Arc::new(1), |_| Ok(()))
-                .with_graceful_stop(|_| Ok(()))
-                .with_wait(move |_| {
+            Ok(Managed::asynchronous(
+                Arc::new(1),
+                |_| Ok(()),
+                move |_| {
                     Box::pin(async move {
                         observed_wait.await;
                         Ok(())
                     })
-                }))
+                },
+            )
+            .with_graceful_stop(|_| Ok(())))
         })
         .expect("register managed component");
     let application = builder.build_all().expect("build component");
@@ -184,7 +193,7 @@ fn test_overall_timer_factory_panic_is_reported_and_aborts_entries() {
     ));
     builder
         .register_managed_factory::<u32, _>(&[], move |_| {
-            Ok(Managed::new(Arc::new(1), move |_| {
+            Ok(Managed::synchronous(Arc::new(1), move |_| {
                 observed_aborts.fetch_add(1, Ordering::SeqCst);
                 Ok(())
             }))
@@ -239,9 +248,12 @@ fn test_overall_timer_poll_panic_is_reported() {
     ));
     builder
         .register_managed_factory::<u32, _>(&[], |_| {
-            Ok(Managed::new(Arc::new(1), |_| Ok(()))
-                .with_graceful_stop(|_| Ok(()))
-                .with_wait(|_| Box::pin(std::future::pending::<Result<(), CleanupError>>())))
+            Ok(Managed::asynchronous(
+                Arc::new(1),
+                |_| Ok(()),
+                |_| Box::pin(std::future::pending::<Result<(), CleanupError>>()),
+            )
+            .with_graceful_stop(|_| Ok(())))
         })
         .expect("register managed component");
     let application = builder.build_all().expect("build component");
@@ -265,7 +277,11 @@ fn test_existing_bounded_policy_has_no_overall_timer() {
     let mut builder = ContainerBuilder::new().wait_policy(timers.policy());
     builder
         .register_managed_factory::<u32, _>(&[], |_| {
-            Ok(Managed::new(Arc::new(1), |_| Ok(())).with_wait(|_| Box::pin(std::future::pending())))
+            Ok(Managed::asynchronous(
+                Arc::new(1),
+                |_| Ok(()),
+                |_| Box::pin(std::future::pending()),
+            ))
         })
         .expect("register managed component");
     let application = builder.build_all().expect("build component");
@@ -280,7 +296,7 @@ fn test_abandon_does_not_create_overall_timer() {
     let timers = Timers::default();
     let mut builder = ContainerBuilder::new().wait_policy(timers.policy_with_total(Duration::from_secs(30)));
     builder
-        .register_managed_factory::<u32, _>(&[], |_| Ok(Managed::new(Arc::new(1), |_| Ok(()))))
+        .register_managed_factory::<u32, _>(&[], |_| Ok(Managed::synchronous(Arc::new(1), |_| Ok(()))))
         .expect("register managed component");
     let application = builder.build_all().expect("build component");
 
@@ -304,15 +320,18 @@ fn test_zero_overall_deadline_aborts_before_starting_component_wait() {
     ));
     builder
         .register_managed_factory::<u32, _>(&[], move |_| {
-            Ok(Managed::new(Arc::new(1), move |_| {
-                observed_aborts.fetch_add(1, Ordering::SeqCst);
-                Ok(())
-            })
-            .with_graceful_stop(|_| Ok(()))
-            .with_wait(move |_| {
-                observed_waits.fetch_add(1, Ordering::SeqCst);
-                Box::pin(std::future::pending::<Result<(), CleanupError>>())
-            }))
+            Ok(Managed::asynchronous(
+                Arc::new(1),
+                move |_| {
+                    observed_aborts.fetch_add(1, Ordering::SeqCst);
+                    Ok(())
+                },
+                move |_| {
+                    observed_waits.fetch_add(1, Ordering::SeqCst);
+                    Box::pin(std::future::pending::<Result<(), CleanupError>>())
+                },
+            )
+            .with_graceful_stop(|_| Ok(())))
         })
         .expect("register managed component");
     let application = builder.build_all().expect("build component");
