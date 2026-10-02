@@ -42,7 +42,7 @@ type StopCallback<T> = Box<dyn FnOnce(Arc<T>) -> Result<(), CleanupError> + Send
 /// use std::sync::Arc;
 /// use qubit_ioc::Managed;
 ///
-/// let _worker = Managed::new(Arc::new("worker"), |_| Ok(()));
+/// let _worker = Managed::synchronous(Arc::new("worker"), |_| Ok(()));
 /// ```
 #[must_use = "return or register this managed value so its cleanup actions can be tracked"]
 pub struct Managed<T: ?Sized + Send + Sync + 'static> {
@@ -59,6 +59,71 @@ pub struct Managed<T: ?Sized + Send + Sync + 'static> {
 }
 
 impl<T: ?Sized + Send + Sync + 'static> Managed<T> {
+    /// Creates a managed value whose stop callback completes termination.
+    ///
+    /// The stop callback runs at most once during shutdown, rollback,
+    /// cancellation, or drop before ownership transfer. A successful return
+    /// means the component has terminated; there is no later wait action.
+    /// Avoid blocking indefinitely because this callback runs synchronously.
+    ///
+    /// # Type Parameters
+    ///
+    /// `F` is a sendable one-shot stop action that consumes a shared handle.
+    ///
+    /// # Parameters
+    ///
+    /// `value` is the shared component exposed to lookups. `stop` completes
+    /// termination and may return a [`CleanupError`].
+    ///
+    /// # Returns
+    ///
+    /// A managed component whose stop action confirms termination.
+    pub fn synchronous<F>(value: Arc<T>, stop: F) -> Self
+    where
+        F: FnOnce(Arc<T>) -> Result<(), CleanupError> + Send + 'static,
+    {
+        Self {
+            value: Some(value),
+            stop: Some(Box::new(stop)),
+            graceful: None,
+            wait: None,
+        }
+    }
+
+    /// Creates a managed value with a stop request and termination wait.
+    ///
+    /// The abort callback must request termination without blocking. During
+    /// explicit asynchronous shutdown, `wait` confirms termination before
+    /// dependencies are stopped. Dropping an untransferred value only calls
+    /// abort and never starts `wait`.
+    ///
+    /// # Type Parameters
+    ///
+    /// `F` is a sendable one-shot abort request.
+    /// `W` is a sendable one-shot callback returning the termination future.
+    ///
+    /// # Parameters
+    ///
+    /// `value` is the shared component exposed to lookups. `abort` requests
+    /// immediate termination and may return a [`CleanupError`]. `wait` returns
+    /// a future that resolves when termination has completed.
+    ///
+    /// # Returns
+    ///
+    /// A managed component with an explicit termination wait action.
+    pub fn asynchronous<F, W>(value: Arc<T>, abort: F, wait: W) -> Self
+    where
+        F: FnOnce(Arc<T>) -> Result<(), CleanupError> + Send + 'static,
+        W: FnOnce(Arc<T>) -> CleanupFuture + Send + 'static,
+    {
+        Self {
+            value: Some(value),
+            stop: Some(Box::new(abort)),
+            graceful: None,
+            wait: Some(Box::new(wait)),
+        }
+    }
+
     /// Creates a managed value with a synchronous abort action.
     ///
     /// The abort closure runs at most once during immediate shutdown, rollback,
