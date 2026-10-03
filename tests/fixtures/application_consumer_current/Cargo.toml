@@ -17,7 +17,7 @@ path = "../../../../rs-execution-services/tests/fixtures/ioc_application_consume
 [dependencies]
 qubit-ioc = { path = "../../..", version = "0.3.0" }
 qubit-execution-services = { path = "../../../../rs-execution-services", version = "0.10" }
-qubit-event-bus = { path = "../../../../rs-event-bus", version = "0.19.0" }
+qubit-event-bus = { path = "../../../../rs-event-bus", version = "0.20.0" }
 qubit-fs-registry = { path = "../../../../rs-fs-registry", version = "0.7" }
 qubit-fs-local = { path = "../../../../rs-fs-local", version = "0.10", features = ["registry"] }
 qubit-fs = { path = "../../../../rs-fs", version = "0.2" }
