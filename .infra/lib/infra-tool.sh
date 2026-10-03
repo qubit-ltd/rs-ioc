@@ -36,7 +36,7 @@ if [ ! -x "$target" ] || [ "$installed" != "$revision" ]; then
     mv "$marker.tmp" "$marker"
 fi
 if [ "$tool" = "rs-infra-ci" ]; then
-    for dependency in rs-infra-style rs-infra-verify rs-infra-coverage; do
+    for dependency in rs-infra-style rs-infra-verify rs-infra-coverage rs-infra-dependency; do
         "$script_dir/infra-tool.sh" "$dependency" --help >/dev/null
     done
 fi
