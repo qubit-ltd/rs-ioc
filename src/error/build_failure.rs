@@ -12,6 +12,7 @@ use std::fmt;
 use std::sync::Mutex;
 
 use crate::error::BuildError;
+use crate::error::SettledBuildFailure;
 use crate::managed::ShutdownHandle;
 
 /// The original build error and optional ownership of already requested
@@ -104,6 +105,26 @@ impl BuildFailure {
                 .into_inner()
                 .unwrap_or_else(std::sync::PoisonError::into_inner),
         )
+    }
+
+    /// Awaits owned rollback once and preserves the original build error.
+    ///
+    /// A completed wait contributes its report even when cleanup failed. If
+    /// there is no cleanup handle, the report is `None` and no wait begins.
+    /// Cancelling this future drops the handle: unfinished aborts are requested
+    /// without a second wait, and no final report can be obtained from this
+    /// consumed failure.
+    pub async fn settle(self) -> SettledBuildFailure {
+        let (cause, cleanup) = self.into_parts();
+        let cleanup_report = if let Some(mut handle) = cleanup {
+            Some(match handle.wait().await {
+                Ok(report) => report,
+                Err(error) => error.report().clone(),
+            })
+        } else {
+            None
+        };
+        SettledBuildFailure::new(cause, cleanup_report)
     }
 }
 

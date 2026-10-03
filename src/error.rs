@@ -29,6 +29,9 @@ mod registration_error;
 // Owns the `ResolveError` family raised when querying built component
 // instances.
 mod resolve_error;
+// Owns the original build error and the report from explicitly awaited
+// rollback.
+mod settled_build_failure;
 
 pub use build_access_error::BuildAccessError;
 pub use build_error::BuildError;
@@ -37,3 +40,4 @@ pub use factory_error::FactoryError;
 pub use invalid_binding_id::InvalidBindingId;
 pub use registration_error::RegistrationError;
 pub use resolve_error::ResolveError;
+pub use settled_build_failure::SettledBuildFailure;
