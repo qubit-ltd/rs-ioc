@@ -14,17 +14,11 @@
 
 ## 安装
 
-待 `0.3.0` 正式发布后，可通过注册表添加依赖：
+在依赖中添加 `qubit-ioc`：
 
 ```toml
 [dependencies]
 qubit-ioc = "0.3"
-```
-
-当前 checkout 是 `0.3.0` 发布候选，尚未发布到 crates.io。在本地针对源码开发时可使用：
-
-```toml
-qubit-ioc = { version = "0.3", path = "../rs-ioc" }
 ```
 
 默认启用 `macros` 和 `config`；只使用手动注册时，在任一依赖声明中添加

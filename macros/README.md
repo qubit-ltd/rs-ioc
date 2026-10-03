@@ -4,7 +4,7 @@
 [![Coverage](https://img.shields.io/endpoint?url=https://qubit-ltd.github.io/rs-ioc/coverage-badge.json)](https://qubit-ltd.github.io/rs-ioc/coverage/)
 [![Crates.io](https://img.shields.io/crates/v/qubit-ioc-macros.svg?color=blue)](https://crates.io/crates/qubit-ioc-macros)
 [![Rust](https://img.shields.io/badge/rust-1.94+-blue.svg?logo=rust)](https://www.rust-lang.org)
-[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](../LICENSE)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](https://github.com/qubit-ltd/rs-ioc/blob/main/LICENSE)
 [![中文文档](https://img.shields.io/badge/文档-中文版-blue.svg)](README.zh_CN.md)
 
 This crate implements the procedural attributes used by `qubit-ioc`: `Component`,
@@ -20,12 +20,12 @@ details. Use matching `0.3.0` runtime and macro versions.
 
 ## Installation
 
-The workspace uses Rust 2024 and requires Rust 1.94 or newer. In an application
-beside the repository checkout, depend on the runtime facade:
+The workspace uses Rust 2024 and requires Rust 1.94 or newer. Applications
+should depend on the runtime facade from crates.io:
 
 ```toml
 [dependencies]
-qubit-ioc = { version = "0.3", path = "../rs-ioc", default-features = false, features = ["macros"] }
+qubit-ioc = { version = "0.3", default-features = false, features = ["macros"] }
 ```
 
 `macros` enables declarations and configuration groups. Reading configuration
@@ -41,7 +41,7 @@ A `#[Configuration]` module exports `register_ioc(&mut builder)` for its beans.
 Registration stages definitions, while roots choose what to construct and
 `context.get::<T>()?` reads the result. Grouping needs only `macros`.
 
-The [complete function bean example](../examples/readme_beans.rs) demonstrates
+The [complete function bean example](https://github.com/qubit-ltd/rs-ioc/blob/main/examples/readme_beans.rs) demonstrates
 all three forms. From the repository root, run:
 
 ```bash
@@ -58,7 +58,7 @@ Both build variants return `BuildFailure` on failure without waiting for rollbac
 inspect `cause()`, use `take_cleanup()` or `into_parts()`, and explicitly await
 any cleanup handle's `wait()`. Owner, untransferred
 `Managed`, and handle Drop request abort without waiting; query context Drop
-does not close resources. See the [lifecycle and migration guide](../doc/lifecycle.md).
+does not close resources. See the [lifecycle and migration guide](https://github.com/qubit-ltd/rs-ioc/blob/main/doc/lifecycle.md).
 
 ## Learn more
 
@@ -66,8 +66,7 @@ The API, supported declarations, configuration requirements, and runnable
 examples are documented in the [project README](https://github.com/qubit-ltd/rs-ioc/blob/main/README.md), the
 [English user guide](https://github.com/qubit-ltd/rs-ioc/blob/main/doc/user_guide.md), and the
 [中文用户手册](https://github.com/qubit-ltd/rs-ioc/blob/main/doc/user_guide.zh_CN.md).
-This repository contains the `0.3.0` release candidate; it has not been
-published to crates.io.
+Keep the runtime and macro crates on matching `0.3.0` versions.
 
 ## Testing
 
@@ -82,26 +81,25 @@ cargo test
 cargo test --all-features
 
 # Project CI checks
-./ci-check.sh
+./.infra/bin/ci-check.sh
 
 # Check code coverage
-./coverage.sh
+./.infra/bin/coverage.sh
 ```
 
 ## License
 
 Copyright (c) 2025 - 2026. Haixing Hu. All rights reserved.
 
-Licensed under the Apache License, Version 2.0. See [LICENSE](../LICENSE) for the
-full license text.
+Licensed under the Apache License, Version 2.0. See the [full license text](https://github.com/qubit-ltd/rs-ioc/blob/main/LICENSE).
 
 ## Contributing
 
 Contributions are welcome. Please follow the Rust API guidelines, keep public
-API documentation and tests current, and run `./align-ci.sh` to format code and
-`./ci-check.sh` to satisfy CI requirements before submitting a pull request.
-Run both scripts from the repository root; see [align-ci.sh](../align-ci.sh)
-and [ci-check.sh](../ci-check.sh).
+API documentation and tests current, and run `./.infra/bin/align-ci.sh` to format code and
+`./.infra/bin/ci-check.sh` to satisfy CI requirements before submitting a pull request.
+Run both scripts from the repository root; see [align-ci.sh](https://github.com/qubit-ltd/rs-ioc/blob/main/.infra/bin/align-ci.sh)
+and [ci-check.sh](https://github.com/qubit-ltd/rs-ioc/blob/main/.infra/bin/ci-check.sh).
 
 ## Author
 

@@ -14,7 +14,7 @@
 
 [English user guide](user_guide.md) · [项目 README](../README.zh_CN.md)
 
-本手册面向使用 `qubit-ioc` 0.3.0 发布候选的 Rust 应用开发者，介绍如何在启动时组装
+本手册面向使用 `qubit-ioc` 0.3.0 的 Rust 应用开发者，介绍如何在启动时组装
 应用级共享组件、定位错误，以及安排资源关闭。项目清单要求 Rust 1.94 或更新版本。
 
 ## 概念模型
@@ -39,11 +39,11 @@
 
 ### 安装与最小配置
 
-在与本仓库相邻的应用中添加依赖：
+在应用依赖中添加 `qubit-ioc`：
 
 ```toml
 [dependencies]
-qubit-ioc = { version = "0.3", path = "../rs-ioc", default-features = false }
+qubit-ioc = { version = "0.3", default-features = false }
 ```
 
 将下面的代码放到该应用的 `src/main.rs`，然后在应用目录运行 `cargo run`：
@@ -94,7 +94,7 @@ provider 通过自由函数创建值时，可以用 `#[bean]` 为函数生成可
 它使用 Rust 2024、Rust 1.94，只需启用 `macros`：
 
 ```toml
-qubit-ioc = { version = "0.3", path = "../rs-ioc", default-features = false, features = ["macros"] }
+qubit-ioc = { version = "0.3", default-features = false, features = ["macros"] }
 ```
 
 ```rust

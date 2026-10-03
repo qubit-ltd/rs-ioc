@@ -16,22 +16,15 @@ registration.
 
 ## Installation
 
-After the `0.3.0` release is published, add the registry dependency:
+Add `qubit-ioc` to your dependencies:
 
 ```toml
 [dependencies]
 qubit-ioc = "0.3"
 ```
 
-This checkout is a `0.3.0` release candidate and is not yet available from
-crates.io. To develop against a local checkout, use:
-
-```toml
-qubit-ioc = { version = "0.3", path = "../rs-ioc" }
-```
-
-The default features are `macros` and `config`. To use only the manual
-runtime, add `default-features = false` to either dependency declaration.
+The default features are `macros` and `config`. To use only the manual runtime,
+add `default-features = false` to the dependency declaration.
 
 | Feature | Default | Purpose |
 | --- | --- | --- |

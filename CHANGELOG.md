@@ -1,9 +1,9 @@
 # Changelog
 
-## 0.3.0 — release candidate
+## 0.3.0
 
-Breaking lifecycle and definition changes from the 0.2 source line; this version
-has not been published to crates.io. The [bilingual migration guide](doc/lifecycle.md)
+Breaking lifecycle and definition changes from the 0.2 source line. The
+[bilingual migration guide](doc/lifecycle.md)
 ([中文](doc/lifecycle.zh_CN.md)) gives every old-to-new call and exit path.
 
 - Builds now return the unique `Application` owner; cloneable `ApplicationContext`
@@ -72,4 +72,3 @@ changes from the earlier 0.1.0 source line.
 - `#[value]` and `ConfigurationProperties` keep direct, non-interpolating reads. Structured deserialization rejects unknown fields by default. Applications needing interpolation call `Config::get_interpolated` explicitly in a factory.
 
 Historical note: `0.2.0` was an unpublished release candidate in its source checkout.
-The current checkout targets unpublished `0.3.0`.
