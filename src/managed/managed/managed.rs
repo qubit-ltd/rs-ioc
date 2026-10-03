@@ -21,6 +21,8 @@ use crate::store::ErasedInstance;
 
 #[path = "ticket.rs"]
 mod ticket;
+#[path = "internal/ticket_state.rs"]
+mod ticket_state;
 
 /// One-shot synchronous stop request for a managed component.
 type StopCallback<T> = Box<dyn FnOnce(Arc<T>) -> Result<(), CleanupError> + Send + 'static>;

@@ -11,17 +11,12 @@ use std::sync::Arc;
 use std::sync::Mutex;
 
 use super::Managed;
+use super::ticket_state::TicketState;
 use crate::managed::CleanupError;
 use crate::managed::CleanupFuture;
 
 /// A request callback returning one ticket for the later wait callback.
 pub(super) type TicketRequest<T, K> = Box<dyn FnOnce(Arc<T>) -> Result<K, CleanupError> + Send + 'static>;
-
-/// The ticket waiting for consumption, plus whether observation has started.
-struct TicketState<K> {
-    pending: Option<K>,
-    wait_started: bool,
-}
 
 /// Stores a request ticket or returns it for disposal when waiting already
 /// began. Any replaced ticket is dropped by the caller after the lock is
