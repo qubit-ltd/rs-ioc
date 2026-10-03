@@ -19,6 +19,9 @@ use crate::managed::ErasedWait;
 use crate::managed::internal::cleanup_action::ErasedStop;
 use crate::store::ErasedInstance;
 
+#[path = "ticket.rs"]
+mod ticket;
+
 /// One-shot synchronous stop request for a managed component.
 type StopCallback<T> = Box<dyn FnOnce(Arc<T>) -> Result<(), CleanupError> + Send + 'static>;
 
@@ -126,6 +129,58 @@ impl<T: ?Sized + Send + Sync + 'static> Managed<T> {
         }
     }
 
+    /// Creates a managed value whose abort request returns its wait ticket.
+    ///
+    /// `abort` must request termination without waiting. `wait` consumes the
+    /// ticket during explicit shutdown and confirms termination. Dropping an
+    /// untransferred value calls only `abort`. The ticket's destructor must not
+    /// cancel shutdown, because an unused ticket may be discarded on upgrade.
+    /// Do not chain [`Self::with_graceful_stop`] onto this value: that callback
+    /// cannot return a ticket, so a successful graceful request leaves `wait`
+    /// without one. Use [`Self::asynchronous_with_graceful_ticket`] when a
+    /// graceful request is needed.
+    ///
+    /// # Errors
+    ///
+    /// Request and wait errors are retained in the final shutdown report. If
+    /// the request fails, waiting reports the missing ticket without panicking.
+    pub fn asynchronous_with_ticket<K, A, W>(value: Arc<T>, abort: A, wait: W) -> Self
+    where
+        K: Send + 'static,
+        A: FnOnce(Arc<T>) -> Result<K, CleanupError> + Send + 'static,
+        W: FnOnce(Arc<T>, K) -> CleanupFuture + Send + 'static,
+    {
+        ticket::adapt(value, abort, None, wait)
+    }
+
+    /// Creates a managed value with ticket-producing graceful and abort
+    /// requests.
+    ///
+    /// Graceful shutdown requests its ticket when `wait` is first polled. If
+    /// graceful request fails, abort is requested. An abort before the wait
+    /// starts replaces any pending graceful ticket; an abort after it starts
+    /// preserves the active wait future and discards the new abort ticket.
+    /// Neither request may block waiting for termination. Ticket destruction
+    /// must not cancel shutdown, including when an unused ticket is discarded.
+    /// Do not chain [`Self::with_graceful_stop`] onto this value: it replaces
+    /// the ticket-producing graceful request, so a successful replacement
+    /// leaves `wait` without a ticket.
+    ///
+    /// # Errors
+    ///
+    /// Request and wait errors are retained in the final shutdown report. If
+    /// no request produced a ticket, waiting reports that condition rather than
+    /// panicking.
+    pub fn asynchronous_with_graceful_ticket<K, A, G, W>(value: Arc<T>, abort: A, graceful: G, wait: W) -> Self
+    where
+        K: Send + 'static,
+        A: FnOnce(Arc<T>) -> Result<K, CleanupError> + Send + 'static,
+        G: FnOnce(Arc<T>) -> Result<K, CleanupError> + Send + 'static,
+        W: FnOnce(Arc<T>, K) -> CleanupFuture + Send + 'static,
+    {
+        ticket::adapt(value, abort, Some(Box::new(graceful)), wait)
+    }
+
     /// Adds a synchronous request for this component to stop accepting work
     /// and drain its existing work during graceful shutdown.
     ///
@@ -141,6 +196,11 @@ impl<T: ?Sized + Send + Sync + 'static> Managed<T> {
     /// callback, graceful shutdown uses abort for this component. For a
     /// synchronous component, a successful request is followed by its stop
     /// callback, which must confirm termination before shutdown completes.
+    /// On values created by either ticket constructor, this method adds or
+    /// replaces a graceful callback that cannot produce the ticket required by
+    /// `wait`. A successful request therefore reports a [`CleanupError`] during
+    /// shutdown. Supply graceful logic to
+    /// [`Self::asynchronous_with_graceful_ticket`] instead.
     ///
     /// # Returns
     ///
