@@ -68,14 +68,14 @@ where
     ));
     let application = match builder.build_async().await {
         Ok(application) => application,
-        Err(mut failure) => {
-            eprintln!("build failed: {}", failure.cause());
-            if let Some(mut cleanup) = failure.take_cleanup() {
-                if let Err(error) = cleanup.wait().await {
-                    eprintln!("rollback report: {:?}", error.report());
+        Err(failure) => {
+            let settled = failure.settle().await;
+            if let Some(report) = settled.cleanup_report() {
+                if !report.is_success() {
+                    eprintln!("rollback report: {report:?}");
                 }
             }
-            let (cause, _) = failure.into_parts();
+            let (cause, _) = settled.into_parts();
             return Err(cause.into());
         }
     };
@@ -101,17 +101,23 @@ where
 两者的错误类型。
 
 同步和异步构建在后续工厂返回错误时，都先为已经移交的托管资源请求 abort，再立即
-返回 `BuildFailure`。`cause()` 保留原始错误、来源和路径；`take_cleanup()` 只允许
-取出一次清理所有者，也可用 `into_parts()` 一起取得 cause 与可选句柄。图验证或预检
-失败时尚未创建资源，没有清理句柄。异步构建内部和 `BuildFailure` Drop 都不等待回滚。
-工厂的 unwind panic 仍向外传播；构建取消或栈展开只请求 abort，不执行 wait。
+返回 `BuildFailure`。`settle().await` 只等待一次可选回滚，返回同时保存原始
+`BuildError` 和可选 `ShutdownReport` 的 `SettledBuildFailure`。其 `Error::source()`
+指向原始构建错误及其工厂来源链。清理失败时也保留报告，可检查 `is_success()`、
+`failures()` 和 `incomplete()`。图验证或预检失败时没有已创建资源，
+`cleanup_report()` 为 `None`。`take_cleanup()` 和 `into_parts()` 仍可用于底层
+清理所有权转移。异步构建内部和 `BuildFailure` Drop 都不等待回滚。若取消 `settle()`
+future，丢弃清理句柄只请求剩余 abort，无法取得最终报告。工厂的 unwind panic 仍
+向外传播；构建取消或栈展开只请求 abort，不执行 wait。
 
 ## 请求契约与关闭顺序
 
 创建托管值时就应选定终止确认方式。`Managed::synchronous(value, stop)` 适用于
 stop 回调成功返回就表示资源已终止的情况。后台资源使用
 `Managed::asynchronous(value, abort, wait)`：`abort` 是同步、非阻塞的取消请求，
-`wait` 用来确认终止。abort 不能 join、block_on、等待条件变量、执行业务 handler
+`wait` 用来确认终止。请求返回 ticket 时使用 `Managed::asynchronous_with_ticket` 或
+`Managed::asynchronous_with_graceful_ticket`；未使用的 ticket 被丢弃时不能取消资源
+关闭。abort 不能 join、block_on、等待条件变量、执行业务 handler
 或进行无界 I/O。`.with_graceful_stop(request)` 只请求当前组件停止接收工作并排空，
 不能顺手关闭依赖。不能用 ready future 冒充尚未退出的后台任务。两种构造方式和
 ticket 等待见[托管资源适配指南](managed-adapters.zh_CN.md)。
@@ -164,10 +170,10 @@ poll 前就被丢弃时，会请求 abort；仅创建句柄不表示已经完成
 
 ## 接入 EventBus
 
-`qubit-event-bus` 0.18.0 的同步 `EventBus::shutdown(Immediate)` 仍会等待 worker 和
+`qubit-event-bus` 0.20.0 的同步 `EventBus::shutdown(Immediate)` 仍会等待 worker 和
 provider，因此不能放进托管 abort 或 graceful 请求回调。请求回调应调用
-`EventBus::request_shutdown(mode)`，保留返回的 `EventBusShutdown` ticket，在托管
-wait 回调里等待 `ticket.wait_async()`。Graceful 请求停止接收工作并排空；随后
+`EventBus::request_shutdown(mode)`，由 `Managed::asynchronous_with_graceful_ticket`
+管理返回的 ticket，在托管 wait 回调里等待 `ticket.wait_async()`。Graceful 请求停止接收工作并排空；随后
 Immediate 请求会加强同一次关闭。ticket 绑定那次关闭的 generation，丢弃 ticket
 或取消异步观察都不会取消后台关闭。`ticket.wait(timeout)` 限制同步观察者的等待，
 IoC `WaitPolicy` 限制异步 wait；两者都不能强制杀死 provider。用 `spawn_blocking`
@@ -186,10 +192,10 @@ IoC `WaitPolicy` 限制异步 wait；两者都不能强制杀死 provider。用 
 | build 返回 `ApplicationContext` | 返回 `Application`；通过 `application.context()` 查询，需要共享时克隆查询句柄。 |
 | 关闭前 `Arc::try_unwrap(context)` | 保留唯一 Application owner，直接由它关闭；查询句柄克隆可继续存在。 |
 | `begin_shutdown()` 固定先停止全部 | 正常退出选择 `begin_shutdown(ShutdownMode::Graceful)`，失败选择 `Immediate`；Graceful 首次 poll wait 才开始请求。 |
-| 异步 build 等待回滚后才报错 | `BuildFailure` 立即提供 `cause()` 和可选 `take_cleanup()` / `into_parts()` 所有者；应用显式驱动 cleanup `wait()`。`BuildError::CleanupFailed` 已移除，清理错误进入关闭报告。 |
+| 异步 build 等待回滚后才报错 | `BuildFailure` 在请求 abort 后立即返回；应用等待 `settle()` 取得原构建错误与可选清理报告。`take_cleanup()` / `into_parts()` 仍可供底层管理所有权。`BuildError::CleanupFailed` 已移除，清理错误进入关闭报告。 |
 | context / `Managed` Drop 不清理 | 查询 context 仍无关闭责任；owner、未移交 `Managed` 和关闭句柄 Drop 会请求 abort，不 wait。 |
 | 隐藏 `codegen_v1::DefinitionDraft` | 使用公开 `Definition::builder()` 与 `register_definition`；宏复用同一核心，仅配置诊断和生成代码 glue 仍隐藏。 |
-| 以 `EventBus::shutdown` 作为 stop | 使用非阻塞的 `request_shutdown`，保留 ticket，在 wait 回调中等待 `wait_async()`。 |
+| 以 `EventBus::shutdown` 作为 stop | 通过 ticket 适配器调用非阻塞的 `request_shutdown`，在 wait 回调中等待 `wait_async()`。 |
 | 集合每次查询时排序 | context 发布时按 order、ID、来源和注册位置预排序不可变类型索引，查询复用其顺序。 |
 
 集合注入和构建后查询仍按 order、ID、来源位置升序排列，完全相同的项保留注册顺序；
@@ -197,6 +203,7 @@ IoC `WaitPolicy` 限制异步 wait；两者都不能强制杀死 provider。用 
 但不承诺整体图算法严格线性，也不承诺固定耗时或生产环境加速倍数。
 
 下游验证保留独立锁定的[历史快照](../tests/fixtures/application_consumer/Cargo.toml)和
-[当前快照](../tests/fixtures/application_consumer_current/Cargo.toml)。历史验证只覆盖
-对应 pin 的源码；当前重构快照在外部改动尚未提交和固定 SHA 前使用本地已审查路径，
-不声称已有未发布的外部 SHA。边界见[当前设计](complete-design.zh_CN.md)。
+[当前快照](../tests/fixtures/application_consumer_current/Cargo.toml)。两份 manifest
+和 lockfile 现均指定 EventBus 0.20；历史 lane 保留较早的消费者源码，不覆盖当前的
+request/ticket 适配器。各 lane 的外部 checkout 修订由工作流定义，IoC 则使用待验证的
+当前修订。边界见[当前设计](complete-design.zh_CN.md)。

@@ -32,9 +32,10 @@ For a background worker, construct `Managed::asynchronous(value, abort, wait)`
 at creation time. `abort` is a synchronous, nonblocking request; `wait` returns
 an owned future that confirms termination. A ready future is valid only after
 the resource has actually terminated. During an explicit shutdown, IoC waits
-for each consumer before stopping its dependencies. During cancellation, Drop,
-or a failed build, IoC requests abort but cannot wait automatically; if a
-failed build returns a cleanup handle, the application must drive it.
+for each consumer before stopping its dependencies. During cancellation or
+Drop, IoC requests abort without waiting. A failed build can be observed with
+`BuildFailure::settle().await`, which awaits its optional cleanup handle and
+retains the original build error and report.
 
 ```rust
 use std::sync::Arc;
@@ -58,41 +59,74 @@ report successful shutdown while that resource still runs. It may then close
 dependencies that the worker still uses. `ShutdownReport::incomplete()` means
 termination was not confirmed; it does not mean the worker was killed.
 
-## Preserve a shutdown ticket through cancellation
+## Consume a shutdown ticket
 
-Some resources return a shutdown ticket when asked to stop. Store that ticket
-in adapter state, and move it into the managed `wait` future. The ticket must
-remain owned by the future while it is pending. `ShutdownHandle::wait()` borrows
-the handle: dropping that borrowing future keeps the active wait and deadline
-in the handle, so polling `wait()` again resumes the same observation. Dropping
-the handle itself abandons observation and requests remaining aborts; it does
-not prove termination.
+If a stop request returns a ticket, use
+`Managed::asynchronous_with_ticket(value, abort, wait)`. Use
+`Managed::asynchronous_with_graceful_ticket(value, abort, graceful, wait)`
+when both requests return a ticket. The adapter stores an unobserved ticket
+and transfers it to the wait future. It does not run a request callback or
+poll the wait future while holding its internal lock. For EventBus 0.20, the
+complete adapter is:
 
-The [EventBus integration fixture](https://github.com/qubit-ltd/rs-execution-services/blob/main/tests/fixtures/ioc_application_consumer/src/managed_event_bus.rs)
-shows the request and ticket pattern. Its abort callback calls
-`EventBus::request_shutdown(Immediate)`, retains the returned
-`EventBusShutdown`, and its wait callback awaits `ticket.wait_async()`.
+```rust
+use std::sync::Arc;
+use std::time::Duration;
+use qubit_event_bus::EventBus;
+use qubit_event_bus::spi::ShutdownMode as BusShutdownMode;
+use qubit_ioc::{CleanupError, Managed};
+
+fn managed_event_bus(bus: Arc<EventBus>) -> Managed<EventBus> {
+    Managed::asynchronous_with_graceful_ticket(
+        bus,
+        |bus| bus.request_shutdown(BusShutdownMode::Immediate)
+            .map_err(CleanupError::new),
+        |bus| bus.request_shutdown(BusShutdownMode::Graceful {
+            timeout: Duration::from_secs(30),
+        }).map_err(CleanupError::new),
+        |_, ticket| Box::pin(async move {
+            ticket.wait_async().await.map(|_| ()).map_err(CleanupError::new)
+        }),
+    )
+}
+```
+
 `EventBus::shutdown(Immediate)` waits synchronously for workers and providers,
-so it does not satisfy the nonblocking abort contract. The ticket identifies
-the shutdown attempt; cancelling observation or dropping the ticket does not
-cancel background shutdown. This source is an integration fixture that checks
-a cross crate contract, not evidence of production adoption.
+so it does not satisfy the nonblocking abort contract. EventBus's ticket
+identifies a shutdown generation; dropping it does not cancel background
+shutdown. **That Drop behavior is required by these ticket constructors:** an
+unused graceful or Immediate ticket can be discarded during an upgrade. For a
+resource whose ticket Drop cancels shutdown, use lower-level
+`Managed::asynchronous` and manage observation according to that resource's
+contract. The [EventBus integration fixture](https://github.com/qubit-ltd/rs-execution-services/blob/main/tests/fixtures/ioc_application_consumer/src/managed_event_bus.rs)
+checks this adapter as a cross crate contract, not as production adoption.
+
+`ShutdownHandle::wait()` borrows the handle. Cancelling that borrowing future
+retains the active wait and deadline; calling `wait()` again resumes the same
+ticket observation. Dropping the handle itself requests remaining aborts and
+does not prove termination.
 
 ## Graceful requests and Immediate escalation
 
-Add `.with_graceful_stop(request)` when a resource can first stop accepting new
-work and drain current work. The request must only affect its own admission and
-must not close its dependencies. `Graceful` begins on the first poll of the
-shutdown handle. IoC waits for each consumer before moving to its dependencies.
+Add `.with_graceful_stop(request)` to the lower-level constructors when a
+resource can first stop accepting new work and drain current work. The ticket
+constructor with `graceful` already installs that request. It must only affect
+its own admission and must not close dependencies. `Graceful` begins on the
+first poll of `ShutdownHandle::wait()`. IoC waits for each consumer before
+moving to its dependencies.
+Do not chain `.with_graceful_stop()` onto either ticket constructor: it adds or
+replaces a graceful callback that cannot produce the ticket required by wait.
+Use `asynchronous_with_graceful_ticket` for a graceful ticket request.
 If the graceful request fails or its grace budget expires, IoC requests abort.
 Calling `ShutdownHandle::abort()` upgrades unfinished entries to Immediate
 without recreating an active wait or restarting its deadline.
 
-For EventBus, issue `request_shutdown(Graceful { timeout })` in the graceful
-callback, retain its ticket, and issue `request_shutdown(Immediate)` if an
-upgrade is needed. The later request strengthens the same shutdown attempt;
-the retained wait observes its completion. Missing graceful support is an
-explicit fallback reported by `ShutdownReport::fallbacks()`.
+For EventBus, the graceful callback issues `request_shutdown(Graceful {
+timeout })`; Immediate upgrade issues `request_shutdown(Immediate)` for the
+same shutdown generation. If wait has started, the adapter preserves that
+future and discards the new ticket. If wait has not started, the new ticket
+replaces the pending graceful ticket. Missing graceful support is an explicit
+fallback reported by `ShutdownReport::fallbacks()`.
 
 The [ExecutionServices integration fixture](https://github.com/qubit-ltd/rs-execution-services/blob/main/tests/fixtures/ioc_application_consumer/src/managed_execution_services.rs)
 separates `stop()` for immediate cancellation, `shutdown()` for a graceful

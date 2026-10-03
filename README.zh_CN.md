@@ -130,7 +130,32 @@ Graceful 请求从首次轮询 `wait()` 开始；`ShutdownMode::Immediate` 会�
 选中托管定义时必须配置 `WaitPolicy`；实际应用用 `WaitPolicy::bounded` 和由应用驱动的
 计时器。自定义工厂与 trait alias 可使用公开的 `Definition::builder()` 和
 `register_definition`。stop 成功即确认终止时选择 `Managed::synchronous`；需要
-先发送非阻塞停止请求、再等待终止时选择 `Managed::asynchronous`。具体适配方式见
+先发送非阻塞停止请求、再等待终止时选择 `Managed::asynchronous`。关闭请求返回 ticket 时，使用
+`Managed::asynchronous_with_ticket`；有独立 Graceful 请求时使用
+`Managed::asynchronous_with_graceful_ticket`。两种 ticket 构造器均不可再链式调用
+`.with_graceful_stop()`，否则会添加或替换无法产出 wait 所需 ticket 的 graceful 回调。以下最小路径无需
+外部运行时即可编译：
+
+```rust
+use std::sync::Arc;
+use qubit_ioc::{BuildError, BuildFailure, CleanupError, Managed};
+
+async fn ticket_and_failure() {
+    let _managed = Managed::asynchronous_with_graceful_ticket(
+        Arc::new(()),
+        |_| Ok::<u64, CleanupError>(2),
+        |_| Ok::<u64, CleanupError>(1),
+        |_, ticket| Box::pin(async move {
+            assert!(ticket == 1 || ticket == 2);
+            Ok(())
+        }),
+    );
+    let settled = BuildFailure::from(BuildError::NoRootsSelected).settle().await;
+    assert!(settled.cleanup_report().is_none());
+}
+```
+
+ticket 析构不得取消资源关闭。具体适配方式见
 [托管资源适配指南](doc/managed-adapters.zh_CN.md)，完整关闭与 0.3 迁移步骤见
 [生命周期指南](doc/lifecycle.zh_CN.md)。
 
@@ -138,8 +163,10 @@ Graceful 请求从首次轮询 `wait()` 开始；`ShutdownMode::Immediate` 会�
 结构化反序列化默认拒绝未知字段。需要插值时，可在工厂中显式调用
 `Config::get_interpolated`。
 工厂 panic 遵循 Rust 的 panic 语义并向外传播。同步和异步构建失败时，都会先为已移交
-资源请求 abort，再立即返回 `BuildFailure`。通过 `cause()` 检查原始错误，再用
-`take_cleanup()` 或 `into_parts()` 取出清理所有者，并显式等待 `wait()` 观察终止与清理错误。
+资源请求 abort，再立即返回 `BuildFailure`。调用 `failure.settle().await` 可同时保留
+原始 `BuildError` 和可选的 `ShutdownReport`；
+清理失败时也要检查 `cleanup_report()`。需要自行管理清理句柄时，仍可使用底层
+`take_cleanup()` 或 `into_parts()`。
 
 ### 手动组装
 
@@ -210,10 +237,10 @@ cargo test
 cargo test --all-features
 
 # 运行项目 CI 检查
-./ci-check.sh
+.infra/bin/ci-check.sh
 
 # 检查代码覆盖率
-./coverage.sh
+.infra/bin/coverage.sh
 ```
 
 ## 许可证
@@ -226,7 +253,7 @@ Copyright (c) 2025 - 2026. Haixing Hu. All rights reserved.
 ## 贡献
 
 欢迎贡献。请遵循 Rust API 指南，及时更新公共 API 文档与测试，并在提交
-Pull Request 前运行 `./align-ci.sh`格式化代码，运行`./ci-check.sh`对齐CI要求。
+Pull Request 前运行 `.infra/bin/align-ci.sh` 格式化代码，运行 `.infra/bin/ci-check.sh` 对齐 CI 要求。
 
 ## 作者
 

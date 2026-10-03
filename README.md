@@ -151,7 +151,36 @@ Managed graphs require an explicit `WaitPolicy`; use
 trait aliases without relying on macro internals. Choose
 `Managed::synchronous` when successful stop confirms termination, or
 `Managed::asynchronous` to pair a non-blocking stop request with a termination
-wait. See the [managed adapter guide](doc/managed-adapters.md) and
+wait. When a request returns a shutdown ticket, use
+`Managed::asynchronous_with_ticket` or
+`Managed::asynchronous_with_graceful_ticket`; the latter accepts separate
+Immediate and Graceful requests. Do not chain `.with_graceful_stop()` onto
+either ticket constructor; it adds or replaces a graceful callback that cannot
+produce the ticket required by the wait callback.
+For example, the following API path compiles
+without an external runtime:
+
+```rust
+use std::sync::Arc;
+use qubit_ioc::{BuildError, BuildFailure, CleanupError, Managed};
+
+async fn ticket_and_failure() {
+    let _managed = Managed::asynchronous_with_graceful_ticket(
+        Arc::new(()),
+        |_| Ok::<u64, CleanupError>(2),
+        |_| Ok::<u64, CleanupError>(1),
+        |_, ticket| Box::pin(async move {
+            assert!(ticket == 1 || ticket == 2);
+            Ok(())
+        }),
+    );
+    let settled = BuildFailure::from(BuildError::NoRootsSelected).settle().await;
+    assert!(settled.cleanup_report().is_none());
+}
+```
+
+The ticket destructor must not cancel resource shutdown. See the
+[managed adapter guide](doc/managed-adapters.md) and
 [lifecycle and 0.3 migration guide](doc/lifecycle.md).
 
 Config reads from `#[value]` and `ConfigurationProperties` preserve stored
@@ -160,9 +189,10 @@ fields by default. When interpolation is required, call
 `Config::get_interpolated` explicitly in a factory.
 Factory panics follow Rust's panic behavior and propagate. On failure, both
 synchronous and asynchronous construction return `BuildFailure` immediately after requesting
-abort for transferred managed resources. Inspect `cause()`, take the cleanup
-owner with `take_cleanup()` or `into_parts()`, and explicitly await its `wait()`
-to observe termination and cleanup failures.
+abort for transferred managed resources. Await `failure.settle()` to retain
+the original `BuildError` and an optional `ShutdownReport` together; inspect
+`cleanup_report()` even when cleanup failed. The lower-level `take_cleanup()`
+and `into_parts()` remain available when the caller needs the cleanup handle.
 
 ### Manual assembly
 
@@ -243,10 +273,10 @@ cargo test
 cargo test --all-features
 
 # Project CI checks
-./ci-check.sh
+.infra/bin/ci-check.sh
 
 # Check code coverage
-./coverage.sh
+.infra/bin/coverage.sh
 ```
 
 ## License
@@ -259,8 +289,8 @@ full license text.
 ## Contributing
 
 Contributions are welcome. Please follow the Rust API guidelines, keep public
-API documentation and tests current, and run `./align-ci.sh` to format code and
-`./ci-check.sh` to satisfy CI requirements before submitting a pull request.
+API documentation and tests current, and run `.infra/bin/align-ci.sh` to format code and
+`.infra/bin/ci-check.sh` to satisfy CI requirements before submitting a pull request.
 
 ## Author
 

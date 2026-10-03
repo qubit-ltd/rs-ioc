@@ -26,8 +26,9 @@ let managed = Managed::synchronous(Arc::clone(&worker), |worker| {
 后台 worker 需要先发停止请求、再异步确认退出时，在创建时就使用
 `Managed::asynchronous(value, abort, wait)`。`abort` 是同步、非阻塞的请求；
 `wait` 返回拥有等待状态的 future，完成时才确认终止。worker 尚未退出时，不能用
-立即就绪的 future 冒充终止。显式关闭会等待消费者终止，再关闭它的依赖；构建取消、
-Drop 或构建失败只能先请求 abort。构建失败返回清理句柄时，应用仍要显式驱动它。
+立即就绪的 future 冒充终止。显式关闭会等待消费者终止，再关闭它的依赖；构建取消或
+Drop 只请求 abort，不等待。构建失败可调用 `BuildFailure::settle().await` 等待可选的
+清理句柄，同时保留原始构建错误和报告。
 
 ```rust
 use std::sync::Arc;
@@ -49,32 +50,65 @@ let managed = Managed::asynchronous(
 在它仍运行时报告关闭成功，随后关闭它仍在使用的依赖。
 `ShutdownReport::incomplete()` 只表示终止尚未得到确认，不表示 worker 已被杀死。
 
-## 保存关闭 ticket，并在取消等待后恢复
+## 消费关闭 ticket
 
-有些资源收到关闭请求后返回 ticket。适配器应保存该 ticket，并在托管 `wait`
-回调中把它移入等待 future。等待未完成时，future 必须继续持有 ticket。
-`ShutdownHandle::wait()` 借用句柄；取消这次借用的 future 后，句柄仍保留正在进行
-的等待和期限，再次调用 `wait()` 会继续同一次观察。丢弃句柄则放弃观察、请求剩余
-资源 abort，不能证明它们已经终止。
+停止请求返回 ticket 时，使用
+`Managed::asynchronous_with_ticket(value, abort, wait)`；Graceful 和 Immediate
+分别返回 ticket 时，使用
+`Managed::asynchronous_with_graceful_ticket(value, abort, graceful, wait)`。
+适配器保存尚未观察的 ticket，并将其移入等待 future；内部持锁期间不执行请求回调，
+也不轮询等待 future。对 EventBus 0.20，完整适配器如下：
 
+```rust
+use std::sync::Arc;
+use std::time::Duration;
+use qubit_event_bus::EventBus;
+use qubit_event_bus::spi::ShutdownMode as BusShutdownMode;
+use qubit_ioc::{CleanupError, Managed};
+
+fn managed_event_bus(bus: Arc<EventBus>) -> Managed<EventBus> {
+    Managed::asynchronous_with_graceful_ticket(
+        bus,
+        |bus| bus.request_shutdown(BusShutdownMode::Immediate)
+            .map_err(CleanupError::new),
+        |bus| bus.request_shutdown(BusShutdownMode::Graceful {
+            timeout: Duration::from_secs(30),
+        }).map_err(CleanupError::new),
+        |_, ticket| Box::pin(async move {
+            ticket.wait_async().await.map(|_| ()).map_err(CleanupError::new)
+        }),
+    )
+}
+```
+
+同步的 `EventBus::shutdown(Immediate)` 会等待 worker 和 provider，不能用作非阻塞
+abort 回调。EventBus ticket 绑定关闭 generation，丢弃 ticket 不会取消后台关闭。
+**这也是上述两个 ticket 构造器的使用前提：**升级时可能丢弃未使用的 Graceful 或
+Immediate ticket。若某资源丢弃 ticket 就会取消关闭，应使用底层
+`Managed::asynchronous`，依资源自身契约管理观察。
 [EventBus 集成夹具](https://github.com/qubit-ltd/rs-execution-services/blob/main/tests/fixtures/ioc_application_consumer/src/managed_event_bus.rs)
-展示了请求与 ticket 的配合：abort 回调调用
-`EventBus::request_shutdown(Immediate)` 并保存返回的 `EventBusShutdown`，wait
-回调等待 `ticket.wait_async()`。`EventBus::shutdown(Immediate)` 会同步等待 worker
-和 provider，不能作为非阻塞的 abort 回调。ticket 对应一次关闭操作；取消观察或
-丢弃 ticket 不会取消后台关闭。该源码是验证跨 crate 契约的集成夹具，不是生产采用证据。
+验证跨 crate 契约，不代表已有生产应用采用。
+
+`ShutdownHandle::wait()` 借用句柄；取消该借用 future 后，句柄仍保留正在进行的等待和
+期限，再次调用 `wait()` 会继续观察同一 ticket。丢弃句柄会请求剩余资源 abort，
+不能证明它们已经终止。
 
 ## Graceful 排空与 Immediate 升级
 
-组件支持先停止接收新工作、再排空已有工作时，可添加
-`.with_graceful_stop(request)`。该请求只处理组件自身的接纳状态，不能顺手关闭依赖。
-Graceful 请求在首次轮询关闭句柄时开始；IoC 等待一个消费者终止后再处理其依赖。
+对底层构造器，组件支持先停止接收新工作、再排空已有工作时，可添加
+`.with_graceful_stop(request)`。带 `graceful` 参数的 ticket 构造器已安装该请求。
+请求只处理组件自身的接纳状态，不能顺手关闭依赖。Graceful 请求在首次轮询
+`ShutdownHandle::wait()` 时开始；IoC 等待一个消费者终止后再处理其依赖。
+两种 ticket 构造器均不可再链式调用 `.with_graceful_stop()`：它会添加或替换一个无法
+产出 wait 所需 ticket 的 graceful 回调。Graceful ticket 请求应使用
+`asynchronous_with_graceful_ticket`。
 请求失败或 grace 期限到期后，IoC 会请求 abort。调用
 `ShutdownHandle::abort()` 可把未完成条目升级为 Immediate，保留当前等待及其期限。
 
-EventBus 的 graceful 回调调用 `request_shutdown(Graceful { timeout })` 并保存
-ticket；需要升级时，再调用 `request_shutdown(Immediate)`。后一个请求加强同一次
-关闭，原先保留的 wait 继续观察结果。缺少 graceful 支持的组件会退回 abort，并
+EventBus 的 graceful 回调调用 `request_shutdown(Graceful { timeout })`；升级时调用
+`request_shutdown(Immediate)`，加强同一次关闭 generation。若 wait 已开始，适配器
+保留正在观察的 future，丢弃新 ticket；若尚未开始，新 ticket 替换待观察的 graceful
+ticket。缺少 graceful 支持的组件会退回 abort，并
 记录在 `ShutdownReport::fallbacks()` 中。
 
 [ExecutionServices 集成夹具](https://github.com/qubit-ltd/rs-execution-services/blob/main/tests/fixtures/ioc_application_consumer/src/managed_execution_services.rs)

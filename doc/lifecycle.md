@@ -83,14 +83,14 @@ where
     ));
     let application = match builder.build_async().await {
         Ok(application) => application,
-        Err(mut failure) => {
-            eprintln!("build failed: {}", failure.cause());
-            if let Some(mut cleanup) = failure.take_cleanup() {
-                if let Err(error) = cleanup.wait().await {
-                    eprintln!("rollback report: {:?}", error.report());
+        Err(failure) => {
+            let settled = failure.settle().await;
+            if let Some(report) = settled.cleanup_report() {
+                if !report.is_success() {
+                    eprintln!("rollback report: {report:?}");
                 }
             }
-            let (cause, _) = failure.into_parts();
+            let (cause, _) = settled.into_parts();
             return Err(cause.into());
         }
     };
@@ -120,11 +120,17 @@ in their own error type.
 Both synchronous and asynchronous builds request abort for all transferred
 managed resources and immediately return `BuildFailure` when a later factory
 returns an error. `cause()` preserves the original error, sources and path;
-`take_cleanup()` transfers cleanup ownership once. `into_parts()` is an
-alternative that returns the cause and optional handle together. Graph or
-preflight failure has no constructed resources and no cleanup handle. Neither
-async build nor dropping `BuildFailure` waits for rollback. A factory unwind
-panic still propagates; cancellation or unwinding requests abort without wait.
+`settle().await` awaits optional rollback once and returns
+`SettledBuildFailure`, keeping the original `BuildError` and an optional
+`ShutdownReport` together. Its `Error::source()` is the original build error,
+including the factory source chain. The report is retained even when cleanup
+failed; inspect `is_success()`, `failures()`, and `incomplete()`. Graph or
+preflight failure has no constructed resources, so `cleanup_report()` is
+`None`. `take_cleanup()` and `into_parts()` remain lower-level ways to transfer
+cleanup ownership. Neither async build nor dropping `BuildFailure` waits for
+rollback. If the `settle()` future is cancelled, dropping its cleanup handle
+requests remaining aborts but yields no final report. A factory unwind panic
+still propagates; cancellation or unwinding requests abort without wait.
 
 ## Request contracts and shutdown ordering
 
@@ -132,7 +138,10 @@ Choose the completion contract when constructing a managed value.
 `Managed::synchronous(value, stop)` is for a stop callback whose successful
 return means the resource has terminated. For a background resource, use
 `Managed::asynchronous(value, abort, wait)`: `abort` is a synchronous,
-non-blocking cancellation request, and `wait` confirms termination. The abort
+non-blocking cancellation request, and `wait` confirms termination. If the
+request returns a ticket, use `Managed::asynchronous_with_ticket` or
+`Managed::asynchronous_with_graceful_ticket`. Dropping an unused ticket must
+not cancel shutdown. The abort
 request must not join, block on a future or condition variable, execute
 business handlers, or perform unbounded I/O. `.with_graceful_stop(request)`
 requests draining of this component: close its own admission without closing
@@ -205,11 +214,12 @@ observe their lifecycle, not a promise that Drop finishes it.
 
 ## EventBus adapters
 
-For `qubit-event-bus` 0.18.0, even synchronous
+For `qubit-event-bus` 0.20.0, even synchronous
 `EventBus::shutdown(Immediate)` waits for workers and providers. Never call it
 from a managed abort or graceful request callback. Use
-`EventBus::request_shutdown(mode)` there and retain its `EventBusShutdown`
-ticket; await `ticket.wait_async()` inside the managed wait callback. A graceful
+`EventBus::request_shutdown(mode)` through
+`Managed::asynchronous_with_graceful_ticket`; await `ticket.wait_async()`
+inside its wait callback. A graceful
 request closes admission and drains; a later Immediate request strengthens that
 attempt. The ticket tracks that attempt's generation. Dropping a ticket or
 cancelling its async observation does not cancel background shutdown.
@@ -231,10 +241,10 @@ code-generation compatibility layer.
 | Build returns `ApplicationContext` | Build returns `Application`; query through `application.context()`, clone that handle for sharing. |
 | `Arc::try_unwrap(context)` before shutdown | Retain the unique application owner and call its shutdown directly; query clones can remain alive. |
 | `begin_shutdown()` stops all before waiting | Choose `begin_shutdown(ShutdownMode::Graceful)` for normal exit or `Immediate` for failure; Graceful requests start on the first wait poll. |
-| Async build waits for rollback before returning error | `BuildFailure` immediately delivers `cause()` and optional `take_cleanup()` / `into_parts()` owner; explicitly drive cleanup `wait()`. `BuildError::CleanupFailed` is removed; cleanup errors belong to the shutdown report. |
+| Async build waits for rollback before returning error | `BuildFailure` returns immediately after abort requests; await `settle()` for the original build error and optional completed cleanup report. `take_cleanup()` / `into_parts()` remain lower-level ownership APIs. `BuildError::CleanupFailed` is removed; cleanup errors belong to the shutdown report. |
 | Context / `Managed` Drop performs no cleanup | Query context still has no shutdown responsibility; owner, untransferred `Managed`, and handle Drop request abort, never wait. |
 | Hidden `codegen_v1::DefinitionDraft` | Use public `Definition::builder()` and `register_definition`; macros use this core too. Only configuration diagnostics and generated-code glue remain hidden. |
-| `EventBus::shutdown` used as a stop callback | Use non-blocking `request_shutdown`, retain the ticket, and await `wait_async()` in the wait callback. |
+| `EventBus::shutdown` used as a stop callback | Use non-blocking `request_shutdown` through the ticket adapter and await `wait_async()` in its wait callback. |
 | Collections sorted on each query | Publication pre-sorts immutable per-type indexes by order, ID, source and registration position; queries reuse the order. |
 
 Collection injection and post-build collections keep ascending order, ID,
@@ -246,7 +256,8 @@ be strictly linear, and no fixed timing or production speedup is guaranteed.
 Downstream lifecycle verification keeps separate
 [historical](../tests/fixtures/application_consumer/Cargo.toml) and
 [current](../tests/fixtures/application_consumer_current/Cargo.toml) locked
-snapshots. Historical verification covers that pin's code. The current
-refactor snapshot uses local reviewed paths until external changes have been
-committed and pinned; it does not claim an unpublished external SHA exists.
+snapshots. Both manifests and lockfiles now specify EventBus 0.20, but the
+historical lane retains its earlier consumer source and does not exercise the
+current request/ticket adapter. The workflow defines the external checkout
+revisions for each lane; IoC is the revision under test.
 See the [current design](complete-design.md) for these boundaries.
