@@ -69,13 +69,13 @@ where
     let application = match builder.build_async().await {
         Ok(application) => application,
         Err(failure) => {
-            let settled = failure.settle().await;
-            if let Some(report) = settled.cleanup_report() {
+            let mut failure = failure;
+            if let Some(report) = failure.wait_cleanup().await {
                 if !report.is_success() {
                     eprintln!("rollback report: {report:?}");
                 }
             }
-            let (cause, _) = settled.into_parts();
+            let (cause, _) = failure.into_parts();
             return Err(cause.into());
         }
     };
@@ -101,26 +101,28 @@ where
 两者的错误类型。
 
 同步和异步构建在后续工厂返回错误时，都先为已经移交的托管资源请求 abort，再立即
-返回 `BuildFailure`。`settle().await` 只等待一次可选回滚，返回同时保存原始
-`BuildError` 和可选 `ShutdownReport` 的 `SettledBuildFailure`。其 `Error::source()`
-指向原始构建错误及其工厂来源链。清理失败时也保留报告，可检查 `is_success()`、
-`failures()` 和 `incomplete()`。图验证或预检失败时没有已创建资源，
-`cleanup_report()` 为 `None`。`take_cleanup()` 和 `into_parts()` 仍可用于底层
-清理所有权转移。异步构建内部和 `BuildFailure` Drop 都不等待回滚。若取消 `settle()`
-future，丢弃清理句柄只请求剩余 abort，无法取得最终报告。工厂的 unwind panic 仍
-向外传播；构建取消或栈展开只请求 abort，不执行 wait。
+返回 `BuildFailure`。`wait_cleanup(&mut self).await` 等待可选回滚，同时让原始错误继续
+留在同一个 failure 中；其 `cause()` 和 `Error::source()` 保留原始构建错误及工厂来源链。
+清理失败时也保留报告，可检查 `is_success()`、`failures()` 和 `incomplete()`。图验证或
+预检失败时没有已创建资源，`wait_cleanup()` 返回 `None`。`take_cleanup()` 和
+`into_parts()` 仍可用于底层清理所有权转移。异步构建内部和 `BuildFailure` Drop 都不
+等待回滚。若取消 `wait_cleanup()` future，句柄和当前等待仍留在 failure 中；再次调用
+会继续观察，而不会重复请求 abort。工厂的 unwind panic 仍向外传播；构建取消或栈展开
+只请求 abort，不执行 wait。
 
 ## 请求契约与关闭顺序
 
 创建托管值时就应选定终止确认方式。`Managed::synchronous(value, stop)` 适用于
 stop 回调成功返回就表示资源已终止的情况。后台资源使用
 `Managed::asynchronous(value, abort, wait)`：`abort` 是同步、非阻塞的取消请求，
-`wait` 用来确认终止。请求返回 ticket 时使用 `Managed::asynchronous_with_ticket` 或
-`Managed::asynchronous_with_graceful_ticket`；未使用的 ticket 被丢弃时不能取消资源
-关闭。abort 不能 join、block_on、等待条件变量、执行业务 handler
-或进行无界 I/O。`.with_graceful_stop(request)` 只请求当前组件停止接收工作并排空，
-不能顺手关闭依赖。不能用 ready future 冒充尚未退出的后台任务。两种构造方式和
-ticket 等待见[托管资源适配指南](managed-adapters.zh_CN.md)。
+`wait` 用来确认终止。需要优雅关闭时，在构造阶段选择
+`Managed::synchronous_with_graceful` 或 `Managed::asynchronous_with_graceful`，让 graceful
+回调与 stop/abort 和 wait 一起固定下来。请求返回 ticket 时使用
+`Managed::asynchronous_with_ticket` 或 `Managed::asynchronous_with_graceful_ticket`，由构造器
+保持请求产出的 ticket 与 wait 回调配对；未使用的 ticket 被丢弃时不能取消资源关闭。
+abort 和 graceful 请求不能 join、block_on、等待条件变量、执行业务 handler 或进行无界
+I/O。graceful 请求只排空当前组件，不能顺手关闭依赖。不能用 ready future 冒充尚未退出的
+后台任务。更多示例见[托管资源适配指南](managed-adapters.zh_CN.md)。
 
 - `application.begin_shutdown(ShutdownMode::Graceful)` 转移所有权并发布 ShuttingDown，
   首次轮询 `wait()` 才开始请求。按逆构建顺序逐个请求消费者排空，等待它终止后才
@@ -192,7 +194,7 @@ IoC `WaitPolicy` 限制异步 wait；两者都不能强制杀死 provider。用 
 | build 返回 `ApplicationContext` | 返回 `Application`；通过 `application.context()` 查询，需要共享时克隆查询句柄。 |
 | 关闭前 `Arc::try_unwrap(context)` | 保留唯一 Application owner，直接由它关闭；查询句柄克隆可继续存在。 |
 | `begin_shutdown()` 固定先停止全部 | 正常退出选择 `begin_shutdown(ShutdownMode::Graceful)`，失败选择 `Immediate`；Graceful 首次 poll wait 才开始请求。 |
-| 异步 build 等待回滚后才报错 | `BuildFailure` 在请求 abort 后立即返回；应用等待 `settle()` 取得原构建错误与可选清理报告。`take_cleanup()` / `into_parts()` 仍可供底层管理所有权。`BuildError::CleanupFailed` 已移除，清理错误进入关闭报告。 |
+| 异步 build 等待回滚后才报错 | `BuildFailure` 在请求 abort 后立即返回；应用可借用 failure 调用 `wait_cleanup(&mut self)`，取得可选清理报告并保留原始原因。取消等待后再次调用可继续观察。`take_cleanup()` / `into_parts()` 仍可供底层管理所有权。`BuildError::CleanupFailed` 已移除，清理错误进入关闭报告。 |
 | context / `Managed` Drop 不清理 | 查询 context 仍无关闭责任；owner、未移交 `Managed` 和关闭句柄 Drop 会请求 abort，不 wait。 |
 | 隐藏 `codegen_v1::DefinitionDraft` | 使用公开 `Definition::builder()` 与 `register_definition`；宏复用同一核心，仅配置诊断和生成代码 glue 仍隐藏。 |
 | 以 `EventBus::shutdown` 作为 stop | 通过 ticket 适配器调用非阻塞的 `request_shutdown`，在 wait 回调中等待 `wait_async()`。 |

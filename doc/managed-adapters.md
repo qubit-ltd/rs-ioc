@@ -34,8 +34,9 @@ an owned future that confirms termination. A ready future is valid only after
 the resource has actually terminated. During an explicit shutdown, IoC waits
 for each consumer before stopping its dependencies. During cancellation or
 Drop, IoC requests abort without waiting. A failed build can be observed with
-`BuildFailure::settle().await`, which awaits its optional cleanup handle and
-retains the original build error and report.
+`BuildFailure::wait_cleanup(&mut self).await`, which awaits its optional
+cleanup handle while the same `BuildFailure` retains the original cause. If
+the wait is cancelled, calling it again resumes cleanup observation.
 
 ```rust
 use std::sync::Arc;
@@ -108,15 +109,15 @@ does not prove termination.
 
 ## Graceful requests and Immediate escalation
 
-Add `.with_graceful_stop(request)` to the lower-level constructors when a
-resource can first stop accepting new work and drain current work. The ticket
-constructor with `graceful` already installs that request. It must only affect
-its own admission and must not close dependencies. `Graceful` begins on the
-first poll of `ShutdownHandle::wait()`. IoC waits for each consumer before
-moving to its dependencies.
-Do not chain `.with_graceful_stop()` onto either ticket constructor: it adds or
-replaces a graceful callback that cannot produce the ticket required by wait.
-Use `asynchronous_with_graceful_ticket` for a graceful ticket request.
+Choose graceful behavior when constructing a managed resource. Use
+`Managed::synchronous_with_graceful(value, stop, graceful)` or
+`Managed::asynchronous_with_graceful(value, abort, graceful, wait)` for
+callbacks that do not produce a ticket. The ticket constructor with
+`graceful` already binds its request to the matching wait callback. These
+constructors keep the graceful callback fixed for the lifetime of the managed
+value. A graceful request must only affect its own admission and must not close
+dependencies. `Graceful` begins on the first poll of `ShutdownHandle::wait()`.
+IoC waits for each consumer before moving to its dependencies.
 If the graceful request fails or its grace budget expires, IoC requests abort.
 Calling `ShutdownHandle::abort()` upgrades unfinished entries to Immediate
 without recreating an active wait or restarting its deadline.

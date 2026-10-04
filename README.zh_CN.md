@@ -117,18 +117,20 @@ bean 参数与生成调用保持一致。`inject`、`value` 等 helper 属性必
 
 应用保留唯一生命周期所有者，通过 `application.context().clone()` 分发可并发查询的
 上下文句柄；关闭时这些克隆仍可存在，但查询成功不保证组件仍接受工作。集合查询
-顺序在上下文发布时按绑定 order、ID 和源码位置预先计算。正常退出调用
+顺序在上下文发布时按绑定 order、ID 和源码位置预先计算。`ApplicationContext::state()`
+只报告生命周期状态，不会在关闭后阻止查询。正常退出调用
 `application.begin_shutdown(ShutdownMode::Graceful)`，再显式等待返回的句柄。
 Graceful 请求从首次轮询 `wait()` 开始；`ShutdownMode::Immediate` 会在
 `begin_shutdown` 返回前请求全部 abort。
 选中托管定义时必须配置 `WaitPolicy`；实际应用用 `WaitPolicy::bounded` 和由应用驱动的
 计时器。自定义工厂与 trait alias 可使用公开的 `Definition::builder()` 和
 `register_definition`。stop 成功即确认终止时选择 `Managed::synchronous`；需要
-先发送非阻塞停止请求、再等待终止时选择 `Managed::asynchronous`。关闭请求返回 ticket 时，使用
+先发送非阻塞停止请求、再等待终止时选择 `Managed::asynchronous`。需要优雅关闭时，在构造
+阶段选择 `Managed::synchronous_with_graceful` 或
+`Managed::asynchronous_with_graceful`。关闭请求返回 ticket 时，使用
 `Managed::asynchronous_with_ticket`；有独立 Graceful 请求时使用
-`Managed::asynchronous_with_graceful_ticket`。两种 ticket 构造器均不可再链式调用
-`.with_graceful_stop()`，否则会添加或替换无法产出 wait 所需 ticket 的 graceful 回调。以下最小路径无需
-外部运行时即可编译：
+`Managed::asynchronous_with_graceful_ticket`，让请求和 wait 回调共享同一个 ticket。
+所选构造函数会固定 graceful 回调，创建后不能再替换。以下最小路径无需外部运行时即可编译：
 
 ```rust
 use std::sync::Arc;
@@ -144,8 +146,8 @@ async fn ticket_and_failure() {
             Ok(())
         }),
     );
-    let settled = BuildFailure::from(BuildError::NoRootsSelected).settle().await;
-    assert!(settled.cleanup_report().is_none());
+    let mut failure = BuildFailure::from(BuildError::NoRootsSelected);
+    assert!(failure.wait_cleanup().await.is_none());
 }
 ```
 
@@ -157,10 +159,10 @@ ticket 析构不得取消资源关闭。具体适配方式见
 结构化反序列化默认拒绝未知字段。需要插值时，可在工厂中显式调用
 `Config::get_interpolated`。
 工厂 panic 遵循 Rust 的 panic 语义并向外传播。同步和异步构建失败时，都会先为已移交
-资源请求 abort，再立即返回 `BuildFailure`。调用 `failure.settle().await` 可同时保留
-原始 `BuildError` 和可选的 `ShutdownReport`；
-清理失败时也要检查 `cleanup_report()`。需要自行管理清理句柄时，仍可使用底层
-`take_cleanup()` 或 `into_parts()`。
+资源请求 abort，再立即返回 `BuildFailure`。调用 `failure.wait_cleanup().await` 可观察
+可选的 `ShutdownReport`，同时通过 `cause()` 保留原始 `BuildError`。若等待被取消，可在
+同一个 failure 上再次调用以继续观察清理；清理错误保留在报告中，不会替换构建错误。
+需要自行管理清理句柄时，仍可使用底层 `take_cleanup()` 或 `into_parts()`。
 
 ### 手动组装
 

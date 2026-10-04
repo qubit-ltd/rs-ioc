@@ -73,7 +73,7 @@ workspace 包含运行时 `qubit-ioc` 与过程宏 `qubit-ioc-macros`。Edition 
 
 `build()` 从一个或多个 `root` 构造所选定义的依赖闭包；至少需要一个 root。`build_all()` 构造所有生效定义，并允许空图。异步对应方法为 `build_async()` 与 `build_all_async()`。若选中图含异步工厂，同步 build 会在运行任何工厂前返回 `AsyncRequired`。异步构建由应用提供执行器，且可以混合同步和异步工厂。
 
-图验证先解析请求候选，再检查缺失、歧义、重复 primary 和环路；同步构建还会预检整个选中图是否包含异步工厂。图验证与适用的同步预检全部通过后，才会运行工厂或 alias projector。可选依赖无候选时解析为 `None`，集合依赖无候选时为空；命中的依赖仍参与图验证。构造顺序保证依赖先于消费者。独立定义按注册和依赖声明顺序稳定排序；构建串行执行。构建成功才发布 context，失败不暴露部分容器。
+图验证先解析请求候选，再检查缺失、歧义、重复 primary 和环路；同步构建还会预检整个选中图是否包含异步工厂。图验证与适用的同步预检全部通过后，才会运行工厂或 alias projector。可选依赖无候选时解析为 `None`，集合依赖无候选时为空；命中的依赖仍参与图验证。构造顺序保证依赖先于消费者；依赖关系决定正确性，不要求按特定顺序注册。互不依赖的定义按注册和依赖声明顺序稳定排序，因此注册顺序会影响其构造及逆序关闭顺序。构建串行执行；构建成功才发布 context，失败不暴露部分容器。
 
 `BuildContext` 只允许工厂访问其声明并由图解析出的依赖。未声明访问返回 `BuildAccessError`。`ApplicationContext` 查询已构造实例，不会重跑工厂。发布时建立不可变的精确键索引和按类型索引；每个类型索引按 binding order、ID、来源位置和注册位置排序一次。单值与 ID 查询直接遍历该索引，集合查询复用其顺序。`BuildContext::get_all` 和 `ApplicationContext::get_all` 都按 `order`、ID、来源位置升序排列，完全相同的项保留注册顺序。错误候选和可用绑定保留注册顺序。
 
@@ -97,15 +97,17 @@ provider crate 应导出显式 `register_ioc(&mut builder)`，由应用决定纳
 原始原因；同步和异步构建都返回 `Result<Application, BuildFailure>`。
 `BuildFailure::cause()` 保留 source 链与诊断路径，`take_cleanup()` 或
 `into_parts()` 移交可选回滚句柄。后续工厂失败时，构建先为已移交托管资源请求 abort，
-然后立即返回；应用必须显式等待清理句柄，才能观察终止与清理错误。图验证和预检
-失败时没有已构造资源，也没有清理句柄。工厂 unwind panic 仍向外传播；取消异步
+然后立即返回；应用必须显式调用 `wait_cleanup(&mut self).await`，才能观察终止与清理错误，
+同时原始原因仍保留在 failure 中。取消等待后再次调用会继续观察同一清理过程。图验证和
+预检失败时没有已构造资源，也没有清理句柄。工厂 unwind panic 仍向外传播；取消异步
 构建只请求 abort，不能等待。
 
 `Application` 独占生命周期，与可克隆的查询 context 分离。选中托管图须显式配置
 `WaitPolicy`；实际应用通过 `WaitPolicy::bounded(grace, termination, timer)` 和正常
 驱动的计时器设置期限。`Managed::synchronous` 要求 stop 成功时资源已终止；
-`Managed::asynchronous` 将非阻塞的 abort 请求与终止等待配对。
-`.with_graceful_stop` 可请求排空；选择方式与 ticket 所有权见
+`Managed::asynchronous` 将非阻塞的 abort 请求与终止等待配对。需要优雅关闭时，构造阶段
+选择 `Managed::synchronous_with_graceful` 或 `Managed::asynchronous_with_graceful`；ticket
+构造器则将 graceful 请求与对应 wait 回调绑定。所选构造器会固定 graceful 回调；选择方式与 ticket 所有权见
 [托管资源适配指南](managed-adapters.zh_CN.md)。
 `Application::begin_shutdown(ShutdownMode::Graceful)` 发布 ShuttingDown 并转移所有权；
 首次轮询 `wait` 时才按逆构建顺序请求排空，每个消费者终止后才关闭其依赖。

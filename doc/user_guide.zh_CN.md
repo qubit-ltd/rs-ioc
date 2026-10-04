@@ -314,13 +314,15 @@ cargo test --manifest-path tests/fixtures/ioc_cross_crate/Cargo.toml
 `Application` 持有生命周期所有权，`application.context()` 提供只读共享查询句柄。
 可克隆句柄分发给并发读者；关闭时不需要收回每个克隆或执行 `Arc::try_unwrap`。
 [上下文共享示例](../examples/context_sharing.rs)展示这个分工。关闭开始后查询仍可能
-成功，但不表示服务继续接收业务工作。
+成功。`ApplicationContext::state()` 用于观察生命周期进度，不会限制上下文查询；查询成功
+不表示服务继续接收业务工作。
 
 托管资源应在图验证通过后由托管工厂创建。已运行的外部资源用
 `register_instance(Arc<T>)` 注入，应用自己负责关闭。真实应用的托管图应配置
 bounded `WaitPolicy`。stop 成功返回即确认终止时使用 `Managed::synchronous`；
-需要先非阻塞请求 abort、再等待终止时使用 `Managed::asynchronous`。
-`.with_graceful_stop` 可请求排空；两种构造方式及 ticket 的保存方式见
+需要先非阻塞请求 abort、再等待终止时使用 `Managed::asynchronous`。需要排空时，构造阶段
+选择 `Managed::synchronous_with_graceful` 或 `Managed::asynchronous_with_graceful`；ticket
+构造器则负责把请求结果交给对应的 wait 回调。构造后 graceful 回调不可替换。具体选择见
 [托管资源适配指南](managed-adapters.zh_CN.md)。正常退出选 Graceful 并等待
 句柄；Graceful 从首次轮询 `wait` 才开始逐个请求，消费者终止后才处理其依赖。
 Immediate 在返回句柄前向全部托管组件请求 abort。[生命周期说明](lifecycle.zh_CN.md)
@@ -328,8 +330,9 @@ Immediate 在返回句柄前向全部托管组件请求 abort。[生命周期说
 提供实际 worker 示例。
 
 同步和异步构建失败时都会先请求已移交资源 abort，再立即返回 `BuildFailure`。
-应用检查 `cause()`，用 `take_cleanup()` 或 `into_parts()` 获取可选清理句柄并显式
-等待。丢弃 owner、未移交的 `Managed` 或关闭句柄会请求 abort，但不等待；查询
+应用检查 `cause()`，可用 `wait_cleanup()` 等待可选清理，也可用 `take_cleanup()` 或
+`into_parts()` 取出句柄后等待。`wait_cleanup()` 借用失败对象；取消后再次调用会继续
+等待同一清理过程。丢弃 owner、未移交的 `Managed` 或关闭句柄会请求 abort，但不等待；查询
 context Drop 不请求关闭。丢弃构建失败对象或取消异步构建也不等待。工厂 unwind
 panic 仍向外传播；工厂在返回 `Managed` 前产生的副作用由它自身负责。
 

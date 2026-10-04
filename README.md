@@ -132,7 +132,8 @@ application; do not capture an already-created `Managed<T>` in a factory.
 The application retains its unique lifecycle owner while
 `application.context().clone()` provides concurrent read-only query handles.
 These clones can remain alive during shutdown; a successful lookup does not
-guarantee that a component still accepts work. Collection query order is
+guarantee that a component still accepts work. `ApplicationContext::state()`
+reports lifecycle state but does not block queries after shutdown. Collection query order is
 precomputed when the context is published, using binding order, ID, and source
 location. Normal exit uses
 `application.begin_shutdown(ShutdownMode::Graceful)` and explicitly awaits the
@@ -144,12 +145,16 @@ Managed graphs require an explicit `WaitPolicy`; use
 trait aliases without relying on macro internals. Choose
 `Managed::synchronous` when successful stop confirms termination, or
 `Managed::asynchronous` to pair a non-blocking stop request with a termination
-wait. When a request returns a shutdown ticket, use
+wait. Choose graceful behavior at construction with
+`Managed::synchronous_with_graceful` or
+`Managed::asynchronous_with_graceful`; a ticket-producing request uses its
+ticket-aware constructor to keep the request and wait callbacks paired. When a
+request returns a shutdown ticket, use
 `Managed::asynchronous_with_ticket` or
 `Managed::asynchronous_with_graceful_ticket`; the latter accepts separate
-Immediate and Graceful requests. Do not chain `.with_graceful_stop()` onto
-either ticket constructor; it adds or replaces a graceful callback that cannot
-produce the ticket required by the wait callback.
+Immediate and Graceful requests. Graceful callbacks are fixed by the selected
+constructor and cannot be replaced afterward. The ticket constructors preserve
+the ticket produced by their graceful request for the matching wait callback.
 For example, the following API path compiles
 without an external runtime:
 
@@ -167,8 +172,8 @@ async fn ticket_and_failure() {
             Ok(())
         }),
     );
-    let settled = BuildFailure::from(BuildError::NoRootsSelected).settle().await;
-    assert!(settled.cleanup_report().is_none());
+    let mut failure = BuildFailure::from(BuildError::NoRootsSelected);
+    assert!(failure.wait_cleanup().await.is_none());
 }
 ```
 
@@ -181,11 +186,14 @@ values without interpolation. Structured deserialization rejects unknown
 fields by default. When interpolation is required, call
 `Config::get_interpolated` explicitly in a factory.
 Factory panics follow Rust's panic behavior and propagate. On failure, both
-synchronous and asynchronous construction return `BuildFailure` immediately after requesting
-abort for transferred managed resources. Await `failure.settle()` to retain
-the original `BuildError` and an optional `ShutdownReport` together; inspect
-`cleanup_report()` even when cleanup failed. The lower-level `take_cleanup()`
-and `into_parts()` remain available when the caller needs the cleanup handle.
+synchronous and asynchronous construction return `BuildFailure` immediately
+after requesting abort for transferred managed resources. Call
+`failure.wait_cleanup().await` to observe the optional `ShutdownReport` while
+keeping the original `BuildError` available through `cause()`. If that wait is
+cancelled, call it again on the same failure to resume cleanup observation;
+cleanup errors remain in the report and do not replace the build error.
+`take_cleanup()` and `into_parts()` remain available when the caller needs to
+own the cleanup handle directly.
 
 ### Manual assembly
 

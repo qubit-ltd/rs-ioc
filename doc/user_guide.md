@@ -355,16 +355,20 @@ at registration, or it receives `BuildAccessError::UndeclaredDependency`.
 shared queries. Clone the query handle for concurrent readers; no
 `Arc::try_unwrap` or release of every query clone is needed to shut down.
 The [context-sharing example](../examples/context_sharing.rs) exercises this
-owner/context split. Context lookup can still succeed after shutdown starts;
-it does not establish that a resource still admits work.
+owner/context split. `ApplicationContext::state()` exposes lifecycle progress for
+observation; it does not gate context lookup. Context lookup can still succeed
+after shutdown starts, and does not establish that a resource still admits work.
 
 Create managed resources inside managed factories, after graph validation. For
 an already-running external resource, register its `Arc<T>` and retain shutdown
 ownership in the application. Managed graphs need an explicit bounded
 `WaitPolicy` in real applications. Choose `Managed::synchronous` when a
 successful stop callback confirms termination, or `Managed::asynchronous` to
-pair a non-blocking abort request with a required termination wait.
-`.with_graceful_stop` can request draining. The
+pair a non-blocking abort request with a required termination wait. Select
+graceful behavior at construction with `Managed::synchronous_with_graceful`
+or `Managed::asynchronous_with_graceful`; ticket-aware constructors keep the
+request result paired with its wait callback. The selected constructor fixes
+the graceful callback. The
 [managed adapter guide](managed-adapters.md) explains these contracts and
 ticket ownership. At normal exit choose Graceful and await the handle.
 Graceful requests begin on the first `wait` poll and run consumer-by-consumer before
@@ -373,8 +377,10 @@ The [lifecycle guide](lifecycle.md) supplies the complete failure and business
 exit flow, and [app_lifecycle](../examples/app_lifecycle.rs) runs a worker.
 
 Both build variants return `BuildFailure` immediately after requesting abort
-for transferred managed values. Inspect `cause()`, take optional cleanup with
-`take_cleanup()` or `into_parts()`, and await its handle. Dropping the owner,
+for transferred managed values. Inspect `cause()`, then await optional cleanup
+with `wait_cleanup()` or take its handle with `take_cleanup()` or `into_parts()`.
+`wait_cleanup()` borrows the failure, so cancelling it and calling it again
+resumes the same cleanup wait. Dropping the owner,
 an untransferred `Managed`, or a shutdown handle requests abort but never waits;
 query context Drop has no shutdown action. Dropping the failure or cancelling
 an async build never waits. Unwind panic in a factory propagates. The factory

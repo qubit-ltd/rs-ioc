@@ -30,7 +30,8 @@ use crate::store::InstanceStore;
 /// Clones share immutable values and lifecycle state. Keeping a clone alive
 /// does not prevent the application owner from shutting down resources.
 /// Queries remain available after shutdown; they do not guarantee that a
-/// component still accepts work.
+/// component still accepts work. [`state()`](Self::state) is an observation
+/// signal; it does not gate or reject component queries.
 ///
 /// # Examples
 ///
@@ -69,7 +70,9 @@ impl ApplicationContext {
     /// Returns the latest lifecycle state published by the unique owner.
     ///
     /// The value is loaded with acquire ordering, so a clone that observes a
-    /// new state also observes the components already published for it.
+    /// new state also observes the components already published for it. This
+    /// is an observation API; query methods do not use the state as an access
+    /// gate, and a lookup can still succeed after shutdown.
     ///
     /// # Returns
     ///

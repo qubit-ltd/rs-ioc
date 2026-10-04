@@ -84,13 +84,13 @@ where
     let application = match builder.build_async().await {
         Ok(application) => application,
         Err(failure) => {
-            let settled = failure.settle().await;
-            if let Some(report) = settled.cleanup_report() {
+            let mut failure = failure;
+            if let Some(report) = failure.wait_cleanup().await {
                 if !report.is_success() {
                     eprintln!("rollback report: {report:?}");
                 }
             }
-            let (cause, _) = settled.into_parts();
+            let (cause, _) = failure.into_parts();
             return Err(cause.into());
         }
     };
@@ -120,17 +120,17 @@ in their own error type.
 Both synchronous and asynchronous builds request abort for all transferred
 managed resources and immediately return `BuildFailure` when a later factory
 returns an error. `cause()` preserves the original error, sources and path;
-`settle().await` awaits optional rollback once and returns
-`SettledBuildFailure`, keeping the original `BuildError` and an optional
-`ShutdownReport` together. Its `Error::source()` is the original build error,
+`wait_cleanup(&mut self).await` observes optional rollback while keeping that
+cause on the same value. Its `Error::source()` remains the original build error,
 including the factory source chain. The report is retained even when cleanup
 failed; inspect `is_success()`, `failures()`, and `incomplete()`. Graph or
-preflight failure has no constructed resources, so `cleanup_report()` is
+preflight failure has no constructed resources, so `wait_cleanup()` returns
 `None`. `take_cleanup()` and `into_parts()` remain lower-level ways to transfer
 cleanup ownership. Neither async build nor dropping `BuildFailure` waits for
-rollback. If the `settle()` future is cancelled, dropping its cleanup handle
-requests remaining aborts but yields no final report. A factory unwind panic
-still propagates; cancellation or unwinding requests abort without wait.
+rollback. Cancelling `wait_cleanup()` leaves the handle and active wait in the
+failure, so a later call resumes observation without repeating abort requests.
+A factory unwind panic still propagates; cancellation or unwinding requests
+abort without wait.
 
 ## Request contracts and shutdown ordering
 
@@ -138,16 +138,19 @@ Choose the completion contract when constructing a managed value.
 `Managed::synchronous(value, stop)` is for a stop callback whose successful
 return means the resource has terminated. For a background resource, use
 `Managed::asynchronous(value, abort, wait)`: `abort` is a synchronous,
-non-blocking cancellation request, and `wait` confirms termination. If the
-request returns a ticket, use `Managed::asynchronous_with_ticket` or
-`Managed::asynchronous_with_graceful_ticket`. Dropping an unused ticket must
-not cancel shutdown. The abort
-request must not join, block on a future or condition variable, execute
-business handlers, or perform unbounded I/O. `.with_graceful_stop(request)`
-requests draining of this component: close its own admission without closing
-its dependencies. A ready wait future must not stand in for an unfinished
-worker. The [adapter guide](managed-adapters.md) shows both constructors and
-ticket-based waits.
+non-blocking cancellation request, and `wait` confirms termination. Choose
+graceful behavior at construction with `Managed::synchronous_with_graceful`
+or `Managed::asynchronous_with_graceful`; these constructors bind the graceful
+callback together with stop/abort and wait. If a request returns a ticket, use
+`Managed::asynchronous_with_ticket` or
+`Managed::asynchronous_with_graceful_ticket`, which keep the produced ticket
+paired with its wait callback. Dropping an unused ticket must not cancel
+shutdown. Abort and graceful requests must not join, block on a future or
+condition variable, execute business handlers, or perform unbounded I/O. A
+graceful request drains only its own component and must not close dependencies.
+A ready wait future must not stand in for an unfinished worker. The
+[adapter guide](managed-adapters.md) shows these constructors and ticket-based
+waits.
 
 - `application.begin_shutdown(ShutdownMode::Graceful)` transfers ownership and
   publishes ShuttingDown. The first request runs when `wait()` is polled.
@@ -241,7 +244,7 @@ code-generation compatibility layer.
 | Build returns `ApplicationContext` | Build returns `Application`; query through `application.context()`, clone that handle for sharing. |
 | `Arc::try_unwrap(context)` before shutdown | Retain the unique application owner and call its shutdown directly; query clones can remain alive. |
 | `begin_shutdown()` stops all before waiting | Choose `begin_shutdown(ShutdownMode::Graceful)` for normal exit or `Immediate` for failure; Graceful requests start on the first wait poll. |
-| Async build waits for rollback before returning error | `BuildFailure` returns immediately after abort requests; await `settle()` for the original build error and optional completed cleanup report. `take_cleanup()` / `into_parts()` remain lower-level ownership APIs. `BuildError::CleanupFailed` is removed; cleanup errors belong to the shutdown report. |
+| Async build waits for rollback before returning error | `BuildFailure` returns immediately after abort requests; borrow it with `wait_cleanup(&mut self)` to obtain the optional cleanup report while retaining the original cause. Cancelling the wait and calling it again resumes observation. `take_cleanup()` / `into_parts()` remain lower-level ownership APIs. `BuildError::CleanupFailed` is removed; cleanup errors belong to the shutdown report. |
 | Context / `Managed` Drop performs no cleanup | Query context still has no shutdown responsibility; owner, untransferred `Managed`, and handle Drop request abort, never wait. |
 | Hidden `codegen_v1::DefinitionDraft` | Use public `Definition::builder()` and `register_definition`; macros use this core too. Only configuration diagnostics and generated-code glue remain hidden. |
 | `EventBus::shutdown` used as a stop callback | Use non-blocking `request_shutdown` through the ticket adapter and await `wait_async()` in its wait callback. |

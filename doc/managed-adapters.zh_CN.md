@@ -27,8 +27,9 @@ let managed = Managed::synchronous(Arc::clone(&worker), |worker| {
 `Managed::asynchronous(value, abort, wait)`。`abort` 是同步、非阻塞的请求；
 `wait` 返回拥有等待状态的 future，完成时才确认终止。worker 尚未退出时，不能用
 立即就绪的 future 冒充终止。显式关闭会等待消费者终止，再关闭它的依赖；构建取消或
-Drop 只请求 abort，不等待。构建失败可调用 `BuildFailure::settle().await` 等待可选的
-清理句柄，同时保留原始构建错误和报告。
+Drop 只请求 abort，不等待。构建失败可借用 `BuildFailure` 调用
+`wait_cleanup(&mut self).await` 等待可选清理句柄，原始原因仍保留在同一对象中。取消等待后
+再次调用会继续观察清理进度。
 
 ```rust
 use std::sync::Arc;
@@ -95,13 +96,12 @@ Immediate ticket。若某资源丢弃 ticket 就会取消关闭，应使用底�
 
 ## Graceful 排空与 Immediate 升级
 
-对底层构造器，组件支持先停止接收新工作、再排空已有工作时，可添加
-`.with_graceful_stop(request)`。带 `graceful` 参数的 ticket 构造器已安装该请求。
+组件支持先停止接收新工作、再排空已有工作时，应在构造时选择
+`Managed::synchronous_with_graceful(value, stop, graceful)` 或
+`Managed::asynchronous_with_graceful(value, abort, graceful, wait)`。带 `graceful` 参数的
+ticket 构造器会把请求与 wait 回调绑定。构造器会固定 graceful 回调，之后无法替换。
 请求只处理组件自身的接纳状态，不能顺手关闭依赖。Graceful 请求在首次轮询
 `ShutdownHandle::wait()` 时开始；IoC 等待一个消费者终止后再处理其依赖。
-两种 ticket 构造器均不可再链式调用 `.with_graceful_stop()`：它会添加或替换一个无法
-产出 wait 所需 ticket 的 graceful 回调。Graceful ticket 请求应使用
-`asynchronous_with_graceful_ticket`。
 请求失败或 grace 期限到期后，IoC 会请求 abort。调用
 `ShutdownHandle::abort()` 可把未完成条目升级为 Immediate，保留当前等待及其期限。
 

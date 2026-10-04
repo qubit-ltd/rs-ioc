@@ -148,7 +148,9 @@ graph validates and, for synchronous construction, the async preflight passes.
 Absent optional requests resolve to `None`, and absent collection requests to
 an empty vector; matching requests still participate in validation. Factories
 run serially with dependencies before consumers, preserving registration and
-declaration order for ties. A failure never publishes a partial context.
+declaration order for ties. Dependency edges determine correctness; registration
+order affects only independent definitions and therefore their stable reverse
+shutdown order. A failure never publishes a partial context.
 
 Diagnostic paths retain one deterministic predecessor per selected binding,
 then reconstruct the full path only when reporting an error. Multiple roots
@@ -198,7 +200,9 @@ return `Result<Application, BuildFailure>`. `BuildFailure::cause()` retains
 source chains and diagnostic paths; `take_cleanup()` or `into_parts()` transfers
 optional rollback ownership. A later factory failure requests abort for all
 transferred managed resources and returns immediately. The application must
-explicitly await the cleanup handle to observe termination and cleanup errors.
+explicitly call `wait_cleanup(&mut self).await` to observe termination and
+cleanup errors while retaining the cause. Cancelling that future and calling
+again resumes the same cleanup observation.
 Graph and preflight failures construct nothing and have no cleanup handle.
 Factory unwind panic continues to propagate. Cancellation of async build
 requests abort but cannot wait.
@@ -208,7 +212,11 @@ Selected managed graphs require an explicit `WaitPolicy`; a real application
 uses `WaitPolicy::bounded(grace, termination, timer)` with a driven timer.
 `Managed::synchronous` requires successful stop to confirm termination;
 `Managed::asynchronous` pairs a non-blocking abort request with a termination
-wait. `.with_graceful_stop` optionally requests draining. The
+wait. Choose graceful behavior at construction with
+`Managed::synchronous_with_graceful` or
+`Managed::asynchronous_with_graceful`; ticket constructors bind their graceful
+request to the corresponding wait callback. The selected constructor fixes the
+graceful callback. The
 [managed adapter guide](managed-adapters.md) explains the choice and ticket
 ownership. `Application::begin_shutdown(ShutdownMode::Graceful)` publishes
 ShuttingDown and transfers ownership; its first `wait` poll begins graceful
