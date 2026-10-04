@@ -36,15 +36,15 @@ where
 {
     builder
         .register_managed_factory::<T, _>(&[], move |_| {
-            Ok(Managed::asynchronous(
+            Ok(Managed::asynchronous_with_graceful(
                 Arc::new(T::default()),
                 move |_| {
                     aborts.fetch_add(1, Ordering::SeqCst);
                     Ok(())
                 },
+                |_| Ok(()),
                 |_| Box::pin(std::future::pending()),
-            )
-            .with_graceful_stop(|_| Ok(())))
+            ))
         })
         .expect("register managed component");
 }
@@ -92,8 +92,9 @@ fn test_cancelling_wait_does_not_restart_overall_deadline() {
     let mut builder = ContainerBuilder::new().wait_policy(timers.policy_with_total(Duration::from_secs(30)));
     builder
         .register_managed_factory::<u32, _>(&[], move |_| {
-            Ok(Managed::asynchronous(
+            Ok(Managed::asynchronous_with_graceful(
                 Arc::new(1),
+                |_| Ok(()),
                 |_| Ok(()),
                 move |_| {
                     Box::pin(async move {
@@ -101,8 +102,7 @@ fn test_cancelling_wait_does_not_restart_overall_deadline() {
                         Ok(())
                     })
                 },
-            )
-            .with_graceful_stop(|_| Ok(())))
+            ))
         })
         .expect("register managed component");
     let application = builder.build_all().expect("build component");
@@ -152,8 +152,9 @@ fn test_component_completion_wins_when_overall_deadline_is_also_ready() {
     let mut builder = ContainerBuilder::new().wait_policy(timers.policy_with_total(Duration::from_secs(30)));
     builder
         .register_managed_factory::<u32, _>(&[], move |_| {
-            Ok(Managed::asynchronous(
+            Ok(Managed::asynchronous_with_graceful(
                 Arc::new(1),
+                |_| Ok(()),
                 |_| Ok(()),
                 move |_| {
                     Box::pin(async move {
@@ -161,8 +162,7 @@ fn test_component_completion_wins_when_overall_deadline_is_also_ready() {
                         Ok(())
                     })
                 },
-            )
-            .with_graceful_stop(|_| Ok(())))
+            ))
         })
         .expect("register managed component");
     let application = builder.build_all().expect("build component");
@@ -248,12 +248,12 @@ fn test_overall_timer_poll_panic_is_reported() {
     ));
     builder
         .register_managed_factory::<u32, _>(&[], |_| {
-            Ok(Managed::asynchronous(
+            Ok(Managed::asynchronous_with_graceful(
                 Arc::new(1),
                 |_| Ok(()),
+                |_| Ok(()),
                 |_| Box::pin(std::future::pending::<Result<(), CleanupError>>()),
-            )
-            .with_graceful_stop(|_| Ok(())))
+            ))
         })
         .expect("register managed component");
     let application = builder.build_all().expect("build component");
@@ -320,18 +320,18 @@ fn test_zero_overall_deadline_aborts_before_starting_component_wait() {
     ));
     builder
         .register_managed_factory::<u32, _>(&[], move |_| {
-            Ok(Managed::asynchronous(
+            Ok(Managed::asynchronous_with_graceful(
                 Arc::new(1),
                 move |_| {
                     observed_aborts.fetch_add(1, Ordering::SeqCst);
                     Ok(())
                 },
+                |_| Ok(()),
                 move |_| {
                     observed_waits.fetch_add(1, Ordering::SeqCst);
                     Box::pin(std::future::pending::<Result<(), CleanupError>>())
                 },
-            )
-            .with_graceful_stop(|_| Ok(())))
+            ))
         })
         .expect("register managed component");
     let application = builder.build_all().expect("build component");

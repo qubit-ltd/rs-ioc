@@ -97,6 +97,35 @@ impl<T: ?Sized + Send + Sync + 'static> Managed<T> {
         }
     }
 
+    /// Creates a synchronous managed value with a graceful shutdown request.
+    ///
+    /// During graceful shutdown, `graceful` requests termination before
+    /// `stop` confirms it. Both callbacks run synchronously and at most once.
+    ///
+    /// # Type Parameters
+    ///
+    /// `F` is a sendable one-shot stop action. `G` is a sendable one-shot
+    /// graceful request.
+    ///
+    /// # Parameters
+    ///
+    /// `value` is the shared component exposed to lookups. `stop` completes
+    /// termination. `graceful` requests graceful termination. Each callback
+    /// may return a [`CleanupError`].
+    ///
+    /// # Returns
+    ///
+    /// A managed component with a graceful request followed by a stop action.
+    pub fn synchronous_with_graceful<F, G>(value: Arc<T>, stop: F, graceful: G) -> Self
+    where
+        F: FnOnce(Arc<T>) -> Result<(), CleanupError> + Send + 'static,
+        G: FnOnce(Arc<T>) -> Result<(), CleanupError> + Send + 'static,
+    {
+        let mut managed = Self::synchronous(value, stop);
+        managed.graceful = Some(Box::new(graceful));
+        managed
+    }
+
     /// Creates a managed value with a stop request and termination wait.
     ///
     /// The abort callback must request termination without blocking. During
@@ -131,16 +160,47 @@ impl<T: ?Sized + Send + Sync + 'static> Managed<T> {
         }
     }
 
+    /// Creates an asynchronous managed value with a graceful shutdown request.
+    ///
+    /// During graceful shutdown, `graceful` requests termination before
+    /// `wait` confirms it; dependencies are stopped only after that wait
+    /// completes. Dropping an untransferred value only calls `abort`.
+    ///
+    /// # Type Parameters
+    ///
+    /// `F` is a sendable one-shot abort request. `G` is a sendable one-shot
+    /// graceful request. `W` is a sendable one-shot callback returning the
+    /// termination future.
+    ///
+    /// # Parameters
+    ///
+    /// `value` is the shared component exposed to lookups. `abort` requests
+    /// immediate termination, `graceful` requests graceful termination, and
+    /// `wait` returns a future that resolves when termination completes. The
+    /// request callbacks may return a [`CleanupError`].
+    ///
+    /// # Returns
+    ///
+    /// A managed component with an explicit asynchronous termination wait.
+    pub fn asynchronous_with_graceful<F, G, W>(value: Arc<T>, abort: F, graceful: G, wait: W) -> Self
+    where
+        F: FnOnce(Arc<T>) -> Result<(), CleanupError> + Send + 'static,
+        G: FnOnce(Arc<T>) -> Result<(), CleanupError> + Send + 'static,
+        W: FnOnce(Arc<T>) -> CleanupFuture + Send + 'static,
+    {
+        let mut managed = Self::asynchronous(value, abort, wait);
+        managed.graceful = Some(Box::new(graceful));
+        managed
+    }
+
     /// Creates a managed value whose abort request returns its wait ticket.
     ///
     /// `abort` must request termination without waiting. `wait` consumes the
     /// ticket during explicit shutdown and confirms termination. Dropping an
     /// untransferred value calls only `abort`. The ticket's destructor must not
     /// cancel shutdown, because an unused ticket may be discarded on upgrade.
-    /// Do not chain [`Self::with_graceful_stop`] onto this value: that callback
-    /// cannot return a ticket, so a successful graceful request leaves `wait`
-    /// without one. Use [`Self::asynchronous_with_graceful_ticket`] when a
-    /// graceful request is needed.
+    /// Use [`Self::asynchronous_with_graceful_ticket`] when a graceful request
+    /// is needed so its ticket can be passed to `wait`.
     ///
     /// # Errors
     ///
@@ -164,9 +224,9 @@ impl<T: ?Sized + Send + Sync + 'static> Managed<T> {
     /// preserves the active wait future and discards the new abort ticket.
     /// Neither request may block waiting for termination. Ticket destruction
     /// must not cancel shutdown, including when an unused ticket is discarded.
-    /// Do not chain [`Self::with_graceful_stop`] onto this value: it replaces
-    /// the ticket-producing graceful request, so a successful replacement
-    /// leaves `wait` without a ticket.
+    /// This constructor keeps its graceful callback paired with its ticket;
+    /// use [`Self::asynchronous_with_ticket`] when no graceful request is
+    /// needed.
     ///
     /// # Errors
     ///
@@ -181,39 +241,6 @@ impl<T: ?Sized + Send + Sync + 'static> Managed<T> {
         W: FnOnce(Arc<T>, K) -> CleanupFuture + Send + 'static,
     {
         ticket::adapt(value, abort, Some(Box::new(graceful)), wait)
-    }
-
-    /// Adds a synchronous request for this component to stop accepting work
-    /// and drain its existing work during graceful shutdown.
-    ///
-    /// # Type Parameters
-    ///
-    /// `F` is a sendable one-shot callback receiving this component's handle.
-    ///
-    /// # Parameters
-    ///
-    /// `request` must only request draining of this component, without closing
-    /// its dependencies or waiting for termination. It may return a
-    /// [`CleanupError`]; shutdown then falls back to abort. Without this
-    /// callback, graceful shutdown uses abort for this component. For a
-    /// synchronous component, a successful request is followed by its stop
-    /// callback, which must confirm termination before shutdown completes.
-    /// On values created by either ticket constructor, this method adds or
-    /// replaces a graceful callback that cannot produce the ticket required by
-    /// `wait`. A successful request therefore reports a [`CleanupError`] during
-    /// shutdown. Supply graceful logic to
-    /// [`Self::asynchronous_with_graceful_ticket`] instead.
-    ///
-    /// # Returns
-    ///
-    /// This managed component with its graceful request replaced. Drop before
-    /// container transfer still invokes only abort and never this callback.
-    pub fn with_graceful_stop<F>(mut self, request: F) -> Self
-    where
-        F: FnOnce(Arc<T>) -> Result<(), CleanupError> + Send + 'static,
-    {
-        self.graceful = Some(Box::new(request));
-        self
     }
 
     /// Converts the value and cleanup actions to type-erased internal storage.

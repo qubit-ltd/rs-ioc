@@ -103,14 +103,17 @@ fn test_untransferred_managed_drop_uses_abort_instead_of_graceful_request() {
     let graceful_requests = Arc::new(AtomicUsize::new(0));
     let abort_count = Arc::clone(&aborts);
     let graceful_count = Arc::clone(&graceful_requests);
-    let managed = Managed::synchronous(Arc::new(()), move |_| {
-        abort_count.fetch_add(1, Ordering::SeqCst);
-        Ok(())
-    })
-    .with_graceful_stop(move |_| {
-        graceful_count.fetch_add(1, Ordering::SeqCst);
-        Ok(())
-    });
+    let managed = Managed::synchronous_with_graceful(
+        Arc::new(()),
+        move |_| {
+            abort_count.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        },
+        move |_| {
+            graceful_count.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        },
+    );
 
     drop(managed);
 
@@ -165,21 +168,21 @@ fn test_successful_graceful_shutdown_discards_unused_abort() {
     let mut builder = ContainerBuilder::new().wait_policy(WaitPolicy::unbounded());
     builder
         .register_managed_factory::<(), _>(&[], move |_| {
-            Ok(Managed::asynchronous(
+            Ok(Managed::asynchronous_with_graceful(
                 Arc::new(()),
                 move |_| {
                     abort_count.fetch_add(1, Ordering::SeqCst);
                     Ok(())
                 },
                 move |_| {
+                    request_count.fetch_add(1, Ordering::SeqCst);
+                    Ok(())
+                },
+                move |_| {
                     wait_count.fetch_add(1, Ordering::SeqCst);
                     Box::pin(async { Ok(()) })
                 },
-            )
-            .with_graceful_stop(move |_| {
-                request_count.fetch_add(1, Ordering::SeqCst);
-                Ok(())
-            }))
+            ))
         })
         .expect("register graceful component");
     let application = builder.build_all().expect("construct graceful application");

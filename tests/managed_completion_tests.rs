@@ -37,9 +37,13 @@ fn test_asynchronous_consumer_is_confirmed_before_synchronous_dependency_stops()
         .expect("register dependency");
     builder
         .register_managed_factory::<Consumer, _>(&[Dependency::of::<DependencyService>()], move |_| {
-            Ok(Managed::asynchronous(
+            Ok(Managed::asynchronous_with_graceful(
                 Arc::new(Consumer),
                 |_| Ok(()),
+                move |_| {
+                    request_events.lock().expect("lock events").push("request-consumer");
+                    Ok(())
+                },
                 move |_| {
                     let events = Arc::clone(&wait_events);
                     Box::pin(async move {
@@ -47,11 +51,7 @@ fn test_asynchronous_consumer_is_confirmed_before_synchronous_dependency_stops()
                         Ok(())
                     })
                 },
-            )
-            .with_graceful_stop(move |_| {
-                request_events.lock().expect("lock events").push("request-consumer");
-                Ok(())
-            }))
+            ))
         })
         .expect("register consumer");
     builder.root::<Consumer>();
@@ -95,14 +95,17 @@ fn test_synchronous_graceful_request_still_runs_terminating_stop() {
     let mut builder = ContainerBuilder::new().wait_policy(WaitPolicy::unbounded());
     builder
         .register_managed_factory::<DependencyService, _>(&[], move |_| {
-            Ok(Managed::synchronous(Arc::new(DependencyService), move |_| {
-                stop_events.lock().expect("lock events").push("stop");
-                Ok(())
-            })
-            .with_graceful_stop(move |_| {
-                graceful_events.lock().expect("lock events").push("graceful");
-                Ok(())
-            }))
+            Ok(Managed::synchronous_with_graceful(
+                Arc::new(DependencyService),
+                move |_| {
+                    stop_events.lock().expect("lock events").push("stop");
+                    Ok(())
+                },
+                move |_| {
+                    graceful_events.lock().expect("lock events").push("graceful");
+                    Ok(())
+                },
+            ))
         })
         .expect("register dependency");
     builder.root::<DependencyService>();
@@ -121,10 +124,11 @@ fn test_synchronous_graceful_request_does_not_hide_stop_failure() {
     let mut builder = ContainerBuilder::new().wait_policy(WaitPolicy::unbounded());
     builder
         .register_managed_factory::<DependencyService, _>(&[], |_| {
-            Ok(Managed::synchronous(Arc::new(DependencyService), |_| {
-                Err(CleanupError::new(std::io::Error::other("stop failed")))
-            })
-            .with_graceful_stop(|_| Ok(())))
+            Ok(Managed::synchronous_with_graceful(
+                Arc::new(DependencyService),
+                |_| Err(CleanupError::new(std::io::Error::other("stop failed"))),
+                |_| Ok(()),
+            ))
         })
         .expect("register dependency");
     builder.root::<DependencyService>();

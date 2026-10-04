@@ -57,30 +57,30 @@ where
     }));
     let abort_state = Arc::clone(&state);
     let wait_state = Arc::clone(&state);
-    let managed = Managed::asynchronous(
-        value,
-        move |value| {
-            let ticket = abort(value)?;
-            store(&abort_state, ticket);
-            Ok(())
-        },
-        move |value| match take(&wait_state) {
-            Some(ticket) => wait(value, ticket),
-            None => Box::pin(async {
-                Err(CleanupError::new(std::io::Error::other(
-                    "shutdown wait has no request ticket",
-                )))
-            }),
-        },
-    );
-    if let Some(graceful) = graceful {
-        let graceful_state = state;
-        managed.with_graceful_stop(move |value| {
-            let ticket = graceful(value)?;
-            store(&graceful_state, ticket);
-            Ok(())
-        })
-    } else {
-        managed
+    let abort_action = move |value| {
+        let ticket = abort(value)?;
+        store(&abort_state, ticket);
+        Ok(())
+    };
+    let wait_action = move |value| match take(&wait_state) {
+        Some(ticket) => wait(value, ticket),
+        None => Box::pin(async {
+            Err(CleanupError::new(std::io::Error::other(
+                "shutdown wait has no request ticket",
+            )))
+        }),
+    };
+    match graceful {
+        Some(graceful) => Managed::asynchronous_with_graceful(
+            value,
+            abort_action,
+            move |value| {
+                let ticket = graceful(value)?;
+                store(&state, ticket);
+                Ok(())
+            },
+            wait_action,
+        ),
+        None => Managed::asynchronous(value, abort_action, wait_action),
     }
 }

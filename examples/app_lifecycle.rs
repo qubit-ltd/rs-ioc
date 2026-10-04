@@ -70,20 +70,24 @@ fn main() -> Result<(), Box<dyn Error>> {
                 stop: Mutex::new(Some(stop_sender)),
                 task: Mutex::new(Some(task)),
             });
-            Ok(Managed::asynchronous(Arc::clone(&worker), request_stop, |worker| {
-                Box::pin(async move {
-                    let task = worker
-                        .task
-                        .lock()
-                        .map_err(|_| CleanupError::new(io::Error::other("task lock poisoned")))?
-                        .take();
-                    if let Some(task) = task {
-                        task.await.map_err(CleanupError::new)?;
-                    }
-                    Ok(())
-                })
-            })
-            .with_graceful_stop(request_stop))
+            Ok(Managed::asynchronous_with_graceful(
+                Arc::clone(&worker),
+                request_stop,
+                request_stop,
+                |worker| {
+                    Box::pin(async move {
+                        let task = worker
+                            .task
+                            .lock()
+                            .map_err(|_| CleanupError::new(io::Error::other("task lock poisoned")))?
+                            .take();
+                        if let Some(task) = task {
+                            task.await.map_err(CleanupError::new)?;
+                        }
+                        Ok(())
+                    })
+                },
+            ))
         })?;
         builder.root::<Worker>();
         let application = match builder.build_async().await {

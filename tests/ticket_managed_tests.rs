@@ -262,63 +262,6 @@ fn test_abort_request_failure_without_ticket_reports_original_error() {
 }
 
 #[test]
-fn test_overriding_graceful_ticket_request_reports_missing_ticket() {
-    let probe = Arc::new(Probe::default());
-    let override_calls = Arc::new(AtomicUsize::new(0));
-    let calls = Arc::clone(&override_calls);
-    let managed = graceful(&probe, Gate::default(), false, false).with_graceful_stop(move |_| {
-        calls.fetch_add(1, Ordering::SeqCst);
-        Ok(())
-    });
-    let application = application(managed);
-    let mut shutdown = application.begin_shutdown(ShutdownMode::Graceful);
-    let error = ready(shutdown.wait()).expect_err("overridden graceful request has no ticket");
-    assert_eq!(error.report().failures().len(), 1);
-    assert_eq!(error.report().failures()[0].phase, ShutdownPhase::Wait);
-    assert_eq!(
-        error.report().failures()[0]
-            .error
-            .source()
-            .expect("missing ticket source")
-            .to_string(),
-        "shutdown wait has no request ticket"
-    );
-    assert_eq!(count(&override_calls), 1);
-    assert_eq!(count(&probe.gracefuls), 0);
-    assert_eq!(count(&probe.aborts), 1);
-    assert_eq!(count(&probe.wait_creations), 0);
-    assert_eq!(count(&probe.ticket_drops), 1);
-}
-
-#[test]
-fn test_adding_graceful_stop_to_abort_ticket_reports_missing_ticket() {
-    let probe = Arc::new(Probe::default());
-    let override_calls = Arc::new(AtomicUsize::new(0));
-    let calls = Arc::clone(&override_calls);
-    let managed = abort_only(&probe, Gate::default()).with_graceful_stop(move |_| {
-        calls.fetch_add(1, Ordering::SeqCst);
-        Ok(())
-    });
-    let application = application(managed);
-    let mut shutdown = application.begin_shutdown(ShutdownMode::Graceful);
-    let error = ready(shutdown.wait()).expect_err("untyped graceful request has no ticket");
-    assert_eq!(error.report().failures().len(), 1);
-    assert_eq!(error.report().failures()[0].phase, ShutdownPhase::Wait);
-    assert_eq!(
-        error.report().failures()[0]
-            .error
-            .source()
-            .expect("missing ticket source")
-            .to_string(),
-        "shutdown wait has no request ticket"
-    );
-    assert_eq!(count(&override_calls), 1);
-    assert_eq!(count(&probe.aborts), 1);
-    assert_eq!(count(&probe.wait_creations), 0);
-    assert_eq!(count(&probe.ticket_drops), 1);
-}
-
-#[test]
 fn test_cancel_and_resume_wait_reuses_ticket_and_future() {
     let probe = Arc::new(Probe::default());
     let gate = Gate::default();

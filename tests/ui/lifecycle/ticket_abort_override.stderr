@@ -1,0 +1,13 @@
+error[E0599]: no method named `with_graceful_stop` found for struct `Managed<T>` in the current scope
+  --> tests/ui/lifecycle/ticket_abort_override.rs:18:6
+   |
+13 |       let _managed = Managed::asynchronous_with_ticket(
+   |  ____________________-
+14 | |         Arc::new(1_u8),
+15 | |         |_| Ok::<(), qubit_ioc::CleanupError>(()),
+16 | |         |_, ()| Box::pin(async { Ok(()) }),
+17 | |     )
+18 | |     .with_graceful_stop(|_| Ok(()));
+   | |     -^^^^^^^^^^^^^^^^^^ method not found in `Managed<u8>`
+   | |_____|
+   |

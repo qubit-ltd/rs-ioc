@@ -39,12 +39,13 @@ fn waiting(policy: WaitPolicy) -> (Application, Gate, Arc<AtomicUsize>, Arc<Atom
     let mut builder = ContainerBuilder::new().wait_policy(policy);
     builder
         .register_managed_factory::<u32, _>(&[], move |_| {
-            Ok(Managed::asynchronous(
+            Ok(Managed::asynchronous_with_graceful(
                 Arc::new(1),
                 move |_| {
                     observed.fetch_add(1, Ordering::SeqCst);
                     Ok(())
                 },
+                |_| Ok(()),
                 move |_| {
                     created.fetch_add(1, Ordering::SeqCst);
                     Box::pin(async move {
@@ -52,8 +53,7 @@ fn waiting(policy: WaitPolicy) -> (Application, Gate, Arc<AtomicUsize>, Arc<Atom
                         Ok(())
                     })
                 },
-            )
-            .with_graceful_stop(|_| Ok(())))
+            ))
         })
         .expect("register waiting service");
     (
