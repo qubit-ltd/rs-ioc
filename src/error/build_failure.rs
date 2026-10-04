@@ -12,14 +12,15 @@ use std::fmt;
 use std::sync::Mutex;
 
 use crate::error::BuildError;
-use crate::error::SettledBuildFailure;
 use crate::managed::ShutdownHandle;
+use crate::managed::ShutdownReport;
 
 /// The original build error and optional ownership of already requested
 /// rollback.
 ///
 /// All managed aborts have been requested before this value is returned. Waits
-/// begin only when the caller takes the cleanup handle and drives `wait()`.
+/// begin only when the caller drives `wait_cleanup()` or takes the cleanup
+/// handle and drives `wait()`.
 /// Dropping the failure never starts waits or repeats completed abort requests.
 ///
 /// # Examples
@@ -107,24 +108,22 @@ impl BuildFailure {
         )
     }
 
-    /// Awaits owned rollback once and preserves the original build error.
+    /// Waits for owned rollback while preserving the original build error.
     ///
-    /// A completed wait contributes its report even when cleanup failed. If
-    /// there is no cleanup handle, the report is `None` and no wait begins.
-    /// Cancelling this future drops the handle: unfinished aborts are requested
-    /// without a second wait, and no final report can be obtained from this
-    /// consumed failure.
-    pub async fn settle(self) -> SettledBuildFailure {
-        let (cause, cleanup) = self.into_parts();
-        let cleanup_report = if let Some(mut handle) = cleanup {
-            Some(match handle.wait().await {
-                Ok(report) => report,
-                Err(error) => error.report().clone(),
-            })
-        } else {
-            None
-        };
-        SettledBuildFailure::new(cause, cleanup_report)
+    /// Returns `Some(report)` after cleanup succeeds or fails, and `None` when
+    /// this failure owns no cleanup handle. Cancelling the returned future
+    /// leaves the handle and its active wait in this failure for a later call.
+    /// Repeated calls after completion return the same final observations.
+    pub async fn wait_cleanup(&mut self) -> Option<ShutdownReport> {
+        let handle = self
+            .cleanup
+            .get_mut()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_mut()?;
+        Some(match handle.wait().await {
+            Ok(report) => report,
+            Err(error) => error.report().clone(),
+        })
     }
 }
 

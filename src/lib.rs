@@ -12,8 +12,8 @@
 //! an [`Application`]. A missing or ambiguous component therefore fails while
 //! the application starts instead of on a later request.
 //!
-//! [`Definition`]s bind component types to an identifier, a scope and a
-//! factory. They are staged on a [`ContainerBuilder`], roots are selected, and
+//! [`Definition`]s bind component types to an identifier and a factory. They
+//! are staged on a [`ContainerBuilder`], roots are selected, and
 //! [`ContainerBuilder::build`] returns the [`Application`] that owns the built
 //! instances. [`Application::context`] hands out a cloneable, read-only
 //! [`ApplicationContext`] that resolves a component by its type or by an
@@ -26,9 +26,12 @@
 //! [`Application::begin_shutdown`] and awaits the returned
 //! [`ShutdownHandle`].
 //!
-//! Registration order does not matter. A component is only reachable from
-//! outside after it is selected as a root, so [`ContainerBuilder::build`]
-//! requires at least one selected root and constructs nothing else.
+//! Registration order does not affect dependency correctness: dependencies
+//! are constructed before their consumers. It does provide a stable order for
+//! independent definitions, which also affects reverse shutdown order. A
+//! component is reachable only when it is selected as a root, so
+//! [`ContainerBuilder::build`] requires at least one selected root and
+//! constructs nothing else.
 //!
 //! # Examples
 //!
@@ -100,7 +103,6 @@ pub use error::FactoryError;
 pub use error::InvalidBindingId;
 pub use error::RegistrationError;
 pub use error::ResolveError;
-pub use error::SettledBuildFailure;
 pub use key::BindingId;
 pub use key::BindingKey;
 pub use managed::CleanupError;

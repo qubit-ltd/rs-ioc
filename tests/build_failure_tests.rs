@@ -9,11 +9,13 @@
 
 use std::error::Error;
 use std::future::Future;
+use std::future::poll_fn;
 use std::panic::AssertUnwindSafe;
 use std::panic::catch_unwind;
 use std::pin::pin;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 use std::task::Context;
@@ -29,7 +31,6 @@ use qubit_ioc::ContainerBuilder;
 use qubit_ioc::Dependency;
 use qubit_ioc::FactoryError;
 use qubit_ioc::Managed;
-use qubit_ioc::SettledBuildFailure;
 use qubit_ioc::ShutdownMode;
 use qubit_ioc::ShutdownPhase;
 use qubit_ioc::WaitPolicy;
@@ -450,35 +451,70 @@ fn test_cancelled_build_does_not_create_cleanup_wait() {
 }
 
 #[test]
-fn test_settle_graph_failure_has_no_cleanup_report() {
-    let failure = ContainerBuilder::new().build().err().expect("graph validation failure");
-    let settled = ready(failure.settle());
-    assert!(matches!(settled.cause(), BuildError::NoRootsSelected));
-    assert!(settled.cleanup_report().is_none());
-    let (cause, report) = settled.into_parts();
-    assert!(matches!(cause, BuildError::NoRootsSelected));
-    assert!(report.is_none());
+fn test_wait_cleanup_graph_failure_returns_none_and_preserves_cause() {
+    let mut failure = ContainerBuilder::new().build().err().expect("graph validation failure");
+    assert!(matches!(failure.cause(), BuildError::NoRootsSelected));
+    assert!(ready(failure.wait_cleanup()).is_none());
+    assert!(matches!(failure.cause(), BuildError::NoRootsSelected));
+    assert!(failure.take_cleanup().is_none());
 }
 
 #[test]
-fn test_settle_waits_once_after_build_returns() {
+fn test_cancelled_wait_cleanup_resumes_without_repeating_callbacks() {
     let aborts = Arc::new(AtomicUsize::new(0));
     let waits = Arc::new(AtomicUsize::new(0));
-    let failure = failing_builder(Arc::clone(&aborts), Arc::clone(&waits))
-        .build()
-        .err()
-        .expect("factory failure");
+    let ready_flag = Arc::new(AtomicBool::new(false));
+    let mut builder = ContainerBuilder::new().wait_policy(WaitPolicy::unbounded());
+    let abort_count = Arc::clone(&aborts);
+    let wait_count = Arc::clone(&waits);
+    let wait_ready = Arc::clone(&ready_flag);
+    builder
+        .register_managed_factory::<Resource, _>(&[], move |_| {
+            Ok(Managed::asynchronous(
+                Arc::new(Resource),
+                move |_| {
+                    abort_count.fetch_add(1, Ordering::SeqCst);
+                    Ok(())
+                },
+                move |_| {
+                    wait_count.fetch_add(1, Ordering::SeqCst);
+                    Box::pin(poll_fn(move |_| {
+                        if wait_ready.load(Ordering::SeqCst) {
+                            Poll::Ready(Ok(()))
+                        } else {
+                            Poll::Pending
+                        }
+                    }))
+                },
+            ))
+        })
+        .expect("managed resource");
+    builder
+        .register_factory::<Failing, _>(&[Dependency::of::<Resource>()], |_| {
+            Err(FactoryError::new(std::io::Error::other("factory failed")))
+        })
+        .expect("failing factory");
+    builder.root::<Failing>();
+    let mut failure = builder.build().err().expect("factory failure");
     assert_eq!(aborts.load(Ordering::SeqCst), 1);
     assert_eq!(waits.load(Ordering::SeqCst), 0);
-    let settled = ready(failure.settle());
-    assert!(matches!(settled.cause(), BuildError::FactoryFailed { .. }));
-    assert!(settled.cleanup_report().expect("cleanup report").is_success());
+    let mut first = Box::pin(failure.wait_cleanup());
+    assert!(
+        first
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()))
+            .is_pending()
+    );
+    drop(first);
+    ready_flag.store(true, Ordering::SeqCst);
+    let report = ready(failure.wait_cleanup()).expect("rollback report");
+    assert!(report.is_success());
     assert_eq!(aborts.load(Ordering::SeqCst), 1);
     assert_eq!(waits.load(Ordering::SeqCst), 1);
 }
 
 #[test]
-fn test_settle_retains_factory_cause_and_failed_cleanup_report() {
+fn test_wait_cleanup_failure_preserves_original_factory_source() {
     let mut builder = ContainerBuilder::new().wait_policy(WaitPolicy::unbounded());
     builder
         .register_managed_factory::<Resource, _>(&[], |_| {
@@ -495,27 +531,62 @@ fn test_settle_retains_factory_cause_and_failed_cleanup_report() {
         })
         .expect("failing factory");
     builder.root::<Failing>();
-    let settled = ready(builder.build().err().expect("factory failure").settle());
-    assert!(matches!(settled.cause(), BuildError::FactoryFailed { .. }));
-    let report = settled.cleanup_report().expect("failed cleanup report");
+    let mut failure = builder.build().err().expect("factory failure");
+    let report = ready(failure.wait_cleanup()).expect("failed cleanup report");
     assert!(!report.is_success());
     assert_eq!(report.failures().len(), 1);
     assert_eq!(report.failures()[0].phase, ShutdownPhase::Wait);
     assert!(report.failures()[0].error.to_string().contains("wait failed"));
+    let second = ready(failure.wait_cleanup()).expect("same failed cleanup report");
+    assert_eq!(second.failures().len(), report.failures().len());
+    assert_eq!(second.failures()[0].phase, report.failures()[0].phase);
+    let source = failure.source().expect("original build error");
+    assert!(source.downcast_ref::<BuildError>().is_some());
+    let factory = source.source().expect("factory error");
+    assert!(factory.downcast_ref::<FactoryError>().is_some());
+    assert_eq!(
+        factory.source().expect("original io error").to_string(),
+        "factory failed"
+    );
 }
 
 #[test]
-fn test_settled_build_failure_source_chain_retains_factory_error() {
+fn test_wait_cleanup_waits_once_after_build_returns() {
     let aborts = Arc::new(AtomicUsize::new(0));
     let waits = Arc::new(AtomicUsize::new(0));
-    let settled: SettledBuildFailure = ready(
-        failing_builder(aborts, waits)
-            .build()
-            .err()
-            .expect("factory failure")
-            .settle(),
+    let mut failure = failing_builder(Arc::clone(&aborts), Arc::clone(&waits))
+        .build()
+        .err()
+        .expect("factory failure");
+    assert_eq!(aborts.load(Ordering::SeqCst), 1);
+    assert_eq!(waits.load(Ordering::SeqCst), 0);
+    let report = ready(failure.wait_cleanup()).expect("cleanup report");
+    assert!(matches!(failure.cause(), BuildError::FactoryFailed { .. }));
+    assert!(report.is_success());
+    let repeated = ready(failure.wait_cleanup()).expect("stable cleanup report");
+    assert_eq!(repeated.mode(), report.mode());
+    assert_eq!(repeated.failures().len(), report.failures().len());
+    assert_eq!(repeated.incomplete(), report.incomplete());
+    assert_eq!(aborts.load(Ordering::SeqCst), 1);
+    assert_eq!(waits.load(Ordering::SeqCst), 1);
+    let (cause, cleanup) = failure.into_parts();
+    assert!(matches!(cause, BuildError::FactoryFailed { .. }));
+    let mut cleanup = cleanup.expect("completed cleanup handle remains owned");
+    assert!(
+        ready(cleanup.wait())
+            .expect("stable completed handle report")
+            .is_success()
     );
-    let source = settled.source().expect("original build error");
+    assert_eq!(waits.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn test_wait_cleanup_source_chain_retains_factory_error() {
+    let aborts = Arc::new(AtomicUsize::new(0));
+    let waits = Arc::new(AtomicUsize::new(0));
+    let mut failure = failing_builder(aborts, waits).build().err().expect("factory failure");
+    assert!(ready(failure.wait_cleanup()).expect("cleanup report").is_success());
+    let source = failure.source().expect("original build error");
     assert!(source.downcast_ref::<BuildError>().is_some());
     let factory = source.source().expect("factory error");
     assert!(factory.downcast_ref::<FactoryError>().is_some());
@@ -523,50 +594,6 @@ fn test_settled_build_failure_source_chain_retains_factory_error() {
         factory.source().expect("original io error").to_string(),
         "original failure"
     );
-    assert!(settled.to_string().contains("original failure"));
-    assert!(format!("{settled:?}").contains("FactoryFailed"));
-}
-
-#[test]
-fn test_cancelled_settle_does_not_repeat_abort_or_claim_completion() {
-    let aborts = Arc::new(AtomicUsize::new(0));
-    let waits = Arc::new(AtomicUsize::new(0));
-    let mut builder = ContainerBuilder::new().wait_policy(WaitPolicy::unbounded());
-    let abort_count = Arc::clone(&aborts);
-    let wait_count = Arc::clone(&waits);
-    builder
-        .register_managed_factory::<Resource, _>(&[], move |_| {
-            Ok(Managed::asynchronous(
-                Arc::new(Resource),
-                move |_| {
-                    abort_count.fetch_add(1, Ordering::SeqCst);
-                    Ok(())
-                },
-                move |_| {
-                    wait_count.fetch_add(1, Ordering::SeqCst);
-                    Box::pin(std::future::pending())
-                },
-            ))
-        })
-        .expect("managed resource");
-    builder
-        .register_factory::<Failing, _>(&[Dependency::of::<Resource>()], |_| {
-            Err(FactoryError::new(std::io::Error::other("factory failed")))
-        })
-        .expect("failing factory");
-    builder.root::<Failing>();
-    let failure = builder.build().err().expect("factory failure");
-    assert_eq!(aborts.load(Ordering::SeqCst), 1);
-    assert_eq!(waits.load(Ordering::SeqCst), 0);
-    let mut settle = Box::pin(failure.settle());
-    assert!(
-        settle
-            .as_mut()
-            .poll(&mut Context::from_waker(Waker::noop()))
-            .is_pending()
-    );
-    assert_eq!(waits.load(Ordering::SeqCst), 1);
-    drop(settle);
-    assert_eq!(aborts.load(Ordering::SeqCst), 1);
-    assert_eq!(waits.load(Ordering::SeqCst), 1);
+    assert!(failure.to_string().contains("original failure"));
+    assert!(format!("{failure:?}").contains("FactoryFailed"));
 }
