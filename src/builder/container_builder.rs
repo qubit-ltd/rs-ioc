@@ -304,6 +304,51 @@ impl ContainerBuilder {
         })
     }
 
+    /// Stages an asynchronous factory whose typed parameter tuple also
+    /// declares its graph dependencies.
+    ///
+    /// Supported arguments are `Arc<T>`, `Option<Arc<T>>`, and `Vec<Arc<T>>`;
+    /// tuples support up to eight parameters. Missing and ambiguous requests
+    /// are reported during build validation, before this factory runs. Use
+    /// [`Self::register_async_factory`] when the factory needs named IDs or a
+    /// custom dependency view. Build with [`Self::build_async`] or
+    /// [`Self::build_all_async`]. Dropping a build future stops later factories
+    /// but cannot undo side effects performed by a running user factory.
+    ///
+    /// # Type Parameters
+    ///
+    /// * `T` - Component type produced by the factory.
+    /// * `A` - Typed argument tuple implementing [`FactoryArgs`].
+    /// * `F` - Sendable one-shot function creating the component future.
+    ///
+    /// # Parameters
+    ///
+    /// * `factory` - Closure receiving exactly the arguments described by `A`.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` after staging the definition.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RegistrationError`] for invalid generated requests or binding
+    /// options. Missing and ambiguous dependencies are reported later by build.
+    #[track_caller]
+    pub fn register_injected_async_factory<T, A, F>(&mut self, factory: F) -> Result<(), RegistrationError>
+    where
+        T: ?Sized + Send + Sync + 'static,
+        A: FactoryArgs,
+        F: FnOnce(A) -> FactoryFuture<T> + Send + 'static,
+    {
+        let dependencies = A::dependencies();
+        self.register_async_factory::<T, _>(&dependencies, move |context| {
+            match A::resolve(&context).map_err(FactoryError::new) {
+                Ok(arguments) => factory(arguments),
+                Err(error) => Box::pin(async move { Err(error) }),
+            }
+        })
+    }
+
     /// Stages a one-shot synchronous factory of `T` with binding options.
     ///
     /// Duplicate requests or invalid IDs and profiles fail at registration;
@@ -588,6 +633,56 @@ impl ContainerBuilder {
         F: FnOnce(BuildContext) -> ManagedFactoryFuture<T> + Send + 'static,
     {
         self.register_managed_async_factory_with(dependencies, BindingOptions::default(), factory)
+    }
+
+    /// Stages a managed asynchronous factory whose typed parameter tuple also
+    /// declares its graph dependencies.
+    ///
+    /// Supported arguments are `Arc<T>`, `Option<Arc<T>>`, and `Vec<Arc<T>>`;
+    /// tuples support up to eight parameters. Missing and ambiguous requests
+    /// are reported during build validation, before this factory runs. Use
+    /// [`Self::register_managed_async_factory`] when the factory needs named
+    /// IDs or a custom dependency view. Build with [`Self::build_async`] or
+    /// [`Self::build_all_async`]. Dropping a build future stops later factories
+    /// but cannot undo side effects performed by a running user factory.
+    /// Successfully returned managed values use the normal rollback and
+    /// shutdown lifecycle.
+    ///
+    /// # Type Parameters
+    ///
+    /// * `T` - Managed component type produced by the factory.
+    /// * `A` - Typed argument tuple implementing [`FactoryArgs`].
+    /// * `F` - Sendable one-shot function creating the managed component future.
+    ///
+    /// # Parameters
+    ///
+    /// * `factory` - Closure receiving exactly the arguments described by `A`.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` after staging the definition.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RegistrationError`] for invalid generated requests or binding
+    /// options. Missing and ambiguous dependencies are reported later by build.
+    #[track_caller]
+    pub fn register_injected_managed_async_factory<T, A, F>(
+        &mut self,
+        factory: F,
+    ) -> Result<(), RegistrationError>
+    where
+        T: ?Sized + Send + Sync + 'static,
+        A: FactoryArgs,
+        F: FnOnce(A) -> ManagedFactoryFuture<T> + Send + 'static,
+    {
+        let dependencies = A::dependencies();
+        self.register_managed_async_factory::<T, _>(&dependencies, move |context| {
+            match A::resolve(&context).map_err(FactoryError::new) {
+                Ok(arguments) => factory(arguments),
+                Err(error) => Box::pin(async move { Err(error) }),
+            }
+        })
     }
 
     /// Stages a managed asynchronous factory with binding options.
