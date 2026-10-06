@@ -20,7 +20,7 @@ side effects performed before an async factory returns `Managed<T>` remain that
 factory's responsibility if construction later fails or is cancelled.
 
 For example, this complete function uses a required `String` dependency and
-builds the selected graph asynchronously:
+builds all active definitions asynchronously:
 
 ```rust
 use std::error::Error;
@@ -265,8 +265,9 @@ normal panic behavior. If construction fails after managed values have been
 transferred to IoC, both build modes request abort and return `BuildFailure`
 without waiting. The application that owns this failure decides when to observe
 cleanup. Keep `BuildFailure` as a typed application-error variant until
-`wait_cleanup()` has completed; converting it to `BuildError` or discarding it
-earlier loses the cleanup observation handle. `wait_cleanup()` borrows the
+`wait_cleanup()` has completed, or retain the `ShutdownHandle` returned by
+`take_cleanup()` or `into_parts()` and wait on it. Keeping only the `BuildError`
+or cause discards the cleanup observation handle. `wait_cleanup()` borrows the
 failure, preserves its original cause, and can be called again after its future
 is cancelled.
 
@@ -422,8 +423,9 @@ Both build variants return `BuildFailure` immediately after requesting abort
 for transferred managed values. The application owns cleanup observation:
 inspect `cause()`, then await optional cleanup with `wait_cleanup()` or take its
 handle with `take_cleanup()` or `into_parts()`. Keep `BuildFailure` as a typed
-application-error variant until `wait_cleanup()` has completed; converting it
-to `BuildError` or discarding it earlier loses the cleanup observation handle.
+application-error variant until cleanup completes, or keep the extracted
+`ShutdownHandle` and wait on it. Keeping only the `BuildError` or cause loses
+the cleanup observation handle.
 `wait_cleanup()` borrows the failure, so cancelling it and calling it again
 resumes the same cleanup wait. Dropping the owner,
 an untransferred `Managed`, or a shutdown handle requests abort but never waits;

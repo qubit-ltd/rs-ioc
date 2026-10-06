@@ -229,10 +229,10 @@ ASCII 字母，后续只能使用 ASCII 字母、数字或下划线。构建后�
 `register_instance_with` 暂存实例时会校验自身的 ID 和 profile；与其他定义的键冲突会在
 构建时、过滤非活跃 profile 后检查。工厂 panic 按 Rust 的常规 panic 语义传播。若构造在
 托管资源移交给 IoC 后失败，同步和异步构建都会请求 abort，并立即返回 `BuildFailure`，不会
-等待清理完成。由持有该失败值的应用负责观察清理结果。包装成应用错误时，在
-`wait_cleanup()` 完成前，应将 `BuildFailure` 保留为独立的类型化变体；提前提取
-`BuildError` 或丢弃失败值会失去清理观察句柄。`wait_cleanup()` 借用失败值并保留原始原因；
-如果等待 future 被取消，可以再次调用继续观察。
+等待清理完成。由持有该失败值的应用负责观察清理结果。包装成应用错误时，应
+保留 `BuildFailure` 直到 `wait_cleanup()` 完成，或保留 `take_cleanup()` / `into_parts()`
+返回的 `ShutdownHandle` 并等待它完成。只保留 `BuildError` 或 cause 会丢失清理观察句柄。
+`wait_cleanup()` 借用失败值并保留原始原因；如果等待 future 被取消，可以再次调用继续观察。
 
 定义可以指定生效的 `profile`。每次调用 `active_profiles` 都会替换此前的集合；空集合
 激活 `default`，无 profile 定义始终生效。通过 `#[value]` 或
@@ -369,8 +369,8 @@ Immediate 在返回句柄前向全部托管组件请求 abort。[生命周期说
 同步和异步构建失败时都会先请求已移交资源 abort，再立即返回 `BuildFailure`；等待和报告
 由持有失败值的应用负责。应用检查 `cause()`，可用 `wait_cleanup()` 等待可选清理，也可用
 `take_cleanup()` 或 `into_parts()` 取出句柄后等待。包装成应用错误时，在
-`wait_cleanup()` 完成前，把 `BuildFailure` 保留为应用错误的独立变体；提前提取
-`BuildError` 或丢弃失败值会失去清理观察句柄。`wait_cleanup()` 借用失败对象；取消后再次调用会继续
+应保留 `BuildFailure` 直到清理完成，或保留提取出的 `ShutdownHandle` 并等待它完成。只保留
+`BuildError` 或 cause 会丢失清理观察句柄。`wait_cleanup()` 借用失败对象；取消后再次调用会继续
 等待同一清理过程。丢弃 owner、未移交的 `Managed` 或关闭句柄会请求 abort，但不等待；查询
 context Drop 不请求关闭。丢弃构建失败对象或取消异步构建也不等待。工厂 unwind
 panic 仍向外传播；工厂在返回 `Managed` 前产生的副作用由它自身负责。
