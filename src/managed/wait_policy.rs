@@ -33,12 +33,11 @@ type DeadlineFactory = Arc<dyn Fn(Duration) -> DeadlineFuture + Send + Sync>;
 /// use qubit_ioc::WaitPolicy;
 ///
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// // A real runtime supplies its own timer factory; this one only shows the
-/// // contract that the returned future must be owned and polled by the caller.
+/// // The application must keep a Tokio runtime alive while it polls shutdown.
 /// let policy = WaitPolicy::bounded(
 ///     Duration::from_millis(500),
 ///     Duration::from_millis(200),
-///     |budget| Box::pin(async move { std::thread::sleep(budget) }),
+///     |budget| Box::pin(tokio::time::sleep(budget)),
 /// );
 ///
 /// let mut builder = Application::builder().wait_policy(policy);
