@@ -9,6 +9,24 @@ when the selected graph is built. Keep the returned `Application` as the
 lifecycle owner, configure a driven, bounded `WaitPolicy`, and await its
 shutdown handle before dropping the runtime that drives the resource.
 
+## When to create the resource
+
+Registration stages a factory definition; it does not create the managed
+resource. IoC validates the selected dependency graph before invoking selected
+factories, so create resources that need this protection inside the factory.
+After a factory returns `Managed<T>`, IoC owns its lifecycle and can request
+abort and observe termination during rollback or shutdown. Before returning,
+the factory remains responsible for cleaning up any partial side effects it
+created if construction fails or is cancelled. Side effects outside a returned
+`Managed<T>` remain the factory's or application's responsibility.
+
+Abort and graceful callbacks issue nonblocking requests. Use `wait` to confirm
+termination, or transfer a request ticket to its matching wait callback when
+the resource represents shutdown with a ticket. Keep the `Application` and the
+runtime that drives waits alive until `ShutdownHandle::wait()` completes; a
+bounded `WaitPolicy` also requires the application's executor to drive its
+timer.
+
 ## Choose how termination is confirmed
 
 For a resource whose stop method finishes termination before it returns,

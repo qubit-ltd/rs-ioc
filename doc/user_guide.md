@@ -261,11 +261,14 @@ optional, and collection queries after construction. `get_all()` uses the immuta
 `register_instance_with` validates its own ID and profile when staging the
 instance. Collisions with other definitions are checked at build time after
 inactive profiles have been filtered. Factory panics propagate with Rust's
-normal panic behavior. On a later construction failure, synchronous builds
-stop managed values already returned by factories but do not wait for them;
-asynchronous builds also request abort and immediately return `BuildFailure`.
-Inspect `cause()` and explicitly await the optional `take_cleanup()` handle
-to observe termination and cleanup failures.
+normal panic behavior. If construction fails after managed values have been
+transferred to IoC, both build modes request abort and return `BuildFailure`
+without waiting. The application that owns this failure decides when to observe
+cleanup. Keep `BuildFailure` as a typed application-error variant until
+`wait_cleanup()` has completed; converting it to `BuildError` or discarding it
+earlier loses the cleanup observation handle. `wait_cleanup()` borrows the
+failure, preserves its original cause, and can be called again after its future
+is cancelled.
 
 ### Replace one complete definition
 
@@ -416,8 +419,11 @@ The [lifecycle guide](lifecycle.md) supplies the complete failure and business
 exit flow, and [app_lifecycle](../examples/app_lifecycle.rs) runs a worker.
 
 Both build variants return `BuildFailure` immediately after requesting abort
-for transferred managed values. Inspect `cause()`, then await optional cleanup
-with `wait_cleanup()` or take its handle with `take_cleanup()` or `into_parts()`.
+for transferred managed values. The application owns cleanup observation:
+inspect `cause()`, then await optional cleanup with `wait_cleanup()` or take its
+handle with `take_cleanup()` or `into_parts()`. Keep `BuildFailure` as a typed
+application-error variant until `wait_cleanup()` has completed; converting it
+to `BuildError` or discarding it earlier loses the cleanup observation handle.
 `wait_cleanup()` borrows the failure, so cancelling it and calling it again
 resumes the same cleanup wait. Dropping the owner,
 an untransferred `Managed`, or a shutdown handle requests abort but never waits;
