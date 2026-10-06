@@ -652,7 +652,8 @@ impl ContainerBuilder {
     ///
     /// * `T` - Managed component type produced by the factory.
     /// * `A` - Typed argument tuple implementing [`FactoryArgs`].
-    /// * `F` - Sendable one-shot function creating the managed component future.
+    /// * `F` - Sendable one-shot function creating the managed component
+    ///   future.
     ///
     /// # Parameters
     ///
@@ -667,10 +668,7 @@ impl ContainerBuilder {
     /// Returns [`RegistrationError`] for invalid generated requests or binding
     /// options. Missing and ambiguous dependencies are reported later by build.
     #[track_caller]
-    pub fn register_injected_managed_async_factory<T, A, F>(
-        &mut self,
-        factory: F,
-    ) -> Result<(), RegistrationError>
+    pub fn register_injected_managed_async_factory<T, A, F>(&mut self, factory: F) -> Result<(), RegistrationError>
     where
         T: ?Sized + Send + Sync + 'static,
         A: FactoryArgs,

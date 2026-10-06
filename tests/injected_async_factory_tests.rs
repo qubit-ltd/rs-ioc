@@ -46,22 +46,18 @@ fn injected_async_resolves_required_optional_and_all() -> Result<(), Box<dyn std
             },
         )?;
     }
-    builder
-        .register_injected_async_factory::<usize, (Arc<u32>, Option<Arc<u8>>, Vec<Arc<str>>), _>(
-            |(number, absent, labels)| {
-                Box::pin(async move {
-                    assert!(absent.is_none());
-                    assert_eq!(
-                        labels
-                            .iter()
-                            .map(|label| label.as_ref())
-                            .collect::<Vec<_>>(),
-                        ["first", "last"]
-                    );
-                    Ok(Arc::new(*number as usize + labels.len()))
-                })
-            },
-        )?;
+    builder.register_injected_async_factory::<usize, (Arc<u32>, Option<Arc<u8>>, Vec<Arc<str>>), _>(
+        |(number, absent, labels)| {
+            Box::pin(async move {
+                assert!(absent.is_none());
+                assert_eq!(
+                    labels.iter().map(|label| label.as_ref()).collect::<Vec<_>>(),
+                    ["first", "last"]
+                );
+                Ok(Arc::new(*number as usize + labels.len()))
+            })
+        },
+    )?;
 
     let application = ready(builder.build_all_async())?;
     assert_eq!(*application.context().get::<usize>()?, 9);
@@ -83,10 +79,7 @@ fn injected_async_rejects_missing_before_factory_runs() {
     let error = ready(builder.build_all_async())
         .err()
         .expect("missing dependency must fail");
-    assert!(matches!(
-        error.cause(),
-        BuildError::MissingDependency { .. }
-    ));
+    assert!(matches!(error.cause(), BuildError::MissingDependency { .. }));
     assert_eq!(calls.load(Ordering::SeqCst), 0);
 }
 
@@ -132,10 +125,7 @@ fn injected_async_sync_build_preflight() {
         })
         .expect("stage injected async factory");
 
-    let error = builder
-        .build_all()
-        .err()
-        .expect("async factory requires async build");
+    let error = builder.build_all().err().expect("async factory requires async build");
     assert!(matches!(error.cause(), BuildError::AsyncRequired { .. }));
     assert_eq!(calls.load(Ordering::SeqCst), 0);
 }
@@ -168,13 +158,9 @@ fn injected_managed_async_rollback() {
             Box::pin(async { Err(FactoryError::new(LaterFailure)) })
         })
         .expect("stage later failing factory");
-    builder
-        .register_instance(Arc::new(2_u32))
-        .expect("stage dependency");
+    builder.register_instance(Arc::new(2_u32)).expect("stage dependency");
 
-    let mut failure = ready(builder.build_all_async())
-        .err()
-        .expect("later factory fails");
+    let mut failure = ready(builder.build_all_async()).err().expect("later factory fails");
     assert!(
         failure
             .cause()
