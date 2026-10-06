@@ -9,9 +9,10 @@
 //!
 //! A container stages shared component definitions and validates the selected
 //! graph before running any factory. By default, `build()` validates and builds
-//! only the dependency closure of its selected roots. `ValidationScope::AllActive`
-//! also checks inactive-in-the-root-closure but active-in-profile definitions;
-//! `build_all()` validates and builds every active definition.
+//! only the dependency closure of its selected roots.
+//! `ValidationScope::AllActive` also checks inactive-in-the-root-closure but
+//! active-in-profile definitions; `build_all()` validates and builds every
+//! active definition.
 //!
 //! [`Definition`]s bind component types to an identifier and a factory. They
 //! are staged on a [`ContainerBuilder`], roots are selected, and
