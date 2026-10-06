@@ -240,11 +240,15 @@ rejected with a diagnostic. With `default-features = false`, manual
 registration needs neither feature.
 
 Call `root::<T>()` for an unnamed request or `root_by_id::<T>("some.id")?` for
-an exact binding. `build()` needs at least one root and constructs only its
-dependency closure. `build_all()` constructs every active definition and can
-build an empty graph. Both have asynchronous counterparts. A graph with an
-asynchronous factory requires `build_async()` or `build_all_async()` and an
-executor supplied by the application.
+an exact binding. With roots selected, `build()` validates only the reachable
+dependency closure by default. Set `validation_scope(ValidationScope::AllActive)`
+to check every active definition before constructing that closure;
+`build_all()` checks and constructs every active definition and can build an
+empty graph. `AllActive` does not run unselected factories or require an
+unselected async factory or managed factory to match the selected build mode or
+`WaitPolicy`. Both build methods have asynchronous counterparts. A selected
+graph with an asynchronous factory requires `build_async()` or `build_all_async()`
+and an executor supplied by the application.
 
 If several bindings have the same Rust type, an unnamed request selects the
 sole candidate or the sole `primary` candidate. Otherwise it is ambiguous.
