@@ -35,10 +35,38 @@ The `macros` and `config` features are independent. Configuration attributes
 such as `#[value]` and `#[ConfigurationProperties]` require both features;
 enabling `config` alone does not enable the macros.
 
-Manual synchronous factories can use `register_injected_factory` and
-`register_injected_managed_factory` to derive dependency requests from typed
-argument tuples (`Arc<T>`, `Option<Arc<T>>`, and `Vec<Arc<T>>`, up to eight
-arguments). Managed shutdown can optionally use
+Manual factories can use `register_injected_factory`,
+`register_injected_managed_factory`, `register_injected_async_factory`, and
+`register_injected_managed_async_factory` to derive dependency requests from
+typed argument tuples. The tuple supports `()`, required `Arc<T>`, optional
+`Option<Arc<T>>`, and all-candidate `Vec<Arc<T>>` arguments, with zero through
+eight arguments. An async factory requires `build_async()` or
+`build_all_async()`. For named IDs or custom dependency requests, use
+`register_async_factory` or `register_managed_async_factory` directly.
+
+This complete async registration example derives its `String` dependency from
+the argument type:
+
+```rust
+use std::error::Error;
+use std::sync::Arc;
+use qubit_ioc::ContainerBuilder;
+
+async fn build_message_length() -> Result<(), Box<dyn Error>> {
+    let mut builder = ContainerBuilder::new();
+    builder.register_instance(Arc::new(String::from("hello")))?;
+    builder.register_injected_async_factory::<usize, (Arc<String>,), _>(
+        |(message,)| Box::pin(async move { Ok(Arc::new(message.len())) }),
+    )?;
+    let application = builder.build_all_async().await?;
+    assert_eq!(*application.context().get::<usize>()?, 5);
+    Ok(())
+}
+```
+
+Managed factories should create resources after graph validation; side effects
+that happen before a factory returns `Managed<T>` remain the factory's
+responsibility. Managed shutdown can optionally use
 `WaitPolicy::bounded_with_total(grace, termination, total, timer)` for one
 application-wide budget in addition to per-component budgets. See the
 [lifecycle guide](doc/lifecycle.md) for deadline and reporting semantics.

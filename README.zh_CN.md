@@ -32,9 +32,35 @@ qubit-ioc = "0.3"
 `macros` 与 `config` 可独立启用。`#[value]` 和 `#[ConfigurationProperties]`
 需要同时启用这两个 feature；只启用 `config` 不会导出这些宏。
 
-同步手工工厂可使用 `register_injected_factory` 和
-`register_injected_managed_factory`，由类型化参数元组
-（`Arc<T>`、`Option<Arc<T>>`、`Vec<Arc<T>>`，最多 8 个参数）生成依赖请求。
+手工工厂可使用 `register_injected_factory`、
+`register_injected_managed_factory`、`register_injected_async_factory` 和
+`register_injected_managed_async_factory`，由类型化参数元组生成依赖请求。
+元组支持 `()`、必需的 `Arc<T>`、可选的 `Option<Arc<T>>` 和全部候选
+`Vec<Arc<T>>`，参数个数为零至八个。选中的异步工厂需要通过 `build_async()`
+或 `build_all_async()` 构建。需要按具名 ID 或自定义依赖请求时，直接使用
+`register_async_factory` 或 `register_managed_async_factory`。
+
+下面是完整的异步注册示例；依赖请求由参数类型 `Arc<String>` 自动生成：
+
+```rust
+use std::error::Error;
+use std::sync::Arc;
+use qubit_ioc::ContainerBuilder;
+
+async fn build_message_length() -> Result<(), Box<dyn Error>> {
+    let mut builder = ContainerBuilder::new();
+    builder.register_instance(Arc::new(String::from("hello")))?;
+    builder.register_injected_async_factory::<usize, (Arc<String>,), _>(
+        |(message,)| Box::pin(async move { Ok(Arc::new(message.len())) }),
+    )?;
+    let application = builder.build_all_async().await?;
+    assert_eq!(*application.context().get::<usize>()?, 5);
+    Ok(())
+}
+```
+
+应在依赖图验证通过后创建托管资源。工厂返回 `Managed<T>` 之前产生的副作用，仍由工厂自行负责。
+
 托管关闭还可使用 `WaitPolicy::bounded_with_total(grace, termination, total, timer)`
 增加应用级总时限，同时保留逐组件时限。时限与报告语义见[生命周期说明](doc/lifecycle.zh_CN.md)。
 

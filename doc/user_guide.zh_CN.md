@@ -2,10 +2,36 @@
 
 ## 类型化工厂与应用关闭预算
 
-同步手工工厂可使用 `register_injected_factory` 和
-`register_injected_managed_factory`，由类型化参数元组生成依赖图请求：`Arc<T>` 表示必需，
-`Option<Arc<T>>` 表示可选，`Vec<Arc<T>>` 表示请求全部候选。支持零至八个参数。需要 ID、
-异步工厂或更多参数时，继续使用现有注册方法。
+同步和异步手工工厂都有类型化注册入口：`register_injected_factory`、
+`register_injected_managed_factory`、`register_injected_async_factory` 和
+`register_injected_managed_async_factory`。参数元组会生成依赖图请求：`()` 不请求依赖，
+`Arc<T>` 要求一个绑定，`Option<Arc<T>>` 允许没有匹配项，`Vec<Arc<T>>` 请求全部候选。
+支持零至八个参数。若要按具名 ID 查找，或使用自定义依赖请求，请显式声明请求并调用
+`register_async_factory` 或 `register_managed_async_factory`。
+
+构建图中只要选中了异步工厂，就必须调用 `build_async()` 或 `build_all_async()`，并由应用
+选定的执行器轮询。此时若调用同步 `build()`，会在执行任何工厂前返回
+`BuildError::AsyncRequired`。条件允许时，应等依赖图验证通过后再创建托管资源；异步工厂
+返回 `Managed<T>` 之前产生的副作用，如果之后构建失败或被取消，仍由工厂自行处理。
+
+下面的完整函数通过必需的 `String` 依赖创建一个异步工厂，并异步构建整张图：
+
+```rust
+use std::error::Error;
+use std::sync::Arc;
+use qubit_ioc::ContainerBuilder;
+
+async fn build_message_length() -> Result<(), Box<dyn Error>> {
+    let mut builder = ContainerBuilder::new();
+    builder.register_instance(Arc::new(String::from("hello")))?;
+    builder.register_injected_async_factory::<usize, (Arc<String>,), _>(
+        |(message,)| Box::pin(async move { Ok(Arc::new(message.len())) }),
+    )?;
+    let application = builder.build_all_async().await?;
+    assert_eq!(*application.context().get::<usize>()?, 5);
+    Ok(())
+}
+```
 
 托管关闭可使用 `WaitPolicy::bounded_with_total(grace, termination, total, timer)` 增加
 应用级预算。计时器在 `wait()` 首次 poll 时启动，取消等待后仍然保留。到期时会请求未确认
@@ -291,7 +317,13 @@ cargo test --manifest-path tests/fixtures/ioc_cross_crate/Cargo.toml
 `request_shutdown`、ticket 和 `wait_async()`；同步 `EventBus::shutdown(Immediate)`
 仍会在停止回调中等待。这些片段来自不同夹具、承担不同验证目标；应用仍需自行处理配置来源和外部副作用。
 
-只有构造过程需要等待 I/O 时才使用异步工厂。可以声明 `#[bean] async fn`，也可调用 `register_async_factory`；之后用 `build_async()` 或 `build_all_async()`，并由应用执行器驱动 future。若选中图里有异步定义却调用同步 `build()`，会在工厂运行前返回 `BuildFailure`，其 cause 为 `BuildError::AsyncRequired`。执行器选择和取消策略由应用负责。
+只有构造过程需要等待 I/O 时才使用异步工厂。`#[bean] async fn`、
+`register_injected_async_factory` 和 `register_injected_managed_async_factory`
+适用于类型化依赖元组；需要按 ID 查找或设置自定义请求时，改用
+`register_async_factory` 或 `register_managed_async_factory`。之后调用
+`build_async()` 或 `build_all_async()`，并由应用执行器驱动 future。若选中图里有异步定义却调用
+同步 `build()`，会在工厂运行前返回 `BuildFailure`，其 cause 为
+`BuildError::AsyncRequired`。执行器选择和取消策略由应用负责。
 
 ## 错误与排障
 

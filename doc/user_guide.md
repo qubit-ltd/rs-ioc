@@ -2,12 +2,42 @@
 
 ## Typed factories and application shutdown budgets
 
-For synchronous manual factories, `register_injected_factory` and
-`register_injected_managed_factory` derive graph requests from a typed argument
-tuple: `Arc<T>` is required, `Option<Arc<T>>` is optional, and `Vec<Arc<T>>`
-requests all candidates. Zero through eight arguments are supported. The
-existing registration methods remain available for IDs, async factories, and
-larger signatures.
+Manual synchronous and asynchronous factories have four typed registration
+methods: `register_injected_factory`, `register_injected_managed_factory`,
+`register_injected_async_factory`, and
+`register_injected_managed_async_factory`. Their argument tuple generates the
+dependency requests: `()` requests nothing, `Arc<T>` requires one binding,
+`Option<Arc<T>>` allows none, and `Vec<Arc<T>>` requests all candidates. Tuples
+with zero through eight arguments are supported. For named IDs or custom
+dependency requests, use `register_async_factory` or
+`register_managed_async_factory` and provide the requests explicitly.
+
+An async factory selected by the build graph requires `build_async()` or
+`build_all_async()`, which the application must poll on its chosen executor.
+Synchronous `build()` reports `BuildError::AsyncRequired` before invoking any
+factory. Create managed resources after graph validation where possible;
+side effects performed before an async factory returns `Managed<T>` remain that
+factory's responsibility if construction later fails or is cancelled.
+
+For example, this complete function uses a required `String` dependency and
+builds the selected graph asynchronously:
+
+```rust
+use std::error::Error;
+use std::sync::Arc;
+use qubit_ioc::ContainerBuilder;
+
+async fn build_message_length() -> Result<(), Box<dyn Error>> {
+    let mut builder = ContainerBuilder::new();
+    builder.register_instance(Arc::new(String::from("hello")))?;
+    builder.register_injected_async_factory::<usize, (Arc<String>,), _>(
+        |(message,)| Box::pin(async move { Ok(Arc::new(message.len())) }),
+    )?;
+    let application = builder.build_all_async().await?;
+    assert_eq!(*application.context().get::<usize>()?, 5);
+    Ok(())
+}
+```
 
 For managed shutdown, `WaitPolicy::bounded_with_total(grace, termination,
 total, timer)` adds an application-wide budget. It starts when `wait()` is
@@ -329,7 +359,12 @@ A separate downstream fixture, `rs-execution-services/tests/fixtures/ioc_applica
 uses `request_shutdown` plus a ticket and `wait_async()`: synchronous
 `EventBus::shutdown(Immediate)` would still wait in a stop callback. These snippets come from different fixtures with different purposes; use them as contract references and keep application-specific configuration and external side effects in the consuming application.
 
-Use an async factory when construction itself must await I/O. `#[bean] async fn` and `register_async_factory` both create async definitions; choose `build_async()` or `build_all_async()` and drive the returned future with the application's executor. Calling synchronous `build()` on a selected async definition returns `BuildFailure`
+Use an async factory when construction itself must await I/O. `#[bean] async fn`,
+`register_injected_async_factory`, and `register_injected_managed_async_factory`
+cover typed dependency tuples; use `register_async_factory` or
+`register_managed_async_factory` when requests need IDs or custom metadata.
+Choose `build_async()` or `build_all_async()` and drive the returned future with
+the application's executor. Calling synchronous `build()` on a selected async definition returns `BuildFailure`
 with `BuildError::AsyncRequired` as its cause before any factory runs. The app owns executor choice and cancellation policy.
 
 ## Errors and diagnostics
