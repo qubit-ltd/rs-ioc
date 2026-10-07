@@ -176,7 +176,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 Run `cargo run --example readme_declarative` to execute this example; its full
 source is in [`examples/readme_declarative.rs`](examples/readme_declarative.rs).
 `build()` requires at least one selected root. Use `build_all()` to construct
-the complete registered graph.
+all active definitions.
+
+For an application assembly check, select roots and set
+`validation_scope(ValidationScope::AllActive)` to validate every active
+definition before publishing the selected graph. Unselected factories do not
+run, and an unselected async or managed factory does not require async build
+or a `WaitPolicy`. Keep the default `Reachable` scope when a profile intentionally
+uses only one root closure. `build_all()` constructs every active definition;
+it is a different choice from `AllActive` validation of selected roots.
 
 The assertion observes the selected implementation. The builder checks the
 selected service's dependency graph before constructing either component.
@@ -268,7 +276,13 @@ async fn ticket_and_failure() {
 }
 ```
 
-The ticket destructor must not cancel resource shutdown. See the
+The original graceful ticket must keep confirming final termination after an
+Immediate upgrade, even when that upgrade causes the stop. The new ticket may
+be dropped, so ticket destruction must not cancel shutdown. A cancelled
+`ShutdownHandle::wait()` call retains its wait future and deadline. Resources
+whose older ticket cannot observe the upgraded stop should use
+`Managed::asynchronous_with_graceful` with resource-owned shared observation
+state. See the
 [managed adapter guide](doc/managed-adapters.md) and
 [lifecycle and 0.3 migration guide](doc/lifecycle.md).
 

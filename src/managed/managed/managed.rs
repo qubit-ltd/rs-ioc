@@ -224,6 +224,16 @@ impl<T: ?Sized + Send + Sync + 'static> Managed<T> {
     /// preserves the active wait future and discards the new abort ticket.
     /// Neither request may block waiting for termination. Ticket destruction
     /// must not cancel shutdown, including when an unused ticket is discarded.
+    /// Once waiting has started, the original graceful ticket must continue to
+    /// confirm the resource's **final termination**, even if a later Immediate
+    /// request causes that termination. A ticket that only confirms its own
+    /// request does not meet this contract. If a borrowed
+    /// [`crate::ShutdownHandle::wait`] future is dropped, a later `wait()` call
+    /// resumes the same internally retained wait future and deadline. The
+    /// adapter's wait future must support that continued observation.
+    /// If only the newest request's ticket can confirm termination, keep
+    /// upgradeable shared observation state in the resource and use
+    /// [`Self::asynchronous_with_graceful`] with a stable wait future instead.
     /// This constructor keeps its graceful callback paired with its ticket;
     /// use [`Self::asynchronous_with_ticket`] when no graceful request is
     /// needed.

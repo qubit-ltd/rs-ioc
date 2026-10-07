@@ -168,7 +168,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 运行 `cargo run --example readme_declarative` 可执行此示例，完整源码见
 [`examples/readme_declarative.rs`](examples/readme_declarative.rs)。`build()` 至少需要一个
-选定的根节点；若要构造所有已注册定义，请使用 `build_all()`。
+选定的根节点；若要构造所有活跃定义，请使用 `build_all()`。
+
+应用装配中心若需在发布前检查全部**活跃**定义，可选根节点并设置
+`validation_scope(ValidationScope::AllActive)`。未选中工厂不会执行，未选中的异步或托管
+工厂也无需因此改用异步构建或配置 `WaitPolicy`。按 profile 有意仅使用某个根闭包时，
+保留默认 `Reachable`。`build_all()` 会构造全部活跃定义，与 `AllActive` 下的根构建不同。
 
 断言能观察到选中的实现。构建器会在创建组件前验证该服务的依赖链。
 
@@ -240,7 +245,11 @@ async fn ticket_and_failure() {
 }
 ```
 
-ticket 析构不得取消资源关闭。具体适配方式见
+原 graceful ticket 在 Immediate 升级后必须仍能确认资源的最终终止，包括由升级导致的终止。
+新 ticket 可能被丢弃，因此 ticket 析构不得取消资源关闭。取消一次
+`ShutdownHandle::wait()` 调用后，原等待 future 与期限会被保留。若旧 ticket 无法观察
+升级后的终止，应使用 `Managed::asynchronous_with_graceful` 与资源自有的共享观察状态。
+具体适配方式见
 [托管资源适配指南](doc/managed-adapters.zh_CN.md)，完整关闭与 0.3 迁移步骤见
 [生命周期指南](doc/lifecycle.zh_CN.md)。
 

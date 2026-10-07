@@ -219,6 +219,35 @@ bounded 集成函数，在构建失败清理和正常关闭两条路径都显式
 两种构建方式都有异步版本。所选构建图包含异步工厂时，应用需自行提供执行器并调用
 `build_async()` 或 `build_all_async()`。
 
+应用装配中心若要在发布前检查未选中但仍活跃的错误定义，可选用 `AllActive`；按 profile
+或租户有意选择部分根闭包时保留默认 `Reachable`。下面未选中的定义缺少依赖：
+`Reachable` 下根构建成功，`AllActive` 在任何工厂运行前拒绝构建：
+
+```rust
+use std::sync::Arc;
+use qubit_ioc::{BuildError, ContainerBuilder, Dependency, ValidationScope};
+
+fn builder() -> ContainerBuilder {
+    let mut builder = ContainerBuilder::new();
+    builder.register_factory::<u32, _>(&[], |_| Ok(Arc::new(1)))
+        .expect("register root");
+    builder.register_factory::<u64, _>(&[Dependency::of::<i16>()], |_| Ok(Arc::new(2)))
+        .expect("register unselected definition");
+    builder.root::<u32>();
+    builder
+}
+
+fn main() {
+    assert!(builder().build().is_ok());
+    let failure = builder().validation_scope(ValidationScope::AllActive)
+        .build().err().expect("missing dependency");
+    assert!(matches!(failure.cause(), BuildError::MissingDependency { .. }));
+}
+```
+
+`build_all()` 用于真正构造所有活跃定义；此例也会因缺失依赖而失败。仅设置 `AllActive`
+不会执行未选中工厂。
+
 同一类型只有一个候选时，未指定 ID 的请求直接选中它；多个候选时，必须有唯一的
 `primary`，否则返回歧义错误。精确选择需要有效 ID：各段以点分隔，首字符为
 ASCII 字母，后续只能使用 ASCII 字母、数字或下划线。构建后可用

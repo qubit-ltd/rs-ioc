@@ -70,7 +70,21 @@ let managed = Managed::asynchronous(
 分别返回 ticket 时，使用
 `Managed::asynchronous_with_graceful_ticket(value, abort, graceful, wait)`。
 适配器保存尚未观察的 ticket，并将其移入等待 future；内部持锁期间不执行请求回调，
-也不轮询等待 future。对 EventBus 0.20，完整适配器如下：
+也不轮询等待 future。
+
+| 资源契约 | 适配方式 |
+| --- | --- |
+| 旧 ticket 在 Immediate 升级后仍观察资源的**最终终止**，且丢弃未使用的 ticket 不会取消关闭 | `asynchronous_with_graceful_ticket` |
+| 只有最新请求的 ticket 能确认终止，或丢弃未使用的 ticket 会取消关闭 | 由资源维护可升级的共享观察状态，使用 `asynchronous_with_graceful` 提供稳定的等待 future |
+
+`wait()` 开始后，Immediate 请求不会替换原 graceful ticket 或等待 future；新
+Immediate ticket 会被丢弃。旧 ticket 必须仍能确认包括这次 Immediate 请求导致的最终
+终止。取消借用的 `ShutdownHandle::wait()` future 后，句柄会保留原等待 future 与期限，
+供下次调用继续使用。IoC 无法检查泛型 ticket 是否满足这些资源语义。只确认自身请求的
+ticket 在升级后可能使 `ShutdownReport::incomplete()` 留下资源，即使新 ticket
+本可以确认终止。
+
+对 EventBus 0.20，完整适配器如下：
 
 ```rust
 use std::sync::Arc;
@@ -97,8 +111,8 @@ fn managed_event_bus(bus: Arc<EventBus>) -> Managed<EventBus> {
 同步的 `EventBus::shutdown(Immediate)` 会等待 worker 和 provider，不能用作非阻塞
 abort 回调。EventBus ticket 绑定关闭 generation，丢弃 ticket 不会取消后台关闭。
 **这也是上述两个 ticket 构造器的使用前提：**升级时可能丢弃未使用的 Graceful 或
-Immediate ticket。若某资源丢弃 ticket 就会取消关闭，应使用底层
-`Managed::asynchronous`，依资源自身契约管理观察。
+Immediate ticket。EventBus 原 generation 的 ticket 在 Immediate 升级后仍能观察
+最终终止。
 [EventBus 集成夹具](https://github.com/qubit-ltd/rs-execution-services/blob/main/tests/fixtures/ioc_application_consumer/src/managed_event_bus.rs)
 验证跨 crate 契约，不代表已有生产应用采用。
 

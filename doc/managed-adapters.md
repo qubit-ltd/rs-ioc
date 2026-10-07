@@ -85,8 +85,24 @@ If a stop request returns a ticket, use
 `Managed::asynchronous_with_graceful_ticket(value, abort, graceful, wait)`
 when both requests return a ticket. The adapter stores an unobserved ticket
 and transfers it to the wait future. It does not run a request callback or
-poll the wait future while holding its internal lock. For EventBus 0.20, the
-complete adapter is:
+poll the wait future while holding its internal lock.
+
+| Resource contract | Adapter |
+| --- | --- |
+| An earlier ticket keeps observing **final resource termination** after an Immediate upgrade; dropping any unused ticket cannot cancel shutdown | `asynchronous_with_graceful_ticket` |
+| Only the newest request's ticket can confirm termination, or dropping an unused ticket cancels shutdown | Keep upgradeable shared observation state in the resource and use `asynchronous_with_graceful` with a stable wait future |
+
+Once `wait()` has started, an Immediate request does not replace its graceful
+ticket or wait future: the new Immediate ticket is dropped. The original
+ticket must still confirm the final stop, including one caused by that
+Immediate request. Dropping a borrowed `ShutdownHandle::wait()` future retains
+the original wait future and deadline for the next call. IoC cannot inspect
+the generic ticket type to determine whether these resource-specific
+guarantees hold. A request-scoped ticket that only confirms its own request
+can leave `ShutdownReport::incomplete()` after an upgrade even if a newer
+ticket would have confirmed termination.
+
+For EventBus 0.20, the complete adapter is:
 
 ```rust
 use std::sync::Arc;
@@ -114,10 +130,9 @@ fn managed_event_bus(bus: Arc<EventBus>) -> Managed<EventBus> {
 so it does not satisfy the nonblocking abort contract. EventBus's ticket
 identifies a shutdown generation; dropping it does not cancel background
 shutdown. **That Drop behavior is required by these ticket constructors:** an
-unused graceful or Immediate ticket can be discarded during an upgrade. For a
-resource whose ticket Drop cancels shutdown, use lower-level
-`Managed::asynchronous` and manage observation according to that resource's
-contract. The [EventBus integration fixture](https://github.com/qubit-ltd/rs-execution-services/blob/main/tests/fixtures/ioc_application_consumer/src/managed_event_bus.rs)
+unused graceful or Immediate ticket can be discarded during an upgrade. The
+EventBus ticket for the original generation also keeps observing final
+termination after Immediate escalation. The [EventBus integration fixture](https://github.com/qubit-ltd/rs-execution-services/blob/main/tests/fixtures/ioc_application_consumer/src/managed_event_bus.rs)
 checks this adapter as a cross crate contract, not as production adoption.
 
 `ShutdownHandle::wait()` borrows the handle. Cancelling that borrowing future

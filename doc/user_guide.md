@@ -250,6 +250,39 @@ unselected async factory or managed factory to match the selected build mode or
 graph with an asynchronous factory requires `build_async()` or `build_all_async()`
 and an executor supplied by the application.
 
+Use `AllActive` for an application assembly check that should reject an
+unselected but invalid active definition before any factory runs. Keep the
+default `Reachable` for a deliberately selected profile or tenant subgraph.
+For example, this unselected definition has a missing dependency; the root
+build succeeds under `Reachable`, while `AllActive` rejects it before running
+the root factory:
+
+```rust
+use std::sync::Arc;
+use qubit_ioc::{BuildError, ContainerBuilder, Dependency, ValidationScope};
+
+fn builder() -> ContainerBuilder {
+    let mut builder = ContainerBuilder::new();
+    builder.register_factory::<u32, _>(&[], |_| Ok(Arc::new(1)))
+        .expect("register root");
+    builder.register_factory::<u64, _>(&[Dependency::of::<i16>()], |_| Ok(Arc::new(2)))
+        .expect("register unselected definition");
+    builder.root::<u32>();
+    builder
+}
+
+fn main() {
+    assert!(builder().build().is_ok());
+    let failure = builder().validation_scope(ValidationScope::AllActive)
+        .build().err().expect("missing dependency");
+    assert!(matches!(failure.cause(), BuildError::MissingDependency { .. }));
+}
+```
+
+`build_all()` is for actually constructing both active definitions; here it
+would also reject the missing dependency. `AllActive` alone does not execute
+the unselected factory.
+
 If several bindings have the same Rust type, an unnamed request selects the
 sole candidate or the sole `primary` candidate. Otherwise it is ambiguous.
 Use a valid ID for exact selection; each dot-separated ASCII segment must

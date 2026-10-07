@@ -14,8 +14,10 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
+use std::time::Duration;
 
 use qubit_ioc::Application;
+use qubit_ioc::BindingKey;
 use qubit_ioc::CleanupError;
 use qubit_ioc::ContainerBuilder;
 use qubit_ioc::Managed;
@@ -23,6 +25,7 @@ use qubit_ioc::ShutdownMode;
 use qubit_ioc::ShutdownPhase;
 use qubit_ioc::WaitPolicy;
 use support::shutdown_timer::Gate;
+use support::shutdown_timer::Timers;
 use support::shutdown_timer::poll_once;
 use support::shutdown_timer::ready;
 
@@ -192,6 +195,46 @@ fn test_abort_after_wait_started_preserves_graceful_ticket_and_future() {
     assert_eq!(count(&probe.aborts), 1);
     assert_eq!(count(&probe.wait_creations), 1);
     assert_eq!(count(&probe.ticket_drops), 2);
+}
+
+#[test]
+fn test_request_scoped_ticket_cannot_confirm_termination_after_upgrade() {
+    let graceful_request_done = Gate::default();
+    let immediate_request_done = Gate::default();
+    let timers = Timers::default();
+    let graceful_wait = graceful_request_done.clone();
+    let immediate_wait = immediate_request_done.clone();
+    let managed = Managed::asynchronous_with_graceful_ticket(
+        Arc::new(Worker),
+        |_| Ok::<_, CleanupError>(immediate_wait),
+        |_| Ok::<_, CleanupError>(graceful_wait),
+        |_, ticket: Gate| {
+            Box::pin(async move {
+                ticket.await;
+                Ok(())
+            })
+        },
+    );
+    let mut builder = ContainerBuilder::new().wait_policy(timers.policy());
+    builder
+        .register_managed_factory::<Worker, _>(&[], move |_| Ok(managed))
+        .expect("register worker");
+    let application = builder.build_all().expect("build worker");
+
+    let mut shutdown = application.begin_shutdown(ShutdownMode::Graceful);
+    assert!(poll_once(shutdown.wait()).is_pending());
+    shutdown.abort();
+    immediate_request_done.trigger();
+    assert!(
+        poll_once(shutdown.wait()).is_pending(),
+        "the old ticket still waits for its own request"
+    );
+    timers.trigger(0);
+    assert!(poll_once(shutdown.wait()).is_pending());
+    timers.trigger(1);
+    let error = ready(shutdown.wait()).expect_err("request-scoped ticket cannot confirm final termination");
+    assert_eq!(error.report().incomplete(), [BindingKey::of::<Worker>(None)]);
+    assert_eq!(timers.durations(), [Duration::from_secs(13), Duration::from_secs(7)]);
 }
 
 #[test]

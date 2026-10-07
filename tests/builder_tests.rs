@@ -27,6 +27,7 @@ use qubit_ioc::Dependency;
 use qubit_ioc::FactoryError;
 use qubit_ioc::Managed;
 use qubit_ioc::RegistrationError;
+use qubit_ioc::ValidationScope;
 use qubit_ioc::WaitPolicy;
 #[cfg(feature = "config")]
 use qubit_ioc::config::get_value_for;
@@ -40,6 +41,56 @@ struct LevelThree(Arc<LevelTwo>);
 
 struct SettledResource;
 struct SettledFailure;
+
+struct SelectedRoot;
+struct UnselectedWithMissingDependency;
+struct MissingForUnselected;
+
+/// Stages one valid root and one active definition with a missing dependency.
+fn scoped_validation_builder(calls: &Arc<AtomicUsize>) -> ContainerBuilder {
+    let mut builder = ContainerBuilder::new();
+    let root_calls = Arc::clone(calls);
+    builder
+        .register_factory::<SelectedRoot, _>(&[], move |_| {
+            root_calls.fetch_add(1, Ordering::SeqCst);
+            Ok(Arc::new(SelectedRoot))
+        })
+        .expect("stage selected root");
+    let unselected_calls = Arc::clone(calls);
+    builder
+        .register_factory::<UnselectedWithMissingDependency, _>(
+            &[Dependency::of::<MissingForUnselected>()],
+            move |_| {
+                unselected_calls.fetch_add(1, Ordering::SeqCst);
+                Ok(Arc::new(UnselectedWithMissingDependency))
+            },
+        )
+        .expect("stage invalid unselected definition");
+    builder.root::<SelectedRoot>();
+    builder
+}
+
+#[test]
+fn test_reachable_validates_only_selected_closure() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let application = scoped_validation_builder(&calls)
+        .build()
+        .expect("default Reachable ignores the invalid unselected definition");
+    assert!(application.context().get::<SelectedRoot>().is_ok());
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn test_all_active_rejects_missing_unselected_dependency_before_any_factory() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let error = scoped_validation_builder(&calls)
+        .validation_scope(ValidationScope::AllActive)
+        .build()
+        .err()
+        .expect("AllActive validates the unselected definition");
+    assert!(matches!(error.cause(), BuildError::MissingDependency { .. }));
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+}
 
 fn ready<F: Future>(future: F) -> F::Output {
     let mut future = pin!(future);
