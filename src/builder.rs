@@ -28,3 +28,6 @@ pub use factory_args::FactoryArgs;
 pub(crate) use internal::validation::validate_dependencies;
 pub(crate) use internal::validation::validate_options;
 pub use validation_scope::ValidationScope;
+
+mod build_session;
+pub use build_session::BuildSession;

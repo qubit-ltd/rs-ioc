@@ -24,6 +24,7 @@ use crate::binding::PendingBindingKind;
 use crate::binding::PendingDefinition;
 use crate::binding::profile_is_active;
 use crate::build_context::BuildContext;
+use crate::builder::BuildSession;
 use crate::definition::Definition;
 use crate::dependency::Dependency;
 use crate::error::BuildError;
@@ -955,16 +956,42 @@ impl ContainerBuilder {
     /// roots, invalid graphs, missing managed wait policy, or factory
     /// failures. Already constructed managed resources are aborted before
     /// returning; the failure owns their deferred cleanup handle.
-    pub async fn build_async(mut self) -> Result<Application, BuildFailure> {
-        if self.roots.is_empty() {
+    pub async fn build_async(self) -> Result<Application, BuildFailure> {
+        self.prepare_async(false)?.run_async().await
+    }
+
+    /// Creates a lazy, single-use asynchronous session for the selected roots.
+    /// Validation starts on the first poll of [`BuildSession::run`]. Keep the
+    /// session to observe cleanup if that borrowing future is cancelled.
+    #[inline]
+    pub fn build_async_session(self) -> BuildSession {
+        BuildSession::new(self, false)
+    }
+
+    /// Creates a lazy asynchronous session that constructs all active
+    /// definitions, regardless of the selected roots.
+    #[inline]
+    pub fn build_all_async_session(self) -> BuildSession {
+        BuildSession::new(self, true)
+    }
+
+    /// Validates the selected roots or all active definitions and returns
+    /// their private construction owner. Validation and policy errors occur
+    /// before any factory runs; profile and replacement rules are shared.
+    pub(super) fn prepare_async(mut self, all: bool) -> Result<Construction, BuildFailure> {
+        if !all && self.roots.is_empty() {
             return Err(BuildError::NoRootsSelected.into());
         }
         let policy = self.wait_policy.take();
         let scope = self.validation_scope;
         let (definitions, profiles, roots) = self.prepare_definitions()?;
-        let graph = ValidatedGraph::validate_roots_with_scope(definitions, &profiles, Some(&roots), scope)?;
+        let graph = if all {
+            ValidatedGraph::validate_roots(definitions, &profiles, None)?
+        } else {
+            ValidatedGraph::validate_roots_with_scope(definitions, &profiles, Some(&roots), scope)?
+        };
         let policy = Self::selected_wait_policy(&graph, policy)?;
-        Construction::new(graph, policy).run_async().await
+        Ok(Construction::new(graph, policy))
     }
 
     /// Asynchronously builds the selected graph and waits for rollback on
@@ -999,12 +1026,8 @@ impl ContainerBuilder {
     /// graphs, missing managed wait policy, or factory failures. The
     /// failure owns deferred managed cleanup; construction never waits for
     /// rollback.
-    pub async fn build_all_async(mut self) -> Result<Application, BuildFailure> {
-        let policy = self.wait_policy.take();
-        let (definitions, profiles, _) = self.prepare_definitions()?;
-        let graph = ValidatedGraph::validate_roots(definitions, &profiles, None)?;
-        let policy = Self::selected_wait_policy(&graph, policy)?;
-        Construction::new(graph, policy).run_async().await
+    pub async fn build_all_async(self) -> Result<Application, BuildFailure> {
+        self.prepare_async(true)?.run_async().await
     }
 
     /// Asynchronously builds every active definition and waits for rollback on

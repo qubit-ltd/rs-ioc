@@ -221,6 +221,16 @@ impl Construction {
     /// partial store, lookup metadata, cleanup journal, and policy into the
     /// returned rollback owner on failure.
     pub(crate) async fn run_async(mut self) -> Result<Application, BuildFailure> {
+        match self.construct_async().await {
+            Ok(()) => Ok(self.finish()),
+            Err(error) => Err(self.cleanup_and_wrap(error)),
+        }
+    }
+
+    /// Runs the remaining selected factories while retaining storage in this
+    /// owner. Returns the attributed factory error without moving cleanup.
+    /// Cancelling the borrowing future drops the current factory first.
+    pub(crate) async fn construct_async(&mut self) -> Result<(), BuildError> {
         for location in std::mem::take(&mut self.order) {
             let (key, source, kind) = self.take_binding(location);
             let product = match kind {
@@ -238,10 +248,10 @@ impl Construction {
             };
             match product {
                 Ok(product) => self.accept(key, source, product),
-                Err(error) => return Err(self.cleanup_and_wrap(error)),
+                Err(error) => return Err(error),
             }
         }
-        Ok(self.finish())
+        Ok(())
     }
 
     /// Builds one product for every binding kind that needs no `await`.
@@ -302,17 +312,22 @@ impl Construction {
     /// A [`BuildFailure`] that owns an immediate [`ShutdownHandle`] aborting
     /// the already constructed managed components, or a handle-free failure
     /// when the cleanup journal is empty.
-    fn cleanup_and_wrap(self, cause: BuildError) -> BuildFailure {
+    pub(crate) fn cleanup_and_wrap(self, cause: BuildError) -> BuildFailure {
+        BuildFailure::new(cause, self.into_cleanup())
+    }
+
+    /// Transfers completed managed resources into an Immediate handle and
+    /// requests abort synchronously. Returns `None` when no resource completed.
+    pub(crate) fn into_cleanup(self) -> Option<ShutdownHandle> {
         if self.cleanup.is_empty() {
-            return cause.into();
+            return None;
         }
-        let cleanup = ShutdownHandle::new(
+        Some(ShutdownHandle::new(
             ApplicationContext::new(self.store, self.bindings),
             self.cleanup,
             self.policy,
             ShutdownMode::Immediate,
-        );
-        BuildFailure::new(cause, Some(cleanup))
+        ))
     }
 
     /// Takes the one-shot action for a graph location without changing its
@@ -578,7 +593,7 @@ impl Construction {
     ///
     /// The [`Application`] that owns the private store, the lookup metadata,
     /// the cleanup journal, and the validated lifecycle policy.
-    fn finish(mut self) -> Application {
+    pub(crate) fn finish(mut self) -> Application {
         Application::new(
             ApplicationContext::new(self.store, self.bindings),
             std::mem::take(&mut self.cleanup),

@@ -40,3 +40,6 @@ pub use invalid_binding_id::InvalidBindingId;
 pub use registration_error::RegistrationError;
 pub use resolve_error::ResolveError;
 pub use settled_build_failure::SettledBuildFailure;
+
+mod build_session_error;
+pub use build_session_error::BuildSessionError;
