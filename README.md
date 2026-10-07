@@ -79,29 +79,58 @@ The original `build()` and `build_async()` return `BuildFailure` after requestin
 
 ```rust
 use std::error::Error;
-use qubit_ioc::ContainerBuilder;
+use std::sync::Arc;
+use qubit_ioc::{
+    CleanupError, ContainerBuilder, Dependency, FactoryError, Managed,
+    SettledBuildFailure, WaitPolicy,
+};
 
-async fn build_application() -> Result<(), Box<dyn Error>> {
-    let mut builder = ContainerBuilder::new();
-    builder.root::<String>(); // No String is registered, so construction fails.
-    match builder.build_settled().await {
-        Ok(application) => drop(application),
-        Err(failure) => {
-            if let Some(report) = failure.cleanup_report() {
-                if report.is_success() {
-                    println!("rollback completed");
-                } else {
-                    eprintln!("rollback report: {report:?}");
-                }
+struct Worker;
+struct Startup;
+
+async fn fail_after_worker(
+    fail_cleanup: bool,
+) -> Result<(SettledBuildFailure, bool), Box<dyn Error>> {
+    let mut builder = ContainerBuilder::new().wait_policy(WaitPolicy::unbounded());
+    builder.register_managed_factory::<Worker, _>(&[], move |_| {
+        Ok(Managed::synchronous(Arc::new(Worker), move |_| {
+            if fail_cleanup {
+                Err(CleanupError::new(std::io::Error::other("cleanup failed")))
+            } else {
+                Ok(())
             }
-            return Err(Box::new(failure));
-        }
-    }
+        }))
+    })?;
+    builder.register_factory::<Startup, _>(&[Dependency::of::<Worker>()], |_| {
+        Err(FactoryError::new(std::io::Error::other("startup failed")))
+    })?;
+    builder.root::<Startup>();
+
+    let failure = match builder.build_settled().await {
+        Ok(_) => unreachable!("the Startup factory always fails"),
+        Err(failure) => failure,
+    };
+    let cleanup_succeeded = failure
+        .cleanup_report()
+        .expect("Worker was constructed before Startup failed")
+        .is_success();
+    Ok((failure, cleanup_succeeded))
+}
+
+async fn show_cleanup_reports() -> Result<(), Box<dyn Error>> {
+    let (failure, cleanup_succeeded) = fail_after_worker(false).await?;
+    assert!(cleanup_succeeded);
+    println!("build cause: {}", failure.cause());
+
+    let (failure, cleanup_succeeded) = fail_after_worker(true).await?;
+    assert!(!cleanup_succeeded);
+    eprintln!("build cause: {}; cleanup report: {:?}", failure.cause(), failure.cleanup_report());
+    // An application can return Err(Box::new(failure)) after inspecting both.
     Ok(())
 }
 ```
 
-A graph/preflight failure has no managed cleanup and therefore no report; failure after managed resources were transferred can have a report. The four settled entry points are `build_settled()`, `build_all_settled()`, `build_async_settled()`, and `build_all_async_settled()`. Cancelling/dropping a settled future can interrupt its wait: cancellation only requests best-effort abort and does not guarantee rollback observation completes.
+In this example, `Startup` fails after `Worker` was constructed, so `cleanup_report()` is present. Calling `show_cleanup_reports()` reaches both a successful cleanup report and a failed cleanup report. A graph/preflight failure instead has no managed cleanup and therefore no report. The four settled entry points are `build_settled()`, `build_all_settled()`, `build_async_settled()`, and `build_all_async_settled()`. Cancelling/dropping a settled future can interrupt its wait: cancellation only requests best-effort abort and does not guarantee rollback observation completes.
 
 For one whole-shutdown budget, explicitly select `WaitPolicy::bounded_with_total(grace, termination, total, timer)`. Its total timer starts when `ShutdownHandle::wait()` is first polled, persists across cancellation, and cannot preempt synchronous blocking callbacks or a blocking future poll.
 

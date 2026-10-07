@@ -72,29 +72,58 @@ async fn build_message_length() -> Result<(), Box<dyn Error>> {
 
 ```rust
 use std::error::Error;
-use qubit_ioc::ContainerBuilder;
+use std::sync::Arc;
+use qubit_ioc::{
+    CleanupError, ContainerBuilder, Dependency, FactoryError, Managed,
+    SettledBuildFailure, WaitPolicy,
+};
 
-async fn build_application() -> Result<(), Box<dyn Error>> {
-    let mut builder = ContainerBuilder::new();
-    builder.root::<String>(); // 没有注册 String，因此构建失败。
-    match builder.build_settled().await {
-        Ok(application) => drop(application),
-        Err(failure) => {
-            if let Some(report) = failure.cleanup_report() {
-                if report.is_success() {
-                    println!("rollback completed");
-                } else {
-                    eprintln!("rollback report: {report:?}");
-                }
+struct Worker;
+struct Startup;
+
+async fn fail_after_worker(
+    fail_cleanup: bool,
+) -> Result<(SettledBuildFailure, bool), Box<dyn Error>> {
+    let mut builder = ContainerBuilder::new().wait_policy(WaitPolicy::unbounded());
+    builder.register_managed_factory::<Worker, _>(&[], move |_| {
+        Ok(Managed::synchronous(Arc::new(Worker), move |_| {
+            if fail_cleanup {
+                Err(CleanupError::new(std::io::Error::other("cleanup failed")))
+            } else {
+                Ok(())
             }
-            return Err(Box::new(failure));
-        }
-    }
+        }))
+    })?;
+    builder.register_factory::<Startup, _>(&[Dependency::of::<Worker>()], |_| {
+        Err(FactoryError::new(std::io::Error::other("startup failed")))
+    })?;
+    builder.root::<Startup>();
+
+    let failure = match builder.build_settled().await {
+        Ok(_) => unreachable!("the Startup factory always fails"),
+        Err(failure) => failure,
+    };
+    let cleanup_succeeded = failure
+        .cleanup_report()
+        .expect("Worker was constructed before Startup failed")
+        .is_success();
+    Ok((failure, cleanup_succeeded))
+}
+
+async fn show_cleanup_reports() -> Result<(), Box<dyn Error>> {
+    let (failure, cleanup_succeeded) = fail_after_worker(false).await?;
+    assert!(cleanup_succeeded);
+    println!("build cause: {}", failure.cause());
+
+    let (failure, cleanup_succeeded) = fail_after_worker(true).await?;
+    assert!(!cleanup_succeeded);
+    eprintln!("build cause: {}; cleanup report: {:?}", failure.cause(), failure.cleanup_report());
+    // 检查报告后，应用仍可通过 Err(Box::new(failure)) 返回原始失败。
     Ok(())
 }
 ```
 
-图或预检失败没有托管清理，因此不会产生报告；已移交托管资源之后失败则可能有报告。四个 settled 入口为 `build_settled()`、`build_all_settled()`、`build_async_settled()` 和 `build_all_async_settled()`。取消或丢弃 settled future 仍会中断等待：取消只会尽力请求 abort，不保证回滚观察完成。
+此示例在 `Worker` 构造完成后让 `Startup` 失败，因此 `cleanup_report()` 一定存在。调用 `show_cleanup_reports()` 会分别走到清理成功和清理失败报告分支。图或预检失败没有托管清理，因此不会产生报告。四个 settled 入口为 `build_settled()`、`build_all_settled()`、`build_async_settled()` 和 `build_all_async_settled()`。取消或丢弃 settled future 仍会中断等待：取消只会尽力请求 abort，不保证回滚观察完成。
 
 如需单一的全局关闭预算，应显式选择 `WaitPolicy::bounded_with_total(grace, termination, total, timer)`。总计时从首次轮询 `ShutdownHandle::wait()` 开始，跨取消继续计时；它不能抢占同步阻塞回调或单次阻塞的 future poll。
 
