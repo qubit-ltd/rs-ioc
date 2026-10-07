@@ -105,6 +105,7 @@ pub use error::FactoryError;
 pub use error::InvalidBindingId;
 pub use error::RegistrationError;
 pub use error::ResolveError;
+pub use error::SettledBuildFailure;
 pub use key::BindingId;
 pub use key::BindingKey;
 pub use managed::CleanupError;

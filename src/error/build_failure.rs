@@ -12,6 +12,7 @@ use std::fmt;
 use std::sync::Mutex;
 
 use crate::error::BuildError;
+use crate::error::SettledBuildFailure;
 use crate::managed::ShutdownHandle;
 use crate::managed::ShutdownReport;
 
@@ -124,6 +125,21 @@ impl BuildFailure {
             Ok(report) => report,
             Err(error) => error.report().clone(),
         })
+    }
+
+    /// Waits for owned rollback and consumes this failure into its final
+    /// cause and optional cleanup report.
+    ///
+    /// A report can describe unsuccessful cleanup; the original build cause
+    /// remains available independently. If this future is cancelled while
+    /// waiting, already requested aborts remain in effect, but rollback wait
+    /// completion is not guaranteed. Use [`Self::wait_cleanup`] when the caller
+    /// needs to retain the failure and resume a cancelled wait.
+    #[must_use]
+    pub async fn settle(mut self) -> SettledBuildFailure {
+        let cleanup_report = self.wait_cleanup().await;
+        let (cause, _completed_cleanup) = self.into_parts();
+        SettledBuildFailure::new(cause, cleanup_report)
     }
 }
 
