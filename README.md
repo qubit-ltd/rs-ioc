@@ -24,7 +24,9 @@ qubit-ioc = "0.3"
 ```
 
 The default features are `macros` and `config`. To use only the manual runtime,
-add `default-features = false` to the dependency declaration.
+set `default-features = false` on the application's `qubit-ioc` dependency.
+Cargo unifies features across dependency paths, so another dependency that
+enables the defaults can still activate them.
 
 | Feature | Default | Purpose |
 | --- | --- | --- |

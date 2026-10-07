@@ -21,8 +21,9 @@
 qubit-ioc = "0.3"
 ```
 
-默认启用 `macros` 和 `config`；只使用手动注册时，在任一依赖声明中添加
-`default-features = false`。
+默认启用 `macros` 和 `config`。只使用手动运行时时，请在应用对
+`qubit-ioc` 的依赖声明中设置 `default-features = false`。Cargo 会合并不同
+依赖路径启用的 feature；如果其他依赖仍启用默认 feature，它们最终仍会生效。
 
 | feature | 默认 | 用途 |
 | --- | --- | --- |
