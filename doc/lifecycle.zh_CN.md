@@ -41,7 +41,7 @@ Tokio 是示例依赖，IoC 核心不依赖它。没有独立排空协议的 wor
 
 ## Settled 构建入口
 
-`ContainerBuilder` 的同步 settled 入口为 `build_settled()` 和 `build_all_settled()`，异步入口为 `build_async_settled()` 和 `build_all_async_settled()`。它们均返回 `Result<Application, SettledBuildFailure>`。`SettledBuildFailure::cause()` 保留原始 `BuildError`，`cleanup_report()` 返回可选的最终回滚报告。原始构建方法仍在请求 abort 后返回 `BuildFailure`；需要立即返回，或需要在取消后保留 failure 并继续调用 `wait_cleanup()` 时，使用原始入口。`take_cleanup()` 和 `into_parts()` 仍可用于转移清理所有权。
+四个 settled 入口都是 async 方法，均返回 `Result<Application, SettledBuildFailure>`：仅使用同步工厂的图可调用 `build_settled()` 或 `build_all_settled()`，但仍须 `.await`；包含异步工厂时调用 `build_async_settled()` 或 `build_all_async_settled()`。`SettledBuildFailure::cause()` 保留原始 `BuildError`，`cleanup_report()` 返回可选的最终回滚报告。原始构建方法仍在请求 abort 后返回 `BuildFailure`；需要立即返回时使用原始入口。若需从已取消的清理等待恢复，应保留 `BuildFailure` 并再次调用其 `wait_cleanup()`。`take_cleanup()` 和 `into_parts()` 仍可用于转移清理所有权。
 
 正常完成时，settled 方法会在返回错误前等待回滚观察结束。清理仍可能失败或未完成，原始构建原因仍是错误来源链首项。图或预检失败没有清理报告。取消或丢弃 settled future 会中断等待，并且只尽力请求 abort；它不保证回滚观察完成。计时器不能抢占同步阻塞回调或单次阻塞的 future poll。
 
@@ -204,7 +204,7 @@ IoC `WaitPolicy` 限制异步 wait；两者都不能强制杀死 provider。用 
 | build 返回 `ApplicationContext` | 返回 `Application`；通过 `application.context()` 查询，需要共享时克隆查询句柄。 |
 | 关闭前 `Arc::try_unwrap(context)` | 保留唯一 Application owner，直接由它关闭；查询句柄克隆可继续存在。 |
 | `begin_shutdown()` 固定先停止全部 | 正常退出选择 `begin_shutdown(ShutdownMode::Graceful)`，失败选择 `Immediate`；Graceful 首次 poll wait 才开始请求。 |
-| 异步 build 等待回滚后才报错 | 原始入口在请求 abort 后立即返回 `BuildFailure`；应用可借用 failure 调用 `wait_cleanup(&mut self)`，取得可选清理报告并保留原始原因。若要在正常完成时等待回滚，请使用 `build_settled()`、`build_all_settled()`、`build_async_settled()` 或 `build_all_async_settled()`，它们返回 `SettledBuildFailure`。取消等待后再次调用可继续观察。`take_cleanup()` / `into_parts()` 仍可供底层管理所有权。`BuildError::CleanupFailed` 已移除，清理错误进入关闭报告。 |
+| 异步 build 等待回滚后才报错 | 原始入口在请求 abort 后立即返回 `BuildFailure`；保留该 failure 后可借用它调用 `wait_cleanup(&mut self)`，取得可选清理报告并保留原始原因。若这个 `wait_cleanup()` future 被取消，可在同一 failure 上再次调用以继续观察。四个 settled 入口都是 async 方法，在正常完成时等待回滚后返回 `SettledBuildFailure`；取消 settled future 后没有 failure 可用于恢复等待。`take_cleanup()` / `into_parts()` 仍可供底层管理所有权。`BuildError::CleanupFailed` 已移除，清理错误进入关闭报告。 |
 | context / `Managed` Drop 不清理 | 查询 context 仍无关闭责任；owner、未移交 `Managed` 和关闭句柄 Drop 会请求 abort，不 wait。 |
 | 隐藏 `codegen_v1::DefinitionDraft` | 使用公开 `Definition::builder()` 与 `register_definition`；宏复用同一核心，仅配置诊断和生成代码 glue 仍隐藏。 |
 | 以 `EventBus::shutdown` 作为 stop | 通过 ticket 适配器调用非阻塞的 `request_shutdown`，在 wait 回调中等待 `wait_async()`。 |

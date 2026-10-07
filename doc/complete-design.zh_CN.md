@@ -95,7 +95,7 @@ provider crate 应导出显式 `register_ioc(&mut builder)`，由应用决定纳
 
 ## Settled 构建入口
 
-`ContainerBuilder` 的同步 settled 入口为 `build_settled()` 和 `build_all_settled()`，异步入口为 `build_async_settled()` 和 `build_all_async_settled()`。它们均返回 `Result<Application, SettledBuildFailure>`。`SettledBuildFailure::cause()` 保留原始 `BuildError`，`cleanup_report()` 返回可选的最终回滚报告。原始构建方法仍在请求 abort 后返回 `BuildFailure`；需要立即返回，或需要在取消后保留 failure 并继续调用 `wait_cleanup()` 时，使用原始入口。`take_cleanup()` 和 `into_parts()` 仍可用于转移清理所有权。
+四个 settled 入口都是 async 方法，均返回 `Result<Application, SettledBuildFailure>`：仅使用同步工厂的图可调用 `build_settled()` 或 `build_all_settled()`，但仍须 `.await`；包含异步工厂时调用 `build_async_settled()` 或 `build_all_async_settled()`。`SettledBuildFailure::cause()` 保留原始 `BuildError`，`cleanup_report()` 返回可选的最终回滚报告。原始构建方法仍在请求 abort 后返回 `BuildFailure`；需要立即返回时使用原始入口。若需从已取消的清理等待恢复，应保留 `BuildFailure` 并再次调用其 `wait_cleanup()`。`take_cleanup()` 和 `into_parts()` 仍可用于转移清理所有权。
 
 正常完成时，settled 方法会在返回错误前等待回滚观察结束。清理仍可能失败或未完成，原始构建原因仍是错误来源链首项。图或预检失败没有清理报告。取消或丢弃 settled future 会中断等待，并且只尽力请求 abort；它不保证回滚观察完成。计时器不能抢占同步阻塞回调或单次阻塞的 future poll。
 
