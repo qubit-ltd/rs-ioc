@@ -71,6 +71,40 @@ responsibility. Managed shutdown can optionally use
 application-wide budget in addition to per-component budgets. See the
 [lifecycle guide](doc/lifecycle.md) for deadline and reporting semantics.
 
+
+
+## Choose how build failures observe rollback
+
+The original `build()` and `build_async()` return `BuildFailure` after requesting abort. Use them when immediate return matters, or retain the failure and resume `wait_cleanup()` after cancellation. Settled methods await rollback during normal completion and return `SettledBuildFailure`, which keeps the original `BuildError` as its first error source and exposes the optional final `ShutdownReport` through `cleanup_report()`. Cleanup can still fail or remain incomplete.
+
+```rust
+use std::error::Error;
+use qubit_ioc::ContainerBuilder;
+
+async fn build_application() -> Result<(), Box<dyn Error>> {
+    let mut builder = ContainerBuilder::new();
+    builder.root::<String>(); // No String is registered, so construction fails.
+    match builder.build_settled().await {
+        Ok(application) => drop(application),
+        Err(failure) => {
+            if let Some(report) = failure.cleanup_report() {
+                if report.is_success() {
+                    println!("rollback completed");
+                } else {
+                    eprintln!("rollback report: {report:?}");
+                }
+            }
+            return Err(Box::new(failure));
+        }
+    }
+    Ok(())
+}
+```
+
+A graph/preflight failure has no managed cleanup and therefore no report; failure after managed resources were transferred can have a report. The four settled entry points are `build_settled()`, `build_all_settled()`, `build_async_settled()`, and `build_all_async_settled()`. Cancelling/dropping a settled future can interrupt its wait: cancellation only requests best-effort abort and does not guarantee rollback observation completes.
+
+For one whole-shutdown budget, explicitly select `WaitPolicy::bounded_with_total(grace, termination, total, timer)`. Its total timer starts when `ShutdownHandle::wait()` is first polled, persists across cancellation, and cannot preempt synchronous blocking callbacks or a blocking future poll.
+
 ## Quick start: assemble a greeting service
 
 Suppose a service needs a greeting implementation from another crate. Declare
@@ -213,9 +247,10 @@ Config reads from `#[value]` and `ConfigurationProperties` preserve stored
 values without interpolation. Structured deserialization rejects unknown
 fields by default. When interpolation is required, call
 `Config::get_interpolated` explicitly in a factory.
-Factory panics follow Rust's panic behavior and propagate. On failure, both
-synchronous and asynchronous construction return `BuildFailure` immediately
-after requesting abort for transferred managed resources. Call
+Factory panics follow Rust's panic behavior and propagate. On failure, the original synchronous and asynchronous build methods return
+`BuildFailure` immediately after requesting abort for transferred managed
+resources. For normal-completion rollback observation, use one of the settled
+build methods described above. Call
 `failure.wait_cleanup().await` to observe the optional `ShutdownReport` while
 keeping the original `BuildError` available through `cause()`. If that wait is
 cancelled, call it again on the same failure to resume cleanup observation;

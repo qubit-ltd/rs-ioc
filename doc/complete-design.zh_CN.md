@@ -91,13 +91,23 @@ provider crate 应导出显式 `register_ioc(&mut builder)`，由应用决定纳
 
 `#[value]` 与结构化反序列化都不执行插值；结构化反序列化默认拒绝未知字段。应用需要插值时，可在手工工厂中调用 `Config::get_interpolated`。
 
+
+
+## Settled 构建入口
+
+`ContainerBuilder` 的同步 settled 入口为 `build_settled()` 和 `build_all_settled()`，异步入口为 `build_async_settled()` 和 `build_all_async_settled()`。它们均返回 `Result<Application, SettledBuildFailure>`。`SettledBuildFailure::cause()` 保留原始 `BuildError`，`cleanup_report()` 返回可选的最终回滚报告。原始构建方法仍在请求 abort 后返回 `BuildFailure`；需要立即返回，或需要在取消后保留 failure 并继续调用 `wait_cleanup()` 时，使用原始入口。`take_cleanup()` 和 `into_parts()` 仍可用于转移清理所有权。
+
+正常完成时，settled 方法会在返回错误前等待回滚观察结束。清理仍可能失败或未完成，原始构建原因仍是错误来源链首项。图或预检失败没有清理报告。取消或丢弃 settled future 会中断等待，并且只尽力请求 abort；它不保证回滚观察完成。计时器不能抢占同步阻塞回调或单次阻塞的 future poll。
+
+如需单一的全局关闭预算，应显式选择 `WaitPolicy::bounded_with_total(grace, termination, total, timer)`。总计时从首次轮询 `ShutdownHandle::wait()` 开始，并跨取消及 abort 升级继续计时。
+
 ## 6. 错误与生命周期
 
 `RegistrationError` 表示定义或键格式不合法。`BuildError` 是图、配置或工厂失败的
-原始原因；同步和异步构建都返回 `Result<Application, BuildFailure>`。
+原始原因；原始同步和异步构建方法返回 `Result<Application, BuildFailure>`。
 `BuildFailure::cause()` 保留 source 链与诊断路径，`take_cleanup()` 或
 `into_parts()` 移交可选回滚句柄。后续工厂失败时，构建先为已移交托管资源请求 abort，
-然后立即返回；应用必须显式调用 `wait_cleanup(&mut self).await`，才能观察终止与清理错误，
+然后立即返回；应用可显式调用 `wait_cleanup(&mut self).await`，观察终止与清理错误，
 同时原始原因仍保留在 failure 中。取消等待后再次调用会继续观察同一清理过程。图验证和
 预检失败时没有已构造资源，也没有清理句柄。工厂 unwind panic 仍向外传播；取消异步
 构建只请求 abort，不能等待。

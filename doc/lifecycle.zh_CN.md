@@ -37,6 +37,16 @@ cargo +1.94.0 run --example app_lifecycle --no-default-features --locked
 Tokio 是示例依赖，IoC 核心不依赖它。没有独立排空协议的 worker 可以在 Graceful
 流程中降级为 abort，报告会把这个组件列入 `ShutdownReport::fallbacks()`。
 
+
+
+## Settled 构建入口
+
+`ContainerBuilder` 的同步 settled 入口为 `build_settled()` 和 `build_all_settled()`，异步入口为 `build_async_settled()` 和 `build_all_async_settled()`。它们均返回 `Result<Application, SettledBuildFailure>`。`SettledBuildFailure::cause()` 保留原始 `BuildError`，`cleanup_report()` 返回可选的最终回滚报告。原始构建方法仍在请求 abort 后返回 `BuildFailure`；需要立即返回，或需要在取消后保留 failure 并继续调用 `wait_cleanup()` 时，使用原始入口。`take_cleanup()` 和 `into_parts()` 仍可用于转移清理所有权。
+
+正常完成时，settled 方法会在返回错误前等待回滚观察结束。清理仍可能失败或未完成，原始构建原因仍是错误来源链首项。图或预检失败没有清理报告。取消或丢弃 settled future 会中断等待，并且只尽力请求 abort；它不保证回滚观察完成。计时器不能抢占同步阻塞回调或单次阻塞的 future poll。
+
+如需单一的全局关闭预算，应显式选择 `WaitPolicy::bounded_with_total(grace, termination, total, timer)`。总计时从首次轮询 `ShutdownHandle::wait()` 开始，并跨取消及 abort 升级继续计时。
+
 ## 保留所有者，处理每条退出路径
 
 `build`、`build_all` 及其异步版本返回 `Application`。应用保留这个唯一所有者，
@@ -100,8 +110,8 @@ where
 若业务和清理同时失败，此片段记录清理报告并返回业务错误；应用也可定义同时保留
 两者的错误类型。
 
-同步和异步构建在后续工厂返回错误时，都先为已经移交的托管资源请求 abort，再立即
-返回 `BuildFailure`。`wait_cleanup(&mut self).await` 等待可选回滚，同时让原始错误继续
+原始同步和异步构建入口在后续工厂返回错误时，都先为已经移交的托管资源请求 abort，
+再立即返回 `BuildFailure`。`wait_cleanup(&mut self).await` 等待可选回滚，同时让原始错误继续
 留在同一个 failure 中；其 `cause()` 和 `Error::source()` 保留原始构建错误及工厂来源链。
 清理失败时也保留报告，可检查 `is_success()`、`failures()` 和 `incomplete()`。图验证或
 预检失败时没有已创建资源，`wait_cleanup()` 返回 `None`。`take_cleanup()` 和
@@ -194,7 +204,7 @@ IoC `WaitPolicy` 限制异步 wait；两者都不能强制杀死 provider。用 
 | build 返回 `ApplicationContext` | 返回 `Application`；通过 `application.context()` 查询，需要共享时克隆查询句柄。 |
 | 关闭前 `Arc::try_unwrap(context)` | 保留唯一 Application owner，直接由它关闭；查询句柄克隆可继续存在。 |
 | `begin_shutdown()` 固定先停止全部 | 正常退出选择 `begin_shutdown(ShutdownMode::Graceful)`，失败选择 `Immediate`；Graceful 首次 poll wait 才开始请求。 |
-| 异步 build 等待回滚后才报错 | `BuildFailure` 在请求 abort 后立即返回；应用可借用 failure 调用 `wait_cleanup(&mut self)`，取得可选清理报告并保留原始原因。取消等待后再次调用可继续观察。`take_cleanup()` / `into_parts()` 仍可供底层管理所有权。`BuildError::CleanupFailed` 已移除，清理错误进入关闭报告。 |
+| 异步 build 等待回滚后才报错 | 原始入口在请求 abort 后立即返回 `BuildFailure`；应用可借用 failure 调用 `wait_cleanup(&mut self)`，取得可选清理报告并保留原始原因。若要在正常完成时等待回滚，请使用 `build_settled()`、`build_all_settled()`、`build_async_settled()` 或 `build_all_async_settled()`，它们返回 `SettledBuildFailure`。取消等待后再次调用可继续观察。`take_cleanup()` / `into_parts()` 仍可供底层管理所有权。`BuildError::CleanupFailed` 已移除，清理错误进入关闭报告。 |
 | context / `Managed` Drop 不清理 | 查询 context 仍无关闭责任；owner、未移交 `Managed` 和关闭句柄 Drop 会请求 abort，不 wait。 |
 | 隐藏 `codegen_v1::DefinitionDraft` | 使用公开 `Definition::builder()` 与 `register_definition`；宏复用同一核心，仅配置诊断和生成代码 glue 仍隐藏。 |
 | 以 `EventBus::shutdown` 作为 stop | 通过 ticket 适配器调用非阻塞的 `request_shutdown`，在 wait 回调中等待 `wait_async()`。 |

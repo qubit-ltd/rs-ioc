@@ -262,7 +262,7 @@ optional, and collection queries after construction. `get_all()` uses the immuta
 instance. Collisions with other definitions are checked at build time after
 inactive profiles have been filtered. Factory panics propagate with Rust's
 normal panic behavior. If construction fails after managed values have been
-transferred to IoC, both build modes request abort and return `BuildFailure`
+transferred to IoC, the original build modes request abort and return `BuildFailure`
 without waiting. The application that owns this failure decides when to observe
 cleanup. Keep `BuildFailure` as a typed application-error variant until
 `wait_cleanup()` has completed, or retain the `ShutdownHandle` returned by
@@ -375,6 +375,16 @@ Choose `build_async()` or `build_all_async()` and drive the returned future with
 the application's executor. Calling synchronous `build()` on a selected async definition returns `BuildFailure`
 with `BuildError::AsyncRequired` as its cause before any factory runs. The app owns executor choice and cancellation policy.
 
+
+
+## Settled build APIs
+
+`ContainerBuilder` provides `build_settled()` and `build_all_settled()` for synchronous construction, and `build_async_settled()` and `build_all_async_settled()` for asynchronous construction. Each returns `Result<Application, SettledBuildFailure>`. `SettledBuildFailure::cause()` retains the original `BuildError`; `cleanup_report()` returns the optional final rollback report. The original build methods still return `BuildFailure` after requesting abort. Use them when immediate return matters or when you need to retain the failure and resume `wait_cleanup()` after cancellation. `take_cleanup()` and `into_parts()` remain available to transfer cleanup ownership.
+
+On normal completion a settled method waits for rollback observation before returning its error. Cleanup can still fail or remain incomplete, and the original build cause remains first in the error source chain. Graph/preflight failures have no cleanup report. Cancelling/dropping a settled future can interrupt the wait and only requests best-effort abort; it does not guarantee rollback observation finishes. Timers cannot preempt synchronous blocking callbacks or a blocking future poll.
+
+For one whole-shutdown budget, explicitly select `WaitPolicy::bounded_with_total(grace, termination, total, timer)`. Its timer starts on the first poll of `ShutdownHandle::wait()` and continues across cancellation and abort upgrades.
+
 ## Errors and diagnostics
 
 | Symptom | Where to look | Action |
@@ -419,7 +429,7 @@ their dependencies. Immediate requests all aborts before returning the handle.
 The [lifecycle guide](lifecycle.md) supplies the complete failure and business
 exit flow, and [app_lifecycle](../examples/app_lifecycle.rs) runs a worker.
 
-Both build variants return `BuildFailure` immediately after requesting abort
+The original build variants return `BuildFailure` immediately after requesting abort
 for transferred managed values. The application owns cleanup observation:
 inspect `cause()`, then await optional cleanup with `wait_cleanup()` or take its
 handle with `take_cleanup()` or `into_parts()`. Keep `BuildFailure` as a typed

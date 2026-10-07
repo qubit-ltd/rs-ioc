@@ -64,6 +64,40 @@ async fn build_message_length() -> Result<(), Box<dyn Error>> {
 托管关闭还可使用 `WaitPolicy::bounded_with_total(grace, termination, total, timer)`
 增加应用级总时限，同时保留逐组件时限。时限与报告语义见[生命周期说明](doc/lifecycle.zh_CN.md)。
 
+
+
+## 选择构建失败的回滚观察方式
+
+原始 `build()` 和 `build_async()` 在请求 abort 后返回 `BuildFailure`。需要立即返回，或需要在取消后保留 failure 并继续调用 `wait_cleanup()` 时，使用原始入口。settled 方法在正常完成时等待回滚观察结束，并返回 `SettledBuildFailure`；它保留原始 `BuildError` 作为错误来源链首项，并通过 `cleanup_report()` 提供可选的最终 `ShutdownReport`。清理仍可能失败或未完成。
+
+```rust
+use std::error::Error;
+use qubit_ioc::ContainerBuilder;
+
+async fn build_application() -> Result<(), Box<dyn Error>> {
+    let mut builder = ContainerBuilder::new();
+    builder.root::<String>(); // 没有注册 String，因此构建失败。
+    match builder.build_settled().await {
+        Ok(application) => drop(application),
+        Err(failure) => {
+            if let Some(report) = failure.cleanup_report() {
+                if report.is_success() {
+                    println!("rollback completed");
+                } else {
+                    eprintln!("rollback report: {report:?}");
+                }
+            }
+            return Err(Box::new(failure));
+        }
+    }
+    Ok(())
+}
+```
+
+图或预检失败没有托管清理，因此不会产生报告；已移交托管资源之后失败则可能有报告。四个 settled 入口为 `build_settled()`、`build_all_settled()`、`build_async_settled()` 和 `build_all_async_settled()`。取消或丢弃 settled future 仍会中断等待：取消只会尽力请求 abort，不保证回滚观察完成。
+
+如需单一的全局关闭预算，应显式选择 `WaitPolicy::bounded_with_total(grace, termination, total, timer)`。总计时从首次轮询 `ShutdownHandle::wait()` 开始，跨取消继续计时；它不能抢占同步阻塞回调或单次阻塞的 future poll。
+
 ## 快速开始：组装问候服务
 
 假设应用需要跨 crate 注入问候服务。先声明具体组件及其 trait 绑定，再让服务通过
@@ -184,8 +218,9 @@ ticket 析构不得取消资源关闭。具体适配方式见
 `#[value]` 与 `ConfigurationProperties` 读取保存的原始值，不会自动插值。
 结构化反序列化默认拒绝未知字段。需要插值时，可在工厂中显式调用
 `Config::get_interpolated`。
-工厂 panic 遵循 Rust 的 panic 语义并向外传播。同步和异步构建失败时，都会先为已移交
-资源请求 abort，再立即返回 `BuildFailure`。调用 `failure.wait_cleanup().await` 可观察
+工厂 panic 遵循 Rust 的 panic 语义并向外传播。原始同步和异步构建入口失败时，都会先为已移交
+资源请求 abort，再立即返回 `BuildFailure`。如需在正常完成时等待回滚观察结束，请使用上文的 settled
+构建入口。调用 `failure.wait_cleanup().await` 可观察
 可选的 `ShutdownReport`，同时通过 `cause()` 保留原始 `BuildError`。若等待被取消，可在
 同一个 failure 上再次调用以继续观察清理；清理错误保留在报告中，不会替换构建错误。
 需要自行管理清理句柄时，仍可使用底层 `take_cleanup()` 或 `into_parts()`。

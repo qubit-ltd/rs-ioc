@@ -192,15 +192,26 @@ IoC can coexist with `qubit-spi`: SPI selects an implementation within one
 service family, while IoC assembles wider application dependencies and startup
 order. IoC does not depend on SPI or discover providers implicitly.
 
+
+
+## Settled build APIs
+
+`ContainerBuilder` provides `build_settled()` and `build_all_settled()` for synchronous construction, and `build_async_settled()` and `build_all_async_settled()` for asynchronous construction. Each returns `Result<Application, SettledBuildFailure>`. `SettledBuildFailure::cause()` retains the original `BuildError`; `cleanup_report()` returns the optional final rollback report. The original build methods still return `BuildFailure` after requesting abort. Use them when immediate return matters or when you need to retain the failure and resume `wait_cleanup()` after cancellation. `take_cleanup()` and `into_parts()` remain available to transfer cleanup ownership.
+
+On normal completion a settled method waits for rollback observation before returning its error. Cleanup can still fail or remain incomplete, and the original build cause remains first in the error source chain. Graph/preflight failures have no cleanup report. Cancelling/dropping a settled future can interrupt the wait and only requests best-effort abort; it does not guarantee rollback observation finishes. Timers cannot preempt synchronous blocking callbacks or a blocking future poll.
+
+For one whole-shutdown budget, explicitly select `WaitPolicy::bounded_with_total(grace, termination, total, timer)`. Its timer starts on the first poll of `ShutdownHandle::wait()` and continues across cancellation and abort upgrades.
+
 ## 6. Errors and lifecycle
 
 `RegistrationError` covers malformed definitions and keys. `BuildError` is the
-original graph, configuration or factory cause. Both sync and async builders
-return `Result<Application, BuildFailure>`. `BuildFailure::cause()` retains
+original graph, configuration or factory cause. The original sync and async build
+methods return `Result<Application, BuildFailure>`; settled wrappers return
+`SettledBuildFailure`. `BuildFailure::cause()` retains
 source chains and diagnostic paths; `take_cleanup()` or `into_parts()` transfers
 optional rollback ownership. A later factory failure requests abort for all
-transferred managed resources and returns immediately. The application must
-explicitly call `wait_cleanup(&mut self).await` to observe termination and
+transferred managed resources and returns immediately. With these original
+methods, the application can call `wait_cleanup(&mut self).await` to observe termination and
 cleanup errors while retaining the cause. Cancelling that future and calling
 again resumes the same cleanup observation.
 Graph and preflight failures construct nothing and have no cleanup handle.

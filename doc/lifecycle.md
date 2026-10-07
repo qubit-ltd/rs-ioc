@@ -48,6 +48,16 @@ Tokio is an example dependency; the IoC runtime does not depend on it. A worker
 that has no separate drain protocol can use its abort callback as a graceful
 fallback, which is recorded in `ShutdownReport::fallbacks()`.
 
+
+
+## Settled build APIs
+
+`ContainerBuilder` provides `build_settled()` and `build_all_settled()` for synchronous construction, and `build_async_settled()` and `build_all_async_settled()` for asynchronous construction. Each returns `Result<Application, SettledBuildFailure>`. `SettledBuildFailure::cause()` retains the original `BuildError`; `cleanup_report()` returns the optional final rollback report. The original build methods still return `BuildFailure` after requesting abort. Use them when immediate return matters or when you need to retain the failure and resume `wait_cleanup()` after cancellation. `take_cleanup()` and `into_parts()` remain available to transfer cleanup ownership.
+
+On normal completion a settled method waits for rollback observation before returning its error. Cleanup can still fail or remain incomplete, and the original build cause remains first in the error source chain. Graph/preflight failures have no cleanup report. Cancelling/dropping a settled future can interrupt the wait and only requests best-effort abort; it does not guarantee rollback observation finishes. Timers cannot preempt synchronous blocking callbacks or a blocking future poll.
+
+For one whole-shutdown budget, explicitly select `WaitPolicy::bounded_with_total(grace, termination, total, timer)`. Its timer starts on the first poll of `ShutdownHandle::wait()` and continues across cancellation and abort upgrades.
+
 ## Retain the owner and observe every exit path
 
 `build`, `build_all`, and their async variants return `Application`. Keep this
@@ -117,8 +127,8 @@ returning that result. If both business and cleanup fail, this fragment logs
 the cleanup report and returns the business error; applications can retain both
 in their own error type.
 
-Both synchronous and asynchronous builds request abort for all transferred
-managed resources and immediately return `BuildFailure` when a later factory
+The original synchronous and asynchronous build methods request abort for all
+transferred managed resources and immediately return `BuildFailure` when a later factory
 returns an error. `cause()` preserves the original error, sources and path;
 `wait_cleanup(&mut self).await` observes optional rollback while keeping that
 cause on the same value. Its `Error::source()` remains the original build error,
@@ -244,7 +254,7 @@ code-generation compatibility layer.
 | Build returns `ApplicationContext` | Build returns `Application`; query through `application.context()`, clone that handle for sharing. |
 | `Arc::try_unwrap(context)` before shutdown | Retain the unique application owner and call its shutdown directly; query clones can remain alive. |
 | `begin_shutdown()` stops all before waiting | Choose `begin_shutdown(ShutdownMode::Graceful)` for normal exit or `Immediate` for failure; Graceful requests start on the first wait poll. |
-| Async build waits for rollback before returning error | `BuildFailure` returns immediately after abort requests; borrow it with `wait_cleanup(&mut self)` to obtain the optional cleanup report while retaining the original cause. Cancelling the wait and calling it again resumes observation. `take_cleanup()` / `into_parts()` remain lower-level ownership APIs. `BuildError::CleanupFailed` is removed; cleanup errors belong to the shutdown report. |
+| Async build waits for rollback before returning error | The original methods return `BuildFailure` immediately after abort requests; borrow it with `wait_cleanup(&mut self)` to obtain the optional cleanup report while retaining the original cause. Use `build_settled()`, `build_all_settled()`, `build_async_settled()`, or `build_all_async_settled()` to await rollback on normal completion and receive `SettledBuildFailure`. Cancelling the wait and calling it again resumes observation. `take_cleanup()` / `into_parts()` remain lower-level ownership APIs. `BuildError::CleanupFailed` is removed; cleanup errors belong to the shutdown report. |
 | Context / `Managed` Drop performs no cleanup | Query context still has no shutdown responsibility; owner, untransferred `Managed`, and handle Drop request abort, never wait. |
 | Hidden `codegen_v1::DefinitionDraft` | Use public `Definition::builder()` and `register_definition`; macros use this core too. Only configuration diagnostics and generated-code glue remain hidden. |
 | `EventBus::shutdown` used as a stop callback | Use non-blocking `request_shutdown` through the ticket adapter and await `wait_async()` in its wait callback. |
