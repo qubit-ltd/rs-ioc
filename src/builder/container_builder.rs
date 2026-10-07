@@ -225,7 +225,9 @@ impl ContainerBuilder {
     ///
     /// # Errors
     ///
-    /// Returns [`RegistrationError`] for invalid options or a duplicate key.
+    /// Returns [`RegistrationError`] when `options` contains an invalid binding
+    /// ID or profile. A duplicate binding in another active definition is
+    /// reported by [`BuildError::DuplicateBinding`] during build validation.
     #[track_caller]
     pub fn register_instance_with<T: ?Sized + Send + Sync + 'static>(
         &mut self,
