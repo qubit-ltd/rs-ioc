@@ -30,6 +30,7 @@ use crate::error::BuildError;
 use crate::error::BuildFailure;
 use crate::error::FactoryError;
 use crate::error::RegistrationError;
+use crate::error::SettledBuildFailure;
 use crate::graph::ValidatedGraph;
 use crate::key::BindingKey;
 use crate::managed::Managed;
@@ -873,6 +874,24 @@ impl ContainerBuilder {
         Construction::new(graph, policy).run_sync()
     }
 
+    /// Builds the selected synchronous graph and waits for rollback on failure.
+    ///
+    /// On success, returns an [`Application`] that the caller must explicitly
+    /// shut down. On failure, normal completion waits for managed cleanup; the
+    /// returned report may still describe unsuccessful cleanup. Cancelling
+    /// this future only provides best-effort abort and does not guarantee that
+    /// rollback waiting completes.
+    ///
+    /// # Errors
+    ///
+    /// Returns the original build cause and any completed cleanup report.
+    pub async fn build_settled(self) -> Result<Application, SettledBuildFailure> {
+        match self.build() {
+            Ok(application) => Ok(application),
+            Err(failure) => Err(failure.settle().await),
+        }
+    }
+
     /// Validates and constructs every definition active under the configured
     /// profiles, whether or not a root was registered.
     ///
@@ -895,6 +914,25 @@ impl ContainerBuilder {
         let policy = Self::selected_wait_policy(&graph, policy)?;
         graph.require_sync()?;
         Construction::new(graph, policy).run_sync()
+    }
+
+    /// Builds every active synchronous definition and waits for rollback on
+    /// failure.
+    ///
+    /// On success, returns an [`Application`] that the caller must explicitly
+    /// shut down. On failure, normal completion waits for managed cleanup; the
+    /// returned report may still describe unsuccessful cleanup. Cancelling
+    /// this future only provides best-effort abort and does not guarantee that
+    /// rollback waiting completes.
+    ///
+    /// # Errors
+    ///
+    /// Returns the original build cause and any completed cleanup report.
+    pub async fn build_all_settled(self) -> Result<Application, SettledBuildFailure> {
+        match self.build_all() {
+            Ok(application) => Ok(application),
+            Err(failure) => Err(failure.settle().await),
+        }
     }
 
     /// Builds the components selected by one or more calls to [`Self::root`]
@@ -929,6 +967,25 @@ impl ContainerBuilder {
         Construction::new(graph, policy).run_async().await
     }
 
+    /// Asynchronously builds the selected graph and waits for rollback on
+    /// failure.
+    ///
+    /// On success, returns an [`Application`] that the caller must explicitly
+    /// shut down. On failure, normal completion waits for managed cleanup; the
+    /// returned report may still describe unsuccessful cleanup. Cancelling
+    /// this future only provides best-effort abort and does not guarantee that
+    /// rollback waiting completes.
+    ///
+    /// # Errors
+    ///
+    /// Returns the original build cause and any completed cleanup report.
+    pub async fn build_async_settled(self) -> Result<Application, SettledBuildFailure> {
+        match self.build_async().await {
+            Ok(application) => Ok(application),
+            Err(failure) => Err(failure.settle().await),
+        }
+    }
+
     /// Validates and asynchronously constructs every definition active under
     /// the configured profiles, whether or not a root was registered.
     ///
@@ -948,6 +1005,25 @@ impl ContainerBuilder {
         let graph = ValidatedGraph::validate_roots(definitions, &profiles, None)?;
         let policy = Self::selected_wait_policy(&graph, policy)?;
         Construction::new(graph, policy).run_async().await
+    }
+
+    /// Asynchronously builds every active definition and waits for rollback on
+    /// failure.
+    ///
+    /// On success, returns an [`Application`] that the caller must explicitly
+    /// shut down. On failure, normal completion waits for managed cleanup; the
+    /// returned report may still describe unsuccessful cleanup. Cancelling
+    /// this future only provides best-effort abort and does not guarantee that
+    /// rollback waiting completes.
+    ///
+    /// # Errors
+    ///
+    /// Returns the original build cause and any completed cleanup report.
+    pub async fn build_all_async_settled(self) -> Result<Application, SettledBuildFailure> {
+        match self.build_all_async().await {
+            Ok(application) => Ok(application),
+            Err(failure) => Err(failure.settle().await),
+        }
     }
 
     /// Atomically adds an already validated complete definition to the staging

@@ -25,7 +25,9 @@ use qubit_ioc::BuildError;
 use qubit_ioc::ContainerBuilder;
 use qubit_ioc::Dependency;
 use qubit_ioc::FactoryError;
+use qubit_ioc::Managed;
 use qubit_ioc::RegistrationError;
+use qubit_ioc::WaitPolicy;
 #[cfg(feature = "config")]
 use qubit_ioc::config::get_value_for;
 
@@ -35,6 +37,83 @@ struct LevelOne(usize);
 struct LevelTwo(Arc<LevelOne>);
 #[derive(Debug)]
 struct LevelThree(Arc<LevelTwo>);
+
+struct SettledResource;
+struct SettledFailure;
+
+fn ready<F: Future>(future: F) -> F::Output {
+    let mut future = pin!(future);
+    let mut context = Context::from_waker(Waker::noop());
+    match future.as_mut().poll(&mut context) {
+        Poll::Ready(output) => output,
+        Poll::Pending => panic!("expected a ready future"),
+    }
+}
+
+#[test]
+fn test_build_settled_builds_selected_synchronous_graph() {
+    let mut builder = ContainerBuilder::new();
+    builder
+        .register_instance(Arc::new(42_u32))
+        .expect("stage root instance");
+    builder.root::<u32>();
+
+    let application = ready(builder.build_settled()).expect("valid graph must build");
+    assert_eq!(*application.context().get::<u32>().expect("built root"), 42);
+}
+
+#[test]
+fn test_build_settled_reports_missing_root_without_cleanup() {
+    let error = match ready(ContainerBuilder::new().build_settled()) {
+        Ok(_) => panic!("missing root must fail"),
+        Err(error) => error,
+    };
+    assert!(matches!(error.cause(), BuildError::NoRootsSelected));
+    assert!(error.cleanup_report().is_none());
+}
+
+#[test]
+fn test_build_async_settled_waits_for_cleanup_before_returning_failure() {
+    let waits = Arc::new(AtomicUsize::new(0));
+    let mut builder = ContainerBuilder::new().wait_policy(WaitPolicy::unbounded());
+    let wait_count = Arc::clone(&waits);
+    builder
+        .register_managed_factory::<SettledResource, _>(&[], move |_| {
+            Ok(Managed::asynchronous(
+                Arc::new(SettledResource),
+                |_| Ok(()),
+                move |_| {
+                    wait_count.fetch_add(1, Ordering::SeqCst);
+                    Box::pin(async { Ok(()) })
+                },
+            ))
+        })
+        .expect("stage managed resource");
+    builder
+        .register_factory::<SettledFailure, _>(&[Dependency::of::<SettledResource>()], |_| {
+            Err(FactoryError::new(std::io::Error::other("expected failure")))
+        })
+        .expect("stage failing factory");
+    builder.root::<SettledFailure>();
+
+    let error = match ready(builder.build_async_settled()) {
+        Ok(_) => panic!("later factory must fail"),
+        Err(error) => error,
+    };
+    assert!(matches!(error.cause(), BuildError::FactoryFailed { .. }));
+    assert_eq!(waits.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn test_build_all_settled_and_async_settled_accept_empty_graph() {
+    let application = ready(ContainerBuilder::new().build_all_settled())
+        .expect("empty synchronous graph must build");
+    drop(application);
+
+    let application = ready(ContainerBuilder::new().build_all_async_settled())
+        .expect("empty asynchronous graph must build");
+    drop(application);
+}
 
 #[test]
 fn test_build_resolves_reverse_registered_chain() {
