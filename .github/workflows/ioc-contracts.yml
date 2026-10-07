@@ -26,6 +26,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
         with:
           toolchain: 1.94
+      - name: Test proc macro coverage gate
+        run: python3 -m unittest discover -s .infra/tools/tests -p 'test_check_macro_coverage.py' -v
       - name: Install cargo-llvm-cov
         run: cargo install cargo-llvm-cov --version 0.8.6 --locked
       - name: Collect proc macro crate coverage
@@ -99,6 +101,8 @@ jobs:
       - name: Test feature-minimal manual assembly
         run: cargo +1.94.0 test --manifest-path tests/fixtures/ioc_cross_crate/Cargo.toml -p qubit-ioc-fixture-manual --locked
       - name: Verify manual consumer feature isolation
-        run: cargo +1.94.0 tree --manifest-path tests/fixtures/ioc_cross_crate/Cargo.toml -p qubit-ioc-fixture-manual -e features
+        run: |
+          python3 -m unittest discover -s .infra/tools/tests -p 'test_check_manual_feature_isolation.py' -v
+          python3 .infra/tools/check-manual-feature-isolation.py
       - name: Run managed lifecycle example
         run: cargo +1.94.0 run --example app_lifecycle --no-default-features --locked
