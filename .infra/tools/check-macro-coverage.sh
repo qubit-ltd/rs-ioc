@@ -32,9 +32,9 @@ for metric in functions lines regions; do
     covered=$(jq -er ".${metric}.covered" <<<"$summary")
     count=$(jq -er ".${metric}.count" <<<"$summary")
     case "$metric" in
-        functions) threshold=39 ;;
-        lines) threshold=44 ;;
-        regions) threshold=43 ;;
+        functions) threshold=90 ;;
+        lines) threshold=85 ;;
+        regions) threshold=85 ;;
     esac
     if [ "$count" -le 0 ]; then
         echo "macro $metric coverage has an empty denominator" >&2

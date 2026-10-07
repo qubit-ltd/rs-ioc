@@ -660,3 +660,41 @@ fn test_configuration_properties_accepts_empty_root_prefix() {
     };
     assert_eq!(properties.prefix.value(), "");
 }
+
+#[test]
+fn test_configuration_rejects_existing_register_ioc_function() {
+    let error = declaration(
+        MacroKind::Configuration,
+        quote!(),
+        quote!(
+            mod group {
+                fn register_ioc() {}
+            }
+        ),
+    )
+    .expect_err("an existing register_ioc function conflicts with generated output");
+
+    assert!(error.to_string().contains("conflicts with existing"), "{error}");
+}
+
+#[test]
+fn test_configuration_retains_profile_without_register_ioc_conflict() {
+    let parsed = declaration(
+        MacroKind::Configuration,
+        quote!(profile = "test"),
+        quote!(
+            mod group {
+                fn other() {}
+            }
+        ),
+    )
+    .expect("a configuration without register_ioc should be accepted");
+    let Declaration::Configuration(configuration) = parsed else {
+        panic!("configuration IR was expected");
+    };
+
+    assert_eq!(
+        configuration.profile.expect("profile should be retained").value(),
+        "test"
+    );
+}
