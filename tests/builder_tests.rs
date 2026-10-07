@@ -106,12 +106,11 @@ fn test_build_async_settled_waits_for_cleanup_before_returning_failure() {
 
 #[test]
 fn test_build_all_settled_and_async_settled_accept_empty_graph() {
-    let application = ready(ContainerBuilder::new().build_all_settled())
-        .expect("empty synchronous graph must build");
+    let application = ready(ContainerBuilder::new().build_all_settled()).expect("empty synchronous graph must build");
     drop(application);
 
-    let application = ready(ContainerBuilder::new().build_all_async_settled())
-        .expect("empty asynchronous graph must build");
+    let application =
+        ready(ContainerBuilder::new().build_all_async_settled()).expect("empty asynchronous graph must build");
     drop(application);
 }
 

@@ -461,10 +461,7 @@ fn test_wait_cleanup_graph_failure_returns_none_and_preserves_cause() {
 
 #[test]
 fn test_settle_graph_failure_has_no_cleanup_report() {
-    let failure = ContainerBuilder::new()
-        .build()
-        .err()
-        .expect("graph validation failure");
+    let failure = ContainerBuilder::new().build().err().expect("graph validation failure");
     let settled = ready(failure.settle());
     assert!(matches!(settled.cause(), BuildError::NoRootsSelected));
     assert!(settled.cleanup_report().is_none());
@@ -484,12 +481,7 @@ fn test_settle_waits_once_after_factory_failure_and_preserves_cause() {
 
     let settled = ready(failure.settle());
     assert!(matches!(settled.cause(), BuildError::FactoryFailed { .. }));
-    assert!(
-        settled
-            .cleanup_report()
-            .expect("cleanup report")
-            .is_success()
-    );
+    assert!(settled.cleanup_report().expect("cleanup report").is_success());
     assert!(settled.to_string().contains("original failure"));
     assert!(settled.to_string().contains("cleanup succeeded"));
     assert_eq!(aborts.load(Ordering::SeqCst), 1);

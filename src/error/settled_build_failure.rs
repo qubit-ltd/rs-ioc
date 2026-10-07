@@ -27,14 +27,11 @@ pub struct SettledBuildFailure {
 impl SettledBuildFailure {
     /// Stores the original build cause and the completed cleanup observation.
     pub(crate) fn new(cause: BuildError, cleanup_report: Option<ShutdownReport>) -> Self {
-        Self {
-            cause,
-            cleanup_report,
-        }
+        Self { cause, cleanup_report }
     }
 
     /// Returns the original graph, configuration, or factory error.
-    #[must_use]
+    #[must_use = "inspect the original build error"]
     #[inline]
     pub fn cause(&self) -> &BuildError {
         &self.cause
