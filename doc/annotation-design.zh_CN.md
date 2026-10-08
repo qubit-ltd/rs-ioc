@@ -4,7 +4,7 @@
 
 > 当前运行时要求应用显式调用 `install::<D>()` 或提供者 crate 的 `register_ioc(&mut builder)`；宏不再提交链接器级全局注册项。
 
-> 状态：拟实现的应用层设计，当前仓库尚未提供这些宏和 API。
+> 状态：本文成稿时的应用层拟实现方案；文中宏和 API 的实际落地形态已发生变化。
 > [容器内核设计](design.zh_CN.md)记录同期底层方案。本文中的 API 和示例属于历史提案，实施时曾发生变化；请以当前设计和用户手册为准。
 
 ## 1. 使用目标
@@ -343,8 +343,7 @@ rs-ioc/
 反射元数据集成没有纳入当前 feature 集合。`qubit-ioc-macros` 通过运行时的
 版本化生成协议输出代码，不调用 `qubit-reflect` 的私有 `codegen_v3`。
 
-当前 `rs-ioc` 仍是单 crate 骨架；增加 workspace、宏 crate、feature 和依赖属于
-后续实施工作，不在本文档修改范围内。
+本文成稿时，rs-ioc 仍是单 crate 骨架；当时计划增加 workspace、宏 crate、feature 和依赖。当前实现见[当前设计](complete-design.zh_CN.md)。
 
 ## 9. 诊断与验收
 
@@ -367,4 +366,4 @@ rs-ioc/
 8. 未实现 `Reflect` 的组件仍可自动装配；`qubit-spi` 失败链在 `#[bean]` 外层保留。
 9. 关闭默认 feature 时，纯底层显式注册与构建不依赖宏、inventory、配置或反射。
 
-这些是目标契约，当前仓库骨架尚未实现，也未以运行测试验证。
+这些是目标契约，本文成稿时的仓库骨架尚未实现这些目标契约，也未以运行测试验证。
