@@ -200,6 +200,8 @@ All four settled methods are async and return `Result<Application, SettledBuildF
 
 On normal completion a settled method waits for rollback observation before returning its error. Cleanup can still fail or remain incomplete, and the original build cause remains first in the error source chain. Graph/preflight failures have no cleanup report. Cancelling/dropping a settled future can interrupt the wait and only requests best-effort abort; it does not guarantee rollback observation finishes. Timers cannot preempt synchronous blocking callbacks or a blocking future poll.
 
+`BuildSession` is a separate single-use contract: dropping `run()` before its first poll leaves the session ready to run, while dropping it after polling makes another `run()` return `Cancelled`. `BuildSessionError::Build` carries the `BuildFailure` that owns rollback; after cancellation, the session owns optional cleanup. Cleanup observation can resume through `wait_cancelled_cleanup()`, or its handle can be transferred once with `take_cancelled_cleanup()`. See [Observe cleanup after cancelling an in-progress build](user_guide.md#observe-cleanup-after-cancelling-an-in-progress-build). This session API does not change graph validation, construction, or shutdown algorithms.
+
 For one whole-shutdown budget, explicitly select `WaitPolicy::bounded_with_total(grace, termination, total, timer)`. Its timer starts on the first poll of `ShutdownHandle::wait()` and continues across cancellation and abort upgrades.
 
 ## 6. Errors and lifecycle

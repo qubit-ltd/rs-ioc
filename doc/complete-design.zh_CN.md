@@ -99,6 +99,8 @@ provider crate 应导出显式 `register_ioc(&mut builder)`，由应用决定纳
 
 正常完成时，settled 方法会在返回错误前等待回滚观察结束。清理仍可能失败或未完成，原始构建原因仍是错误来源链首项。图或预检失败没有清理报告。取消或丢弃 settled future 会中断等待，并且只尽力请求 abort；它不保证回滚观察完成。计时器不能抢占同步阻塞回调或单次阻塞的 future poll。
 
+`BuildSession` 提供独立的单次执行契约：首次轮询前丢弃 `run()` future 后，session 仍可运行；首次轮询后丢弃，再次调用 `run()` 会返回 `Cancelled`。`BuildSessionError::Build` 携带拥有回滚清理的 `BuildFailure`；取消后，可选清理由 session 持有。可通过 `wait_cancelled_cleanup()` 恢复清理观察，或通过 `take_cancelled_cleanup()` 单次移交句柄。参见[构建期间取消后继续观察清理](user_guide.zh_CN.md#构建期间取消后继续观察清理)。该 session API 不改变图验证、构造或关闭算法。
+
 如需单一的全局关闭预算，应显式选择 `WaitPolicy::bounded_with_total(grace, termination, total, timer)`。总计时从首次轮询 `ShutdownHandle::wait()` 开始，并跨取消及 abort 升级继续计时。
 
 ## 6. 错误与生命周期
