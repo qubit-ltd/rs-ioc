@@ -12,9 +12,9 @@ use crate::error::BuildSessionError;
 use crate::managed::ShutdownHandle;
 use crate::managed::ShutdownReport;
 
-#[path = "internal/build_session_run_guard.rs"]
+#[path = "internal/run_guard.rs"]
 mod run_guard;
-#[path = "internal/build_session_state.rs"]
+#[path = "internal/session_state.rs"]
 mod state;
 use run_guard::RunGuard;
 use state::SessionState;
