@@ -74,7 +74,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## 构建失败与资源边界
 
-原始 `build()` / `build_async()` 会在请求 abort 后立即返回 `BuildFailure`，适合需要尽快取得失败并自行安排清理的场景；四个 settled 构建入口会在 future 正常完成时等待回滚观察。两种方式的错误来源与清理报告边界，以及取消后的处理方法，详见[构建失败与回滚观察](doc/user_guide.zh_CN.md#构建失败与回滚观察)。
+原始 `build()` / `build_async()` 会在请求 abort 后立即返回 `BuildFailure`，适合需要尽快取得失败并自行安排清理的场景；四个 settled 构建入口会在 future 正常完成时等待回滚观察。两种方式的错误来源与清理报告边界，以及取消后的处理方法，详见[构建失败与回滚观察](doc/user_guide.zh_CN.md#构建失败与回滚观察)。若构建 future 本身可能被取消，且应用仍需观察清理，请保留由 `build_async_session()` 或 `build_all_async_session()` 创建的 `BuildSession`，参见[构建期间取消后继续观察清理](doc/user_guide.zh_CN.md#构建期间取消后继续观察清理)。
 
 应用只提供共享实例，不提供原型或请求作用域、热更新、未托管组件的自动关闭、循环代理或动态库发现。关闭句柄或 owner 被丢弃时只会尽力请求 abort，不会代替应用等待；`ShutdownReport::incomplete()` 表示仍有组件未确认终止。组件构造不依赖运行时反射；`qubit-spi` 负责 provider 的选择和回退，其注册表或选中服务可作为普通组件注册。
 

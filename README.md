@@ -171,9 +171,12 @@ abort; use them when the caller needs to resume `wait_cleanup()` after
 cancellation. The four settled build methods wait for rollback during normal
 completion and preserve the original `BuildError`; cleanup reports may be
 absent, failed, or incomplete. Cancelling a settled future does not guarantee
-that rollback observation finishes. See [Build failures and rollback
-observation](doc/user_guide.md#build-failures-and-rollback-observation) for the
-full example and selection guidance.
+that rollback observation finishes. If the build future itself may be cancelled
+and the application must keep observing cleanup, retain a `BuildSession` from
+`build_async_session()` or `build_all_async_session()`; see [Observe cleanup
+after cancelling an in-progress build](doc/user_guide.md#observe-cleanup-after-cancelling-an-in-progress-build).
+See [Build failures and rollback observation](doc/user_guide.md#build-failures-and-rollback-observation)
+for the full example and selection guidance.
 
 ### Manual assembly
 
