@@ -79,6 +79,7 @@ fn test_overall_timeout_aborts_all_pending_entries_and_is_reported() {
         error.report().incomplete(),
         [BindingKey::of::<u64>(None), BindingKey::of::<u32>(None)]
     );
+    assert_eq!(shutdown.pending().as_slice(), error.report().incomplete());
     assert_eq!(second_aborts.load(Ordering::SeqCst), 1);
     assert_eq!(first_aborts.load(Ordering::SeqCst), 1);
     assert_eq!(timers.durations(), [Duration::from_secs(30), Duration::from_secs(13)]);

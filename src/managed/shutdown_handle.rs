@@ -130,8 +130,10 @@ impl ShutdownHandle {
     /// # Returns
     ///
     /// The unconfirmed bindings in reverse construction order, which is the
-    /// order this shutdown stops them. The vector is empty once every entry is
-    /// confirmed or was abandoned, and it never reports the same binding twice.
+    /// order this shutdown stops them.
+    /// The vector is empty only after termination is confirmed for every entry.
+    /// Entries still unconfirmed in a final failed report remain in this
+    /// snapshot.
     #[must_use]
     pub fn pending(&self) -> Vec<BindingKey> {
         self.driver.pending()
@@ -141,8 +143,8 @@ impl ShutdownHandle {
     /// Does not create or poll any new wait or deadline.
     ///
     /// The handle is consumed, so no further observation is possible through
-    /// it; dropping the returned report afterwards repeats the same abort
-    /// requests without effect.
+    /// it. Dropping the returned report does not send additional abort
+    /// requests.
     ///
     /// # Returns
     ///
