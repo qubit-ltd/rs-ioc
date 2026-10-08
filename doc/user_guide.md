@@ -1,51 +1,5 @@
 # qubit-ioc User Guide
 
-## Typed factories and application shutdown budgets
-
-Manual synchronous and asynchronous factories have four typed registration
-methods: `register_injected_factory`, `register_injected_managed_factory`,
-`register_injected_async_factory`, and
-`register_injected_managed_async_factory`. Their argument tuple generates the
-dependency requests: `()` requests nothing, `Arc<T>` requires one binding,
-`Option<Arc<T>>` allows none, and `Vec<Arc<T>>` requests all candidates. Tuples
-with zero through eight arguments are supported. For named IDs or custom
-dependency requests, use `register_async_factory` or
-`register_managed_async_factory` and provide the requests explicitly.
-
-An async factory selected by the build graph requires `build_async()` or
-`build_all_async()`, which the application must poll on its chosen executor.
-Synchronous `build()` reports `BuildError::AsyncRequired` before invoking any
-factory. Create managed resources after graph validation where possible;
-side effects performed before an async factory returns `Managed<T>` remain that
-factory's responsibility if construction later fails or is cancelled.
-
-For example, this complete function uses a required `String` dependency and
-builds all active definitions asynchronously:
-
-```rust
-use std::error::Error;
-use std::sync::Arc;
-use qubit_ioc::ContainerBuilder;
-
-async fn build_message_length() -> Result<(), Box<dyn Error>> {
-    let mut builder = ContainerBuilder::new();
-    builder.register_instance(Arc::new(String::from("hello")))?;
-    builder.register_injected_async_factory::<usize, (Arc<String>,), _>(
-        |(message,)| Box::pin(async move { Ok(Arc::new(message.len())) }),
-    )?;
-    let application = builder.build_all_async().await?;
-    assert_eq!(*application.context().get::<usize>()?, 5);
-    Ok(())
-}
-```
-
-For managed shutdown, `WaitPolicy::bounded_with_total(grace, termination,
-total, timer)` adds an application-wide budget. It starts when `wait()` is
-first polled; cancellation preserves it. Expiry requests abort for unconfirmed
-components and appears in `ShutdownReport::overall_failure()`. A total deadline
-cannot interrupt synchronous blocking work. See the [lifecycle guide](lifecycle.md)
-for the full contract.
-
 [中文用户手册](user_guide.zh_CN.md) · [README](../README.md)
 
 This guide is for Rust application authors using `qubit-ioc` 0.3.0. It explains
@@ -220,6 +174,53 @@ alive while it shuts down. For normal exit, call
 guide](lifecycle.md) shows a complete bounded integration function that waits
 on both build-failure cleanup and normal shutdown. The [managed worker
 example](../examples/app_lifecycle.rs) runs the same owner/handle contract.
+
+## Typed factories and application shutdown budgets
+
+Manual synchronous and asynchronous factories have four typed registration
+methods: `register_injected_factory`, `register_injected_managed_factory`,
+`register_injected_async_factory`, and
+`register_injected_managed_async_factory`. Their argument tuple generates the
+dependency requests: `()` requests nothing, `Arc<T>` requires one binding,
+`Option<Arc<T>>` allows none, and `Vec<Arc<T>>` requests all candidates. Tuples
+with zero through eight arguments are supported. For named IDs or custom
+dependency requests, use `register_async_factory` or
+`register_managed_async_factory` and provide the requests explicitly.
+
+An async factory selected by the build graph requires `build_async()` or
+`build_all_async()`, which the application must poll on its chosen executor.
+Synchronous `build()` reports `BuildError::AsyncRequired` before invoking any
+factory. Create managed resources after graph validation where possible;
+side effects performed before an async factory returns `Managed<T>` remain that
+factory's responsibility if construction later fails or is cancelled.
+
+For example, this complete function uses a required `String` dependency and
+builds all active definitions asynchronously:
+
+```rust
+use std::error::Error;
+use std::sync::Arc;
+use qubit_ioc::ContainerBuilder;
+
+async fn build_message_length() -> Result<(), Box<dyn Error>> {
+    let mut builder = ContainerBuilder::new();
+    builder.register_instance(Arc::new(String::from("hello")))?;
+    builder.register_injected_async_factory::<usize, (Arc<String>,), _>(
+        |(message,)| Box::pin(async move { Ok(Arc::new(message.len())) }),
+    )?;
+    let application = builder.build_all_async().await?;
+    assert_eq!(*application.context().get::<usize>()?, 5);
+    Ok(())
+}
+```
+
+For managed shutdown, `WaitPolicy::bounded_with_total(grace, termination,
+total, timer)` adds an application-wide budget. It starts when `wait()` is
+first polled; cancellation preserves it. Expiry requests abort for unconfirmed
+components and appears in `ShutdownReport::overall_failure()`. A total deadline
+cannot interrupt synchronous blocking work. See the [lifecycle guide](lifecycle.md)
+for the full contract.
+
 
 ## Choosing definitions and build scope
 
@@ -410,13 +411,72 @@ with `BuildError::AsyncRequired` as its cause before any factory runs. The app o
 
 
 
-## Settled build APIs
+## Build failures and rollback observation
 
-All four settled methods are async and return `Result<Application, SettledBuildFailure>`. For graphs with synchronous factories, call `build_settled()` or `build_all_settled()` and still `.await` the result; for graphs with asynchronous factories, use `build_async_settled()` or `build_all_async_settled()`. `SettledBuildFailure::cause()` retains the original `BuildError`; `cleanup_report()` returns the optional final rollback report. The original build methods still return `BuildFailure` after requesting abort. Retain that failure when immediate return matters or when you need to resume a cancelled `wait_cleanup()` future by calling `wait_cleanup()` again. `take_cleanup()` and `into_parts()` remain available to transfer cleanup ownership.
+The original `build()` and `build_async()` return `BuildFailure` immediately after requesting abort for managed resources already transferred to the container. Use these methods when immediate return matters; keep the `BuildFailure` so cleanup can be observed later with `wait_cleanup()`. That method borrows the failure, preserves the original cause, and can be called again if its future is cancelled. `take_cleanup()` and `into_parts()` transfer cleanup ownership. Keeping only the `BuildError` or its cause discards the cleanup observation handle.
 
-On normal completion a settled method waits for rollback observation before returning its error. Cleanup can still fail or remain incomplete, and the original build cause remains first in the error source chain. Graph/preflight failures have no cleanup report. Cancelling/dropping a settled future can interrupt the wait and only requests best-effort abort; it does not guarantee rollback observation finishes. Timers cannot preempt synchronous blocking callbacks or a blocking future poll.
+The four settled methods are async and return `Result<Application, SettledBuildFailure>`. For synchronous factories use `build_settled()` or `build_all_settled()`; for asynchronous factories use `build_async_settled()` or `build_all_async_settled()`. On normal completion they wait for rollback observation before returning. `SettledBuildFailure::cause()` retains the original `BuildError` as the error source, while `cleanup_report()` returns an optional final `ShutdownReport`. The report may be absent when graph/preflight validation failed before managed resources were created; when present, cleanup can fail or remain incomplete.
 
-For one whole-shutdown budget, explicitly select `WaitPolicy::bounded_with_total(grace, termination, total, timer)`. Its timer starts on the first poll of `ShutdownHandle::wait()` and continues across cancellation and abort upgrades.
+This example makes `Startup` fail after `Worker` has been constructed, then observes both successful and failed cleanup reports:
+
+```rust
+use std::error::Error;
+use std::sync::Arc;
+use qubit_ioc::{
+    CleanupError, ContainerBuilder, Dependency, FactoryError, Managed,
+    SettledBuildFailure, WaitPolicy,
+};
+
+struct Worker;
+struct Startup;
+
+async fn fail_after_worker(
+    fail_cleanup: bool,
+) -> Result<(SettledBuildFailure, bool), Box<dyn Error>> {
+    let mut builder = ContainerBuilder::new().wait_policy(WaitPolicy::unbounded());
+    builder.register_managed_factory::<Worker, _>(&[], move |_| {
+        Ok(Managed::synchronous(Arc::new(Worker), move |_| {
+            if fail_cleanup {
+                Err(CleanupError::new(std::io::Error::other("cleanup failed")))
+            } else {
+                Ok(())
+            }
+        }))
+    })?;
+    builder.register_factory::<Startup, _>(&[Dependency::of::<Worker>()], |_| {
+        Err(FactoryError::new(std::io::Error::other("startup failed")))
+    })?;
+    builder.root::<Startup>();
+
+    let failure = match builder.build_settled().await {
+        Ok(_) => unreachable!("the Startup factory always fails"),
+        Err(failure) => failure,
+    };
+    let cleanup_succeeded = failure
+        .cleanup_report()
+        .expect("Worker was constructed before Startup failed")
+        .is_success();
+    Ok((failure, cleanup_succeeded))
+}
+
+async fn show_cleanup_reports() -> Result<(), Box<dyn Error>> {
+    let (failure, cleanup_succeeded) = fail_after_worker(false).await?;
+    assert!(cleanup_succeeded);
+    println!("build cause: {}", failure.cause());
+
+    let (failure, cleanup_succeeded) = fail_after_worker(true).await?;
+    assert!(!cleanup_succeeded);
+    eprintln!("build cause: {}; cleanup report: {:?}", failure.cause(), failure.cleanup_report());
+    // An application can return Err(Box::new(failure)) after inspecting both.
+    Ok(())
+}
+```
+
+Here `cleanup_report()` is present because `Worker` was built before the `Startup` factory failed. `show_cleanup_reports()` reaches both a successful report and a failed report. A graph/preflight failure instead has no managed cleanup and therefore no report.
+
+Cancelling or dropping a settled future can interrupt its wait. Cancellation requests best-effort abort but does not guarantee rollback observation finishes. Keeping the original `BuildFailure` instead lets the application continue observing cleanup with `wait_cleanup()`. Neither a timer nor cancellation can preempt synchronous blocking callbacks or a blocking future poll.
+
+For the whole managed shutdown lifecycle—including total budgets, tickets, and callback ordering—see the [lifecycle guide](lifecycle.md) and [managed adapter guide](managed-adapters.md). `WaitPolicy::bounded_with_total(grace, termination, total, timer)` starts its total timer when `ShutdownHandle::wait()` is first polled; that deadline persists across cancellation and abort upgrades. It cannot interrupt blocking work.
 
 ## Errors and diagnostics
 

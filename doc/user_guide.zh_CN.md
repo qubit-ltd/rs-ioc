@@ -1,47 +1,10 @@
 # qubit-ioc 用户手册
 
-## 类型化工厂与应用关闭预算
-
-同步和异步手工工厂都有类型化注册入口：`register_injected_factory`、
-`register_injected_managed_factory`、`register_injected_async_factory` 和
-`register_injected_managed_async_factory`。参数元组会生成依赖图请求：`()` 不请求依赖，
-`Arc<T>` 要求一个绑定，`Option<Arc<T>>` 允许没有匹配项，`Vec<Arc<T>>` 请求全部候选。
-支持零至八个参数。若要按具名 ID 查找，或使用自定义依赖请求，请显式声明请求并调用
-`register_async_factory` 或 `register_managed_async_factory`。
-
-构建图中只要选中了异步工厂，就必须调用 `build_async()` 或 `build_all_async()`，并由应用
-选定的执行器轮询。此时若调用同步 `build()`，会在执行任何工厂前返回
-`BuildError::AsyncRequired`。条件允许时，应等依赖图验证通过后再创建托管资源；异步工厂
-返回 `Managed<T>` 之前产生的副作用，如果之后构建失败或被取消，仍由工厂自行处理。
-
-下面的完整函数通过必需的 `String` 依赖创建一个异步工厂，并异步构建全部活跃定义：
-
-```rust
-use std::error::Error;
-use std::sync::Arc;
-use qubit_ioc::ContainerBuilder;
-
-async fn build_message_length() -> Result<(), Box<dyn Error>> {
-    let mut builder = ContainerBuilder::new();
-    builder.register_instance(Arc::new(String::from("hello")))?;
-    builder.register_injected_async_factory::<usize, (Arc<String>,), _>(
-        |(message,)| Box::pin(async move { Ok(Arc::new(message.len())) }),
-    )?;
-    let application = builder.build_all_async().await?;
-    assert_eq!(*application.context().get::<usize>()?, 5);
-    Ok(())
-}
-```
-
-托管关闭可使用 `WaitPolicy::bounded_with_total(grace, termination, total, timer)` 增加
-应用级预算。计时器在 `wait()` 首次 poll 时启动，取消等待后仍然保留。到期时会请求未确认
-组件 abort，并通过 `ShutdownReport::overall_failure()` 报告。总时限无法中断同步阻塞工作。
-完整契约见[生命周期说明](lifecycle.zh_CN.md)。
-
 [English user guide](user_guide.md) · [项目 README](../README.zh_CN.md)
 
 本手册面向使用 `qubit-ioc` 0.3.0 的 Rust 应用开发者，介绍如何在启动时组装
-应用级共享组件、定位错误，以及安排资源关闭。项目清单要求 Rust 1.94 或更新版本。
+应用级共享组件、定位构建问题，以及安排资源关闭。项目要求 Rust 1.94 或更新版本。
+建议先完成下面的共享设置场景，再按需要阅读 bean、构建范围、失败清理和生命周期专题。
 
 ## 概念模型
 
@@ -57,7 +20,7 @@ async fn build_message_length() -> Result<(), Box<dyn Error>> {
 构建器先筛选生效的 profile，再解析根节点和依赖、验证依赖图，最后按依赖顺序执行
 工厂。`build_all()` 则构建所有生效的定义。构建失败时不会发布部分上下文。
 
-## 场景：用共享配置启动服务
+## 场景：用共享设置启动服务
 
 一个应用有问候文本，服务启动时需要读取它。目标是在启动阶段构建服务，看到输出，
 并确认多次查询取得同一个实例。下面使用手动注册；即使关闭全部默认 feature，
@@ -197,6 +160,42 @@ bean 需要启动 worker 时，在工厂内部创建它，并返回
 失败和取消走 Immediate abort。[生命周期说明](lifecycle.zh_CN.md)提供完整的
 bounded 集成函数，在构建失败清理和正常关闭两条路径都显式等待；
 [托管 worker 示例](../examples/app_lifecycle.rs)同样展示所有者和句柄契约。
+
+## 类型化工厂与异步构建
+
+手工同步和异步工厂都提供类型化注册入口：`register_injected_factory`、
+`register_injected_managed_factory`、`register_injected_async_factory` 和
+`register_injected_managed_async_factory`。参数元组会生成依赖请求：`()` 不请求依赖，
+`Arc<T>` 要求一个绑定，`Option<Arc<T>>` 允许没有匹配项，`Vec<Arc<T>>` 请求全部候选；
+参数数量支持从零到八个。若需按具名 ID 查找或使用自定义依赖请求，请显式声明请求，改用
+`register_async_factory` 或 `register_managed_async_factory`。
+
+只要所选构建图包含异步工厂，就要调用 `build_async()` 或 `build_all_async()`，并由应用
+选定的执行器轮询。若此时调用同步 `build()`，会在任何工厂运行前返回
+`BuildError::AsyncRequired`。条件允许时，应等依赖图验证通过后再创建托管资源；异步工厂
+返回 `Managed<T>` 之前产生的副作用，若之后构建失败或被取消，仍由工厂自行处理。
+
+下面的完整函数通过必需的 `String` 依赖创建异步工厂，并异步构建全部活跃定义：
+
+```rust
+use std::error::Error;
+use std::sync::Arc;
+use qubit_ioc::ContainerBuilder;
+
+async fn build_message_length() -> Result<(), Box<dyn Error>> {
+    let mut builder = ContainerBuilder::new();
+    builder.register_instance(Arc::new(String::from("hello")))?;
+    builder.register_injected_async_factory::<usize, (Arc<String>,), _>(
+        |(message,)| Box::pin(async move { Ok(Arc::new(message.len())) }),
+    )?;
+    let application = builder.build_all_async().await?;
+    assert_eq!(*application.context().get::<usize>()?, 5);
+    Ok(())
+}
+```
+
+`build_message_length()` 成功时查询结果为 `5`。若工厂在返回 `Managed<T>` 前已产生外部副作用，
+容器尚未接管这些副作用，工厂仍需自行处理。
 
 ## 选择定义与构建范围
 
@@ -361,13 +360,76 @@ cargo test --manifest-path tests/fixtures/ioc_cross_crate/Cargo.toml
 
 
 
-## Settled 构建入口
+## 构建失败与回滚观察
 
-四个 settled 入口都是 async 方法，均返回 `Result<Application, SettledBuildFailure>`：仅使用同步工厂的图可调用 `build_settled()` 或 `build_all_settled()`，但仍须 `.await`；包含异步工厂时调用 `build_async_settled()` 或 `build_all_async_settled()`。`SettledBuildFailure::cause()` 保留原始 `BuildError`，`cleanup_report()` 返回可选的最终回滚报告。原始构建方法仍在请求 abort 后返回 `BuildFailure`；需要立即返回时使用原始入口。若需从已取消的清理等待恢复，应保留 `BuildFailure` 并再次调用其 `wait_cleanup()`。`take_cleanup()` 和 `into_parts()` 仍可用于转移清理所有权。
+构建图验证失败时，工厂尚未运行，因此没有托管资源需要回滚。若某个工厂在前序托管资源已创建后失败，原始 `build()` 或 `build_async()` 会请求这些资源 abort，随即返回 `BuildFailure`；调用方可以立即处理启动失败，也可以保留该值并等待清理。只保留 `BuildError` 或 `cause()` 会丢失清理观察句柄。
 
-正常完成时，settled 方法会在返回错误前等待回滚观察结束。清理仍可能失败或未完成，原始构建原因仍是错误来源链首项。图或预检失败没有清理报告。取消或丢弃 settled future 会中断等待，并且只尽力请求 abort；它不保证回滚观察完成。计时器不能抢占同步阻塞回调或单次阻塞的 future poll。
+下面让 `Worker` 成功创建后再让 `Startup` 失败，并分别演示清理成功与清理失败。它沿用 README 的完整示例，使用 settled 构建等待正常完成的回滚观察：
 
-如需单一的全局关闭预算，应显式选择 `WaitPolicy::bounded_with_total(grace, termination, total, timer)`。总计时从首次轮询 `ShutdownHandle::wait()` 开始，并跨取消及 abort 升级继续计时。
+```rust
+use std::error::Error;
+use std::sync::Arc;
+use qubit_ioc::{
+    CleanupError, ContainerBuilder, Dependency, FactoryError, Managed,
+    SettledBuildFailure, WaitPolicy,
+};
+
+struct Worker;
+struct Startup;
+
+async fn fail_after_worker(
+    fail_cleanup: bool,
+) -> Result<(SettledBuildFailure, bool), Box<dyn Error>> {
+    let mut builder = ContainerBuilder::new().wait_policy(WaitPolicy::unbounded());
+    builder.register_managed_factory::<Worker, _>(&[], move |_| {
+        Ok(Managed::synchronous(Arc::new(Worker), move |_| {
+            if fail_cleanup {
+                Err(CleanupError::new(std::io::Error::other("cleanup failed")))
+            } else {
+                Ok(())
+            }
+        }))
+    })?;
+    builder.register_factory::<Startup, _>(&[Dependency::of::<Worker>()], |_| {
+        Err(FactoryError::new(std::io::Error::other("startup failed")))
+    })?;
+    builder.root::<Startup>();
+
+    let failure = match builder.build_settled().await {
+        Ok(_) => unreachable!("the Startup factory always fails"),
+        Err(failure) => failure,
+    };
+    let cleanup_succeeded = failure
+        .cleanup_report()
+        .expect("Worker was constructed before Startup failed")
+        .is_success();
+    Ok((failure, cleanup_succeeded))
+}
+
+async fn show_cleanup_reports() -> Result<(), Box<dyn Error>> {
+    let (failure, cleanup_succeeded) = fail_after_worker(false).await?;
+    assert!(cleanup_succeeded);
+    println!("build cause: {}", failure.cause());
+
+    let (failure, cleanup_succeeded) = fail_after_worker(true).await?;
+    assert!(!cleanup_succeeded);
+    eprintln!("build cause: {}; cleanup report: {:?}", failure.cause(), failure.cleanup_report());
+    // 检查报告后，应用仍可通过 Err(Box::new(failure)) 返回原始失败。
+    Ok(())
+}
+```
+
+此例中，`Startup` 的构建错误仍是原始失败原因；`cleanup_report()` 因 `Worker` 已创建而存在，且分别显示清理成功、失败。真实应用中，`cleanup_report()` 是可选值：图或预检失败没有发生托管清理，不能假设一定有报告；清理报告也可能表示失败或未完整确认。`SettledBuildFailure::cause()` 保留原始 `BuildError`，报告用于观察回滚结果，不会取代错误来源。
+
+四个 settled 入口都是 async 方法，返回 `Result<Application, SettledBuildFailure>`。仅含同步工厂的图可使用 `build_settled()` 或 `build_all_settled()`（仍须 `.await`）；包含异步工厂时使用 `build_async_settled()` 或 `build_all_async_settled()`。正常完成时，它们会在返回失败前等待回滚观察结束。需要尽快拿到失败并由应用自行安排清理时，使用原始入口；`BuildFailure::wait_cleanup()` 借用失败值并等待，若等待 future 被取消，可再次调用继续观察。也可通过 `take_cleanup()` 或 `into_parts()` 转移清理所有权并等待句柄。
+
+取消或丢弃 settled future 会中断等待，只会尽力请求 abort，并不保证回滚观察完成。若使用原始入口，保留 `BuildFailure` 才能在取消后继续调用 `wait_cleanup()`。计时器也不能抢占同步阻塞回调或单次阻塞的 future poll。
+
+## 托管关闭预算
+
+当应用需要给托管资源的正常停止和终止确认设置统一上限时，可配置
+`WaitPolicy::bounded_with_total(grace, termination, total, timer)`。总计时从
+`ShutdownHandle::wait()` 首次被 poll 时启动；取消等待后预算仍保留。到期后，系统会请求尚未确认终止的组件 abort，并通过 `ShutdownReport::overall_failure()` 报告总体失败。应用应检查关闭报告，并按业务策略处理仍未确认终止的组件；期限不能中断同步阻塞工作或阻塞的单次 future poll。详见[生命周期说明](lifecycle.zh_CN.md)和[托管资源适配指南](managed-adapters.zh_CN.md)。
 
 ## 错误与排障
 
