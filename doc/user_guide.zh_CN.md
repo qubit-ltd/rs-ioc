@@ -425,6 +425,63 @@ async fn show_cleanup_reports() -> Result<(), Box<dyn Error>> {
 
 取消或丢弃 settled future 会中断等待，只会尽力请求 abort，并不保证回滚观察完成。若使用原始入口，保留 `BuildFailure` 才能在取消后继续调用 `wait_cleanup()`。计时器也不能抢占同步阻塞回调或单次阻塞的 future poll。
 
+### 构建期间取消后继续观察清理
+
+如果应用需要在启动被关闭信号打断后继续观察异步构建清理，请使用
+`build_async_session()` 或 `build_all_async_session()`，并保留返回的 `BuildSession`。
+普通 `build_async()` 的 future 被取消时，应用拿不到可恢复观察清理的 session。
+下面假定 `builder` 已配置完成，`shutdown_signal` 是应用提供、输出 `()` 的关闭信号
+future；`tokio::select!` 只是 Tokio 应用的选择写法示例，`qubit-ioc` 不绑定 Tokio
+或任何其他异步执行器。
+
+```rust
+use qubit_ioc::{BuildSessionError, ShutdownMode};
+
+let mut session = builder.build_async_session();
+let outcome = tokio::select! {
+    result = session.run() => Some(result),
+    () = shutdown_signal => None,
+};
+let application = match outcome {
+    Some(Ok(application)) => Some(application),
+    Some(Err(BuildSessionError::Build(mut failure))) => {
+        let report = failure.wait_cleanup().await;
+        eprintln!("build failed: {}; cleanup: {report:?}", failure.cause());
+        None
+    }
+    Some(Err(other)) => {
+        eprintln!("build session state: {other}");
+        None
+    }
+    None => {
+        let report = session.wait_cancelled_cleanup().await;
+        eprintln!("startup cancelled; cleanup: {report:?}");
+        None
+    }
+};
+if let Some(application) = application {
+    let mut shutdown = application.begin_shutdown(ShutdownMode::Graceful);
+    eprintln!("shutdown: {:?}", shutdown.wait().await);
+}
+```
+
+`select!` 的关闭信号分支胜出时，会丢弃 `session.run()` future；必须等这个 future
+结束并释放对 session 的借用后，才能调用 `wait_cancelled_cleanup()`。应用随后应检查
+其 `Option<ShutdownReport>`：`Some(report)` 表示取得清理报告，但报告仍可能包含失败或
+未确认终止项；`None` 表示 session 当前没有清理句柄，例如尚无托管资源完成构造，或
+句柄已移交。等待 future 若再次被取消，可再次调用 `wait_cancelled_cleanup()`，继续观察
+同一清理过程和原有期限。
+
+还需区分这些结果：`Some(Err(BuildSessionError::Build(failure)))` 表示构建已返回失败，
+清理所有权在 `failure` 中，应调用它的 `wait_cleanup()`，而不是从 session 取清理；
+构建成功则由返回的 `Application` 接管资源，应用仍须执行正常关闭。若 `run()` 尚未
+首次轮询就被丢弃，session 仍可再次运行；首次轮询后被取消，再次 `run()` 会返回
+`BuildSessionError::Cancelled`，无需用它来获取清理句柄；成功或失败结果已经返回后再
+运行则返回 `BuildSessionError::AlreadyFinished`。需要把取消后的清理交给其他任务时，
+可调用 `take_cancelled_cleanup()`：它至多返回一次 `ShutdownHandle`，之后等待责任归
+接收方。直接丢弃 session 只会尽力请求 abort，不会等待清理报告。计时期限也不能抢占
+同步阻塞回调或单次阻塞的 future poll。
+
 ## 托管关闭预算
 
 当应用需要给托管资源的正常停止和终止确认设置统一上限时，可配置

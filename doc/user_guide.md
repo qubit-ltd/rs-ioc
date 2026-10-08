@@ -417,6 +417,72 @@ The original `build()` and `build_async()` return `BuildFailure` immediately aft
 
 The four settled methods are async and return `Result<Application, SettledBuildFailure>`. For synchronous factories use `build_settled()` or `build_all_settled()`; for asynchronous factories use `build_async_settled()` or `build_all_async_settled()`. On normal completion they wait for rollback observation before returning. `SettledBuildFailure::cause()` retains the original `BuildError` as the error source, while `cleanup_report()` returns an optional final `ShutdownReport`. The report may be absent when graph/preflight validation failed before managed resources were created; when present, cleanup can fail or remain incomplete.
 
+### Observe cleanup after cancelling an in-progress build
+
+Use a build session when the application may cancel startup while an async
+factory is running and still needs to observe cleanup of managed resources
+that have already been constructed. Keep the session outside the race so it
+remains available after the build future is dropped. In this application-side
+example, `builder` is the configured `ContainerBuilder`, and
+`shutdown_signal` is an application-provided future that resolves to `()`.
+`tokio::select!` is Tokio's application-level way to race those futures;
+`qubit-ioc` does not create or require Tokio, or bind itself to an executor.
+
+```rust
+use qubit_ioc::{BuildSessionError, ShutdownMode};
+
+let mut session = builder.build_async_session();
+let outcome = tokio::select! {
+    result = session.run() => Some(result),
+    () = shutdown_signal => None,
+};
+let application = match outcome {
+    Some(Ok(application)) => Some(application),
+    Some(Err(BuildSessionError::Build(mut failure))) => {
+        let report = failure.wait_cleanup().await;
+        eprintln!("build failed: {}; cleanup: {report:?}", failure.cause());
+        None
+    }
+    Some(Err(other)) => {
+        eprintln!("build session state: {other}");
+        None
+    }
+    None => {
+        let report = session.wait_cancelled_cleanup().await;
+        eprintln!("startup cancelled; cleanup: {report:?}");
+        None
+    }
+};
+if let Some(application) = application {
+    let mut shutdown = application.begin_shutdown(ShutdownMode::Graceful);
+    eprintln!("shutdown: {:?}", shutdown.wait().await);
+}
+```
+
+When the signal wins, `select!` drops the `run()` future and releases its
+mutable borrow of `session` before the cleanup wait begins. A completed build
+returns its `Application`, which still needs the application's normal shutdown
+path. `BuildSessionError::Build(failure)` means construction already returned
+a failure: the cleanup observer belongs to `failure`, so use its
+`wait_cleanup()` (or transfer its handle) instead of asking the session for
+cleanup. If a polled `run()` future is cancelled, another `run()` returns
+`BuildSessionError::Cancelled`; after a successful result or a returned build
+failure, another call returns `AlreadyFinished`.
+
+Dropping the `run()` future before its first poll does not consume the
+session; it can still be run later. Once polling has started, cancellation
+requests abort for completed managed resources and preserves their cleanup
+handle in the session. `wait_cancelled_cleanup()` returns `None` when there is
+no handle, for example if cancellation happened before any managed resource
+was produced. Otherwise it returns the cleanup report, which can describe
+failed or unconfirmed termination. If this wait is itself cancelled, call it
+again: the same observer and original wait deadline are preserved, and a
+completed wait returns the same final report. To move observation elsewhere,
+call `take_cancelled_cleanup()`; it transfers the unique handle at most once,
+after which the session no longer owns it. Dropping the session only requests
+best-effort abort and does not wait for cleanup. Cancellation cannot preempt
+synchronous callbacks or an individual blocking future poll.
+
 This example makes `Startup` fail after `Worker` has been constructed, then observes both successful and failed cleanup reports:
 
 ```rust
