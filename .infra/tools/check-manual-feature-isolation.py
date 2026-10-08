@@ -1,32 +1,25 @@
 #!/usr/bin/env python3
-"""Assert the manual cross-crate fixture does not enable qubit-ioc features."""
+"""Assert a cross-crate fixture does not enable qubit-ioc features."""
 
 from __future__ import annotations
 
+import argparse
 import subprocess
 import sys
 from pathlib import Path
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
-CARGO_TREE_COMMAND = [
-    "cargo",
-    "+1.94.0",
-    "tree",
-    "--manifest-path",
-    "tests/fixtures/ioc_cross_crate/Cargo.toml",
-    "-p",
-    "qubit-ioc-fixture-manual",
-    "-e",
-    "normal",
-    "--format",
-    "{p}|{f}",
-    "--depth",
-    "1",
-    "--prefix",
-    "none",
-    "--locked",
-]
+DEFAULT_MANIFEST = "tests/fixtures/ioc_cross_crate/Cargo.toml"
+DEFAULT_PACKAGE = "qubit-ioc-fixture-manual"
+
+
+def build_tree_command(manifest_path: str, package: str) -> list[str]:
+    return [
+        "cargo", "+1.94.0", "tree", "--manifest-path", manifest_path,
+        "-p", package, "-e", "normal", "--format", "{p}|{f}",
+        "--depth", "1", "--prefix", "none", "--locked",
+    ]
 
 
 def parse_tree(output: str) -> str:
@@ -56,10 +49,14 @@ def parse_tree(output: str) -> str:
     return features
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Check resolved qubit-ioc features")
+    parser.add_argument("--manifest-path", default=DEFAULT_MANIFEST)
+    parser.add_argument("--package", default=DEFAULT_PACKAGE)
+    args = parser.parse_args(argv)
     try:
         result = subprocess.run(
-            CARGO_TREE_COMMAND,
+            build_tree_command(args.manifest_path, args.package),
             cwd=REPOSITORY_ROOT,
             check=True,
             capture_output=True,
@@ -76,10 +73,10 @@ def main() -> int:
     try:
         parse_tree(result.stdout)
     except ValueError as error:
-        print(f"manual feature isolation check failed: {error}", file=sys.stderr)
+        print(f"qubit-ioc feature isolation check failed: {error}", file=sys.stderr)
         return 1
 
-    print("manual fixture has no enabled qubit-ioc features")
+    print(f"{args.package} has no enabled qubit-ioc features ({args.manifest_path})")
     return 0
 
 

@@ -39,5 +39,19 @@ class ParseTreeTests(unittest.TestCase):
             CHECKER.parse_tree(tree)
 
 
+class CommandTests(unittest.TestCase):
+    def test_current_consumer_uses_locked_normal_tree(self):
+        command = CHECKER.build_tree_command(
+            "tests/fixtures/application_consumer_current/Cargo.toml",
+            "ioc-downstream-consumer-current",
+        )
+        self.assertEqual(command[0:7], [
+            "cargo", "+1.94.0", "tree", "--manifest-path",
+            "tests/fixtures/application_consumer_current/Cargo.toml",
+            "-p", "ioc-downstream-consumer-current",
+        ])
+        self.assertEqual(command[-2:], ["none", "--locked"])
+
+
 if __name__ == "__main__":
     unittest.main()

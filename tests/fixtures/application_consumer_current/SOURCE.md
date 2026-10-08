@@ -4,6 +4,10 @@ This wrapper compiles the current sibling rs-execution-services consumer's
 `src/lib.rs`, `src/main.rs`, and all four public integration-test files. The
 explicit library name is `ioc_application_consumer`, matching the real consumer.
 No current consumer source is copied into the historical fixture.
+The wrapper and the real consumer both declare `qubit-ioc` with
+`default-features = false`. The current CI lane checks the resolved direct
+`qubit-ioc` feature set with `check-manual-feature-isolation.py`; it must be
+empty, including after Cargo feature unification.
 
 | Sibling checkout | Source selection |
 | --- | --- |
@@ -30,19 +34,24 @@ Current path dependencies require qubit-ioc 0.3.0 and qubit-event-bus 0.20.0;
 Fs and FsRegistry use matching direct paths and crates.io patches.
 
 The wrapper registers application_lifecycle_tests (5 tests),
-managed_event_bus_tests (1), resource_integration_tests (2), and
-shutdown_policy_tests (3): 11 external tests in total. Coverage includes real
+managed_event_bus_tests (2), resource_integration_tests (2), and
+shutdown_policy_tests (4): 13 external tests in total. Coverage includes real
 final typed-message flush before dependencies stop, rooted provider metadata,
 nonblocking EventBus requests during a gated real handler, abort upgrade,
 cancellation/resume, explicit rollback, and injected graceful/termination
 budgets. Unit-test targets containing zero tests are expected; the four external
-targets must be present and all 11 tests discovered.
+targets must be present and all 13 tests discovered.
 
 ```sh
+python3 .infra/tools/check-manual-feature-isolation.py --manifest-path tests/fixtures/application_consumer_current/Cargo.toml --package ioc-downstream-consumer-current
 cargo +1.94.0 check --manifest-path tests/fixtures/application_consumer_current/Cargo.toml --locked
 cargo +1.94.0 test --manifest-path tests/fixtures/application_consumer_current/Cargo.toml --locked
 cargo +1.94.0 run --manifest-path tests/fixtures/application_consumer_current/Cargo.toml --locked
 ```
+
+The lockfile is validated against the exact sibling revisions in
+`downstream-contracts.yml`. A different local sibling checkout may require
+lockfile changes and does not establish whether the pinned CI lane passes.
 
 CI logs exact checkout revisions, rustc/cargo versions, rustc executable SHA256,
 consumer sources and lock SHA256. Local working-tree verification records its

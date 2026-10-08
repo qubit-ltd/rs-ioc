@@ -116,6 +116,9 @@ jobs:
           sha256sum rs-ioc/tests/fixtures/application_consumer_current/Cargo.lock
           sha256sum rs-execution-services/tests/fixtures/ioc_application_consumer/src/*.rs
           sha256sum rs-execution-services/tests/fixtures/ioc_application_consumer/tests/*.rs rs-execution-services/tests/fixtures/ioc_application_consumer/tests/internal/*.rs
+      - name: Verify current consumer IoC feature isolation
+        working-directory: rs-ioc
+        run: python3 .infra/tools/check-manual-feature-isolation.py --manifest-path tests/fixtures/application_consumer_current/Cargo.toml --package ioc-downstream-consumer-current
       - name: Check downstream consumer against this IoC revision
         working-directory: rs-ioc
         run: cargo +1.94.0 check --manifest-path tests/fixtures/application_consumer_current/Cargo.toml --locked
