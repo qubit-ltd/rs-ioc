@@ -71,7 +71,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
           repository: qubit-ltd/rs-execution-services
-          ref: 29fbf433636198e9b2ce92b362b068713dee88e8
+          ref: d7adc6627f2164ef0ad0286659d417306c95857f
           path: rs-execution-services
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
