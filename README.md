@@ -92,162 +92,36 @@ it is a different choice from `AllActive` validation of selected roots.
 The assertion observes the selected implementation. The builder checks the
 selected service's dependency graph before constructing either component.
 
-### Function beans and configuration groups
-
-A function bean generates a registration marker: `default_value` becomes
-`DefaultValueBean`, while `#[bean(marker = CustomFactory)]` selects an explicit
-marker. Install the markers, call `grouped::register_ioc(&mut builder)?` for a
-`#[Configuration]` module, then select roots and query the built context.
-The [function bean example](examples/readme_beans.rs) produces `1`, `2`, and
-`"ready"` through assertions and needs only `macros`:
-
-```bash
-cargo +1.94.0 run --example readme_beans --no-default-features --features macros --locked
-```
-
-Follow the [function bean scenario in the user guide](doc/user_guide.md#scenario-function-beans-and-configuration-groups)
-for the complete code, async construction, and managed shutdown.
-
 ## What it provides
 
-For exact selection, use `#[inject(id = "...")]` on an `Arc<T>` field or bean
-parameter. `Option<Arc<T>>` and `Vec<Arc<T>>` express optional and all-candidate
-requests. `#[bean]` supports synchronous and asynchronous free functions,
-including factories returning `Managed<T>` or `Result<Managed<T>, E>`;
-asynchronous definitions require `build_async()`.
-The return may use an imported `Managed`, `qubit_ioc::Managed`, or
-`::qubit_ioc::Managed`. Renamed dependencies and raw-keyword crate names are
-supported too: `ioc::Managed` / `::ioc::Managed` and `r#type::Managed` /
-`::r#type::Managed`. These spellings also work inside `Result<Managed<T>, E>`.
-Unrelated paths such as `application::Managed` and type aliases remain ordinary
-component types.
-The macros apply `cfg` activation to generated dependency, registration, and
-factory argument code, so conditionally compiled bean parameters stay aligned
-with their generated calls. Write `inject` and `value` helper attributes
-directly on component fields or bean parameters; putting them inside `cfg_attr`
-produces a focused diagnostic. Cross-definition key collisions are checked during build after
-profile filtering, not when `register_instance_with` stages an instance.
-Create each managed resource inside its managed factory, after graph
-validation. Register an already-running external resource with
-`register_instance(Arc<T>)` and keep its shutdown responsibility in the
-application; do not capture an already-created `Managed<T>` in a factory.
-The application retains its unique lifecycle owner while
-`application.context().clone()` provides concurrent read-only query handles.
-These clones can remain alive during shutdown; a successful lookup does not
-guarantee that a component still accepts work. `ApplicationContext::state()`
-reports lifecycle state but does not block queries after shutdown. Collection query order is
-precomputed when the context is published, using binding order, ID, and source
-location. Normal exit uses
-`application.begin_shutdown(ShutdownMode::Graceful)` and explicitly awaits the
-returned handle. Graceful requests start when `wait()` is first polled;
-`ShutdownMode::Immediate` requests all aborts before `begin_shutdown` returns.
-Managed graphs require an explicit `WaitPolicy`; use
-`WaitPolicy::bounded` with an application-driven timer. Public
-`Definition::builder()` and `register_definition` support custom factories and
-trait aliases without relying on macro internals. Choose
-`Managed::synchronous` when successful stop confirms termination, or
-`Managed::asynchronous` to pair a non-blocking stop request with a termination
-wait. Graceful shutdown and ticket-aware stop/wait pairings are selected when
-constructing `Managed<T>`; see the [managed adapter guide](doc/managed-adapters.md)
-for those advanced contracts. See the [lifecycle guide](doc/lifecycle.md) for
-shutdown budgets and reports.
+- **Explicit assembly and selection:** Register instances and factories manually or declare components with macros. Select dependencies by type or ID; `Option<Arc<T>>` and `Vec<Arc<T>>` express optional and collection requests. See [Choosing definitions and build scope](doc/user_guide.md#choosing-definitions-and-build-scope).
+- **Configuration and function beans:** `#[bean]` supports synchronous, asynchronous, and managed factories, and `#[Configuration]` groups registrations. See the [function bean scenario](doc/user_guide.md#scenario-function-beans-and-configuration-groups).
+- **Async construction:** Selected async factories require `build_async()` or `build_all_async()`. Manual typed factory registration is explained in [Typed factories](doc/user_guide.md#typed-factories-and-application-shutdown-budgets).
+- **Application shutdown:** `Managed<T>` describes stop and wait actions. Retain the `Application` owner and explicitly await `ShutdownHandle::wait()` to observe termination; deadlines cannot interrupt blocking work. See the [lifecycle guide](doc/lifecycle.md) and [managed adapter guide](doc/managed-adapters.md).
 
-Manual factories can use `register_injected_factory`,
-`register_injected_managed_factory`, `register_injected_async_factory`, and
-`register_injected_managed_async_factory` to derive requests from tuples of
-`Arc<T>`, `Option<Arc<T>>`, and `Vec<Arc<T>>` (zero through eight arguments).
-Selected async factories require `build_async()` or `build_all_async()`; use
-`register_async_factory` or `register_managed_async_factory` for named IDs or
-custom requests. Create managed resources inside their factories after graph
-validation.
+## Build failures and resource boundaries
 
-Config reads from `#[value]` and `ConfigurationProperties` preserve stored
-values without interpolation. Structured deserialization rejects unknown
-fields by default. When interpolation is required, call
-`Config::get_interpolated` explicitly in a factory.
-Factory panics follow Rust's panic behavior and propagate. The original
-`build()` and `build_async()` return `BuildFailure` promptly after requesting
-abort; use them when the caller needs to resume `wait_cleanup()` after
-cancellation. The four settled build methods wait for rollback during normal
-completion and preserve the original `BuildError`; cleanup reports may be
-absent, failed, or incomplete. Cancelling a settled future does not guarantee
-that rollback observation finishes. If the build future itself may be cancelled
-and the application must keep observing cleanup, retain a `BuildSession` from
-`build_async_session()` or `build_all_async_session()`; see [Observe cleanup
-after cancelling an in-progress build](doc/user_guide.md#observe-cleanup-after-cancelling-an-in-progress-build).
-See [Build failures and rollback observation](doc/user_guide.md#build-failures-and-rollback-observation)
-for the full example and selection guidance.
+`build()` and `build_async()` return `BuildFailure` after requesting abort; the caller can keep it to observe cleanup. The four settled build methods await rollback observation during normal completion and preserve the original cause. If startup may be cancelled and cleanup still needs observation, keep a `BuildSession`. See [Build failures and rollback observation](doc/user_guide.md#build-failures-and-rollback-observation) and [Observe cleanup after cancelling an in-progress build](doc/user_guide.md#observe-cleanup-after-cancelling-an-in-progress-build).
 
-### Manual assembly
+The container shares application-wide instances. It does not provide prototype or request scopes, hot reload, automatic shutdown for unmanaged components, circular proxies, or dynamic-library discovery. Dropping an owner or shutdown handle only requests best-effort abort; applications must await shutdown to confirm termination. See the [lifecycle guide](doc/lifecycle.md).
 
-Explicit instances and factories work with `default-features = false`:
+## Manual assembly
 
-```rust
-use std::sync::Arc;
-use qubit_ioc::{ContainerBuilder, Dependency};
+Disable default features to use the manual runtime; see the [`readme_manual` example](examples/readme_manual.rs) for a complete runnable registration path:
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut builder = ContainerBuilder::new();
-    builder.register_instance(Arc::new(String::from("hello")))?;
-    builder.register_factory::<usize, _>(&[Dependency::of::<String>()], |context| {
-        let message = context.get::<String>().expect("declared dependency");
-        Ok(Arc::new(message.len()))
-    })?;
-    builder.root::<usize>();
-    let application = builder.build()?;
-    let context = application.context();
-    assert_eq!(*context.get::<usize>()?, 5);
-    Ok(())
-}
+```toml
+qubit-ioc = { version = "0.3", default-features = false }
 ```
 
-Run `cargo run --example readme_manual --no-default-features` to execute this
-manual path. Its source is in [`examples/readme_manual.rs`](examples/readme_manual.rs).
-
-Each binding is identified by its Rust type and optional ID. IDs use
-dot-separated ASCII segments such as `example.greeting.english`; each segment
-starts with a letter and continues with letters, digits, or underscores. An
-unnamed request selects a sole candidate or a unique `primary` binding.
-
-Use explicit registration to assemble an application. See the [user guide](doc/user_guide.md) for roots, profiles,
-selection rules, error handling, and shutdown responsibilities.
-An independent downstream assembly example is maintained in the
-[`rs-execution-services` consumer fixture](https://github.com/qubit-ltd/rs-execution-services/blob/main/tests/fixtures/ioc_application_consumer/README.md).
-From the `rs-execution-services` checkout, run it with
-`cargo run --manifest-path tests/fixtures/ioc_application_consumer/Cargo.toml`.
-This fixture verifies the cross-crate contract and does not claim production adoption.
-Its EventBus adapter uses `request_shutdown` and a ticket's `wait_async()`;
-the synchronous EventBus `shutdown`, including Immediate mode, still waits.
+The [user guide](doc/user_guide.md) covers roots, profiles, selection rules, errors, and shutdown responsibilities. An independent downstream assembly example is maintained in the [`rs-execution-services` consumer fixture](https://github.com/qubit-ltd/rs-execution-services/blob/main/tests/fixtures/ioc_application_consumer/README.md). From that checkout, run `cargo run --manifest-path tests/fixtures/ioc_application_consumer/Cargo.toml`. This fixture verifies the cross-crate contract; it is not evidence of production adoption.
 
 ## Limitations
 
-The container provides application-wide shared instances. It does not provide
-prototype or request scopes, hot reload, automatic lifecycle management for
-unmanaged components, circular proxies, or dynamic-library discovery. Managed
-factories can opt into explicit stop and wait actions through `Managed<T>` and
-`Application::begin_shutdown` and `ShutdownHandle::wait`. Struct macros support named-field and unit structs;
-other shapes can use manual factories. Runtime reflection is not used to
-construct components. `qubit-spi` remains responsible for provider selection
-and fallback; its registry or a selected service can be registered as a normal
-IoC component. Observed managed shutdown requires an explicit shutdown mode and
-`ShutdownHandle::wait()`; dropping the owner, an untransferred `Managed`, or a
-shutdown handle requests best-effort abort without waiting. Dropping a query
-context does not request shutdown. Cancelling a wait preserves its observation
-state for a later wait. A deadline cannot interrupt blocking callbacks or a
-blocking future poll, and `ShutdownReport::incomplete()` means termination was
-not confirmed. See the [lifecycle guide](doc/lifecycle.md),
-the runnable [`app_lifecycle` example](examples/app_lifecycle.rs), and the
-[English current design](doc/complete-design.md) for design boundaries.
+The container provides application-wide shared instances. It does not provide prototype or request scopes, hot reload, automatic shutdown for unmanaged components, circular proxies, or dynamic-library discovery. Applications must explicitly await shutdown to confirm termination; dropping an owner or handle requests best-effort abort, and deadlines cannot interrupt blocking work. See the [lifecycle guide](doc/lifecycle.md) for shutdown behavior and reports.
 
 ## Learn more
 
-Follow the [English user guide](doc/user_guide.md) or
-[中文用户手册](doc/user_guide.zh_CN.md) for setup, selection, errors, and shutdown.
-The [managed adapter guide](doc/managed-adapters.md) and
-[中文托管适配指南](doc/managed-adapters.zh_CN.md) explain stop and wait contracts.
-The [English current design](doc/complete-design.md) and
-[中文当前设计](doc/complete-design.zh_CN.md) describe the public contracts.
-Run `cargo doc --no-deps --open` in this checkout to browse the public API.
+Read the [English user guide](doc/user_guide.md) or [中文用户手册](doc/user_guide.zh_CN.md). For shutdown details, see the [English lifecycle guide](doc/lifecycle.md), [中文生命周期指南](doc/lifecycle.zh_CN.md), [English managed adapter guide](doc/managed-adapters.md), and [中文托管资源适配指南](doc/managed-adapters.zh_CN.md). Run `cargo doc --no-deps --open` in this checkout to browse the public API.
 
 ## Testing
 
