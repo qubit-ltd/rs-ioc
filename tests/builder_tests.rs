@@ -156,6 +156,44 @@ fn test_build_async_settled_waits_for_cleanup_before_returning_failure() {
 }
 
 #[test]
+fn test_build_all_async_settled_waits_for_managed_rollback() {
+    let aborts = Arc::new(AtomicUsize::new(0));
+    let waits = Arc::new(AtomicUsize::new(0));
+    let abort_count = Arc::clone(&aborts);
+    let wait_count = Arc::clone(&waits);
+    let mut builder = ContainerBuilder::new().wait_policy(WaitPolicy::unbounded());
+    builder
+        .register_managed_factory::<SettledResource, _>(&[], move |_| {
+            Ok(Managed::asynchronous(
+                Arc::new(SettledResource),
+                move |_| {
+                    abort_count.fetch_add(1, Ordering::SeqCst);
+                    Ok(())
+                },
+                move |_| {
+                    wait_count.fetch_add(1, Ordering::SeqCst);
+                    Box::pin(async { Ok(()) })
+                },
+            ))
+        })
+        .expect("stage managed resource");
+    builder
+        .register_async_factory::<SettledFailure, _>(&[Dependency::of::<SettledResource>()], |_| {
+            Box::pin(async { Err(FactoryError::new(std::io::Error::other("expected failure"))) })
+        })
+        .expect("stage failing async factory");
+
+    let failure = match ready(builder.build_all_async_settled()) {
+        Ok(_) => panic!("later async factory must fail"),
+        Err(failure) => failure,
+    };
+    assert!(matches!(failure.cause(), BuildError::FactoryFailed { .. }));
+    assert!(failure.cleanup_report().expect("rollback report").is_success());
+    assert_eq!(aborts.load(Ordering::SeqCst), 1);
+    assert_eq!(waits.load(Ordering::SeqCst), 1);
+}
+
+#[test]
 fn test_build_all_settled_and_async_settled_accept_empty_graph() {
     let application = ready(ContainerBuilder::new().build_all_settled()).expect("empty synchronous graph must build");
     drop(application);
