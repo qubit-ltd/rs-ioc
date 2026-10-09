@@ -103,8 +103,6 @@ selected service's dependency graph before constructing either component.
 
 `build()` and `build_async()` return `BuildFailure` after requesting abort; the caller can keep it to observe cleanup. The four settled build methods await rollback observation during normal completion and preserve the original cause. If startup may be cancelled and cleanup still needs observation, keep a `BuildSession`. See [Build failures and rollback observation](doc/user_guide.md#build-failures-and-rollback-observation) and [Observe cleanup after cancelling an in-progress build](doc/user_guide.md#observe-cleanup-after-cancelling-an-in-progress-build).
 
-The container shares application-wide instances. It does not provide prototype or request scopes, hot reload, automatic shutdown for unmanaged components, circular proxies, or dynamic-library discovery. Dropping an owner or shutdown handle only requests best-effort abort; applications must await shutdown to confirm termination. See the [lifecycle guide](doc/lifecycle.md).
-
 ## Manual assembly
 
 Disable default features to use the manual runtime; see the [`readme_manual` example](examples/readme_manual.rs) for a complete runnable registration path:

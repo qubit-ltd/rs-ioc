@@ -65,6 +65,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 运行 `cargo run --example readme_declarative` 可执行此示例；完整源码见[`examples/readme_declarative.rs`](examples/readme_declarative.rs)。`build()` 至少需要一个选定的根节点；需要构造所有活跃定义时，可使用 `build_all()`。
 
+应用装配检查可设置 `validation_scope(ValidationScope::AllActive)`，在发布所选依赖图前验证所有活跃定义，但仍只构造根节点的依赖闭包；未选中的工厂不会运行，其异步或托管工厂也不要求本次使用异步构建或 `WaitPolicy`。只需验证当前所选闭包时，保留默认的 `Reachable`。`build_all()` 则会实际构造所有活跃定义。
+
 ## 核心能力
 
 - **显式装配与依赖选择：** 手动注册实例和工厂，或用宏声明组件；依赖可按类型、ID 或自定义请求选择。`Option<Arc<T>>` 表示可选依赖，`Vec<Arc<T>>` 获取全部候选。
