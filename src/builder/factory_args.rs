@@ -17,11 +17,30 @@ use crate::error::BuildAccessError;
 ///
 /// The trait is sealed so request declarations always match resolution.
 pub trait FactoryArgs: sealed::Sealed + Send + 'static {
-    /// Returns requests in parameter order, removing repeated identical
-    /// requests while preserving first occurrence.
+    /// Returns the distinct dependency requests needed by this argument tuple.
+    ///
+    /// Requests follow parameter order, and repeated identical requests are
+    /// included only once at their first occurrence.
+    ///
+    /// # Returns
+    ///
+    /// The dependency requests in their resolution order.
     fn dependencies() -> Vec<Dependency>;
 
     /// Resolves each declared request into the parameter tuple.
+    ///
+    /// # Parameters
+    ///
+    /// * `context` — the build context used to resolve each argument.
+    ///
+    /// # Returns
+    ///
+    /// The tuple containing the resolved arguments.
+    ///
+    /// # Errors
+    ///
+    /// Returns the first [`BuildAccessError`] encountered while resolving an
+    /// argument.
     #[allow(clippy::result_large_err)]
     fn resolve(context: &BuildContext) -> Result<Self, BuildAccessError>
     where

@@ -44,6 +44,7 @@ impl CleanupJournal {
     }
 
     /// Transfers all entries to the unique shutdown driver and disarms Drop.
+    #[must_use]
     pub(crate) fn take_entries(&mut self) -> Vec<CleanupEntry> {
         self.disarm_abort();
         std::mem::take(&mut self.entries)

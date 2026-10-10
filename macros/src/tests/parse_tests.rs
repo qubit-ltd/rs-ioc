@@ -5,6 +5,7 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
+
 use proc_macro2::Span;
 use proc_macro2::TokenStream;
 use quote::ToTokens;

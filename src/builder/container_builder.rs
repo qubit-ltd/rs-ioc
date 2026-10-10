@@ -102,6 +102,7 @@ impl ContainerBuilder {
     /// A selected managed factory requires an explicit policy before any
     /// factory can execute. Ordinary graphs do not require a policy.
     #[must_use]
+    #[inline]
     pub fn wait_policy(mut self, policy: WaitPolicy) -> Self {
         self.wait_policy = Some(policy);
         self
@@ -123,6 +124,7 @@ impl ContainerBuilder {
     ///
     /// The configured builder.
     #[must_use]
+    #[inline]
     pub fn validation_scope(mut self, scope: ValidationScope) -> Self {
         self.validation_scope = scope;
         self

@@ -106,7 +106,6 @@ impl ApplicationContext {
     /// `Some` contains the active definition source and replaced sources;
     /// `None` means no active binding has the exact key.
     #[inline]
-    #[must_use]
     pub fn binding_sources(&self, key: &BindingKey) -> Option<(DefinitionSource, &[DefinitionSource])> {
         self.inner
             .query_index

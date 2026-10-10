@@ -10,6 +10,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 
+use qubit_ioc::BuildError;
 use qubit_ioc::ContainerBuilder;
 use qubit_ioc::Dependency;
 use qubit_ioc::FactoryError;
@@ -113,10 +114,7 @@ fn test_injected_missing_dependency_fails_before_factory_runs() {
         Ok(_) => panic!("missing dependency must fail validation"),
     };
 
-    assert!(matches!(
-        failure.cause(),
-        qubit_ioc::BuildError::MissingDependency { .. }
-    ));
+    assert!(matches!(failure.cause(), BuildError::MissingDependency { .. }));
     assert_eq!(calls.load(Ordering::SeqCst), 0);
 }
 
@@ -145,6 +143,6 @@ fn test_injected_managed_factory_participates_in_build_rollback() {
         Ok(_) => panic!("later factory failure must abort construction"),
     };
 
-    assert!(matches!(failure.cause(), qubit_ioc::BuildError::FactoryFailed { .. }));
+    assert!(matches!(failure.cause(), BuildError::FactoryFailed { .. }));
     assert_eq!(aborts.load(Ordering::SeqCst), 1);
 }

@@ -32,12 +32,14 @@ use crate::options::DefinitionSource;
 #[derive(Debug, Error)]
 #[must_use = "dependency access errors must be handled or explicitly discarded"]
 pub enum BuildAccessError {
-    /// The factory requested a dependency absent from its declaration.
+    /// The factory requested a dependency that was not included in its
+    /// registration declaration.
     #[error("factory at {definition} did not declare dependency {dependency:?}")]
     UndeclaredDependency {
-        /// Factory definition.
+        /// Identifies the source location where the factory was defined, for
+        /// diagnostic reporting.
         definition: DefinitionSource,
-        /// Requested dependency.
+        /// Describes the dependency the factory attempted to access.
         dependency: Dependency,
     },
 }

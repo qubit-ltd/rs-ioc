@@ -54,6 +54,7 @@ pub struct Application {
 impl Application {
     /// Returns an empty application builder.
     #[must_use]
+    #[inline]
     pub fn builder() -> ContainerBuilder {
         ContainerBuilder::new()
     }

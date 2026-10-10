@@ -18,8 +18,7 @@ use crate::ir::Declaration;
 ///
 /// Dispatch is a pure routing step: it builds the shared expansion context and
 /// then hands the already validated declaration to the expander that owns its
-/// kind. It adds no generation logic of its own, allocates nothing beyond that
-/// context, and never panics.
+/// kind. Token generation and any errors from it are handled by that expander.
 ///
 /// # Parameters
 ///

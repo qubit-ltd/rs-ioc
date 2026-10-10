@@ -86,6 +86,7 @@ impl<T: ?Sized + Send + Sync + 'static> DefinitionBuilder<T> {
     ///
     /// A builder with default options, no declared requests, no construction
     /// source, and no aliases.
+    #[inline]
     pub(super) fn new(source: DefinitionSource) -> Self {
         Self {
             source,
@@ -108,6 +109,7 @@ impl<T: ?Sized + Send + Sync + 'static> DefinitionBuilder<T> {
     ///
     /// The same builder with the new diagnostic source.
     #[must_use]
+    #[inline]
     pub fn source(mut self, source: DefinitionSource) -> Self {
         self.source = source;
         self
@@ -124,6 +126,7 @@ impl<T: ?Sized + Send + Sync + 'static> DefinitionBuilder<T> {
     ///
     /// The same builder with the new concrete options.
     #[must_use]
+    #[inline]
     pub fn binding(mut self, options: BindingOptions) -> Self {
         self.options = options;
         self
@@ -141,6 +144,7 @@ impl<T: ?Sized + Send + Sync + 'static> DefinitionBuilder<T> {
     ///
     /// The same builder declaring exactly `requests`.
     #[must_use]
+    #[inline]
     pub fn dependencies(mut self, requests: &[Dependency]) -> Self {
         self.dependencies = requests.to_vec();
         self

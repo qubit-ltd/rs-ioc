@@ -6,8 +6,10 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 //! Observable asynchronous build cancellation through the public API.
+use std::error::Error;
 use std::future::Future;
 use std::future::poll_fn;
+use std::io::Error as IoError;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicUsize;
@@ -16,11 +18,16 @@ use std::task::Context;
 use std::task::Poll;
 use std::task::Waker;
 
+use qubit_ioc::BindingKey;
+use qubit_ioc::BuildError;
 use qubit_ioc::BuildSessionError;
+use qubit_ioc::CleanupError;
 use qubit_ioc::ContainerBuilder;
 use qubit_ioc::Dependency;
+use qubit_ioc::FactoryError;
 use qubit_ioc::Managed;
 use qubit_ioc::ShutdownMode;
+use qubit_ioc::ShutdownPhase;
 use qubit_ioc::WaitPolicy;
 
 struct Resource;
@@ -173,7 +180,7 @@ fn test_cancelled_wait_keeps_original_deadline_and_incomplete_report() {
     assert_eq!(timers.load(Ordering::SeqCst), 1);
     expired.store(true, Ordering::SeqCst);
     let report = ready(session.wait_cancelled_cleanup()).expect("timed out report");
-    assert_eq!(report.incomplete(), [qubit_ioc::BindingKey::of::<Resource>(None)]);
+    assert_eq!(report.incomplete(), [BindingKey::of::<Resource>(None)]);
     assert!(!report.is_success());
     assert_eq!(timers.load(Ordering::SeqCst), 1);
     assert_eq!(
@@ -186,7 +193,6 @@ fn test_cancelled_wait_keeps_original_deadline_and_incomplete_report() {
 
 #[test]
 fn test_factory_failure_retains_cleanup_in_build_failure() {
-    use std::error::Error;
     let aborts = Arc::new(AtomicUsize::new(0));
     let count = Arc::clone(&aborts);
     let mut builder = ContainerBuilder::new().wait_policy(WaitPolicy::unbounded());
@@ -200,7 +206,7 @@ fn test_factory_failure_retains_cleanup_in_build_failure() {
         .expect("resource");
     builder
         .register_async_factory::<Consumer, _>(&[Dependency::of::<Resource>()], |_| {
-            Box::pin(async { Err(qubit_ioc::FactoryError::new(std::io::Error::other("factory failed"))) })
+            Box::pin(async { Err(FactoryError::new(IoError::other("factory failed"))) })
         })
         .expect("failure");
     builder.root::<Consumer>();
@@ -210,13 +216,13 @@ fn test_factory_failure_retains_cleanup_in_build_failure() {
         error
             .source()
             .expect("transparent build cause")
-            .downcast_ref::<qubit_ioc::BuildError>()
+            .downcast_ref::<BuildError>()
             .is_some()
     );
     let BuildSessionError::Build(mut failure) = error else {
         panic!("expected build failure")
     };
-    assert!(matches!(failure.cause(), qubit_ioc::BuildError::FactoryFailed { .. }));
+    assert!(matches!(failure.cause(), BuildError::FactoryFailed { .. }));
     assert_eq!(aborts.load(Ordering::SeqCst), 1);
     assert!(ready(session.wait_cancelled_cleanup()).is_none());
     assert!(
@@ -236,8 +242,8 @@ fn test_cancelled_cleanup_preserves_abort_and_wait_errors() {
         .register_managed_factory::<Resource, _>(&[], |_| {
             Ok(Managed::asynchronous(
                 Arc::new(Resource),
-                |_| Err(qubit_ioc::CleanupError::new(std::io::Error::other("abort failed"))),
-                |_| Box::pin(async { Err(qubit_ioc::CleanupError::new(std::io::Error::other("wait failed"))) }),
+                |_| Err(CleanupError::new(IoError::other("abort failed"))),
+                |_| Box::pin(async { Err(CleanupError::new(IoError::other("wait failed"))) }),
             ))
         })
         .expect("resource");
@@ -251,8 +257,8 @@ fn test_cancelled_cleanup_preserves_abort_and_wait_errors() {
     drop(run);
     let report = ready(session.wait_cancelled_cleanup()).expect("error report");
     assert_eq!(report.failures().len(), 2);
-    assert_eq!(report.failures()[0].phase, qubit_ioc::ShutdownPhase::Abort);
-    assert_eq!(report.failures()[1].phase, qubit_ioc::ShutdownPhase::Wait);
+    assert_eq!(report.failures()[0].phase, ShutdownPhase::Abort);
+    assert_eq!(report.failures()[1].phase, ShutdownPhase::Wait);
     assert!(report.failures()[0].error.to_string().contains("abort failed"));
     assert!(report.failures()[1].error.to_string().contains("wait failed"));
     assert_eq!(

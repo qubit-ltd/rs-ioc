@@ -6,11 +6,13 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 //! Errors from a single-use asynchronous build session.
+
 use crate::error::BuildFailure;
 
 /// A construction failure or an attempt to reuse a consumed session.
 // The public variant preserves BuildFailure and its unique cleanup owner by value.
 #[allow(clippy::large_enum_variant)]
+#[must_use]
 #[derive(Debug, thiserror::Error)]
 pub enum BuildSessionError {
     /// Preserves the original cause, source chain, and rollback ownership.

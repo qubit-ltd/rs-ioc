@@ -7,10 +7,11 @@
 // =============================================================================
 use qubit_ioc::Component;
 
-trait Repository: Send + Sync {}
+trait Repository: Send + Sync {
+    // empty
+}
 
 #[Component(bind = dyn Repository)]
 struct NotARepository;
 
 fn main() {}
-

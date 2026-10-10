@@ -81,7 +81,6 @@ impl BuildContext {
     ///
     /// Returns [`BuildAccessError`] if this exact required request was not
     /// declared.
-    #[must_use = "handle the declared dependency lookup result"]
     pub fn get<T: ?Sized + Send + Sync + 'static>(&self) -> Result<Arc<T>, BuildAccessError> {
         let request = Dependency::of::<T>();
         let keys = self.keys_for(&request)?;
@@ -109,7 +108,6 @@ impl BuildContext {
     /// # Errors
     ///
     /// Returns [`BuildAccessError`] if the exact request was not declared.
-    #[must_use = "handle the declared dependency lookup result"]
     pub fn get_by_id<T: ?Sized + Send + Sync + 'static>(&self, id: &str) -> Result<Arc<T>, BuildAccessError> {
         let request = Dependency::with_id::<T>(id);
         let keys = self.keys_for(&request)?;
@@ -132,7 +130,6 @@ impl BuildContext {
     /// # Errors
     ///
     /// Returns [`BuildAccessError`] if the optional request was not declared.
-    #[must_use = "handle the optional dependency lookup result"]
     pub fn try_get<T: ?Sized + Send + Sync + 'static>(&self) -> Result<Option<Arc<T>>, BuildAccessError> {
         let request = Dependency::optional::<T>();
         let keys = self.keys_for(&request)?;
@@ -161,7 +158,6 @@ impl BuildContext {
     ///
     /// Returns [`BuildAccessError`] if the exact optional request was not
     /// declared.
-    #[must_use = "handle the optional dependency lookup result"]
     pub fn try_get_by_id<T: ?Sized + Send + Sync + 'static>(
         &self,
         id: &str,
@@ -192,7 +188,6 @@ impl BuildContext {
     ///
     /// Returns [`BuildAccessError`] if the collection request was not
     /// declared.
-    #[must_use = "handle the collection dependency lookup result"]
     pub fn get_all<T: ?Sized + Send + Sync + 'static>(&self) -> Result<Vec<Arc<T>>, BuildAccessError> {
         let request = Dependency::all::<T>();
         let keys = self.keys_for(&request)?;

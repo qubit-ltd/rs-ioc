@@ -5,6 +5,7 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
+
 use qubit_ioc::Component;
 
 #[Component]
@@ -13,4 +14,3 @@ struct Generic<T> {
 }
 
 fn main() {}
-

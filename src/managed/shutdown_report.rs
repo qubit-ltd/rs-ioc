@@ -81,6 +81,8 @@ impl ShutdownReport {
     ///   must not keep observing it afterwards.
     /// * `fallbacks` - the components that used abort because they could not
     ///   honor a graceful request, in the same reverse construction order.
+    /// * `overall_failure` - an optional failure from creating, polling, or
+    ///   expiring the overall deadline. Its original error source is shared.
     ///
     /// # Returns
     ///

@@ -19,6 +19,7 @@ use thiserror::Error;
 /// let error = BindingId::parse("bad-id").expect_err("hyphens are not allowed");
 /// assert_eq!(error.value(), "bad-id");
 /// ```
+#[must_use]
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 #[error("invalid binding ID `{value}`; expected dot-separated ASCII segments beginning with a letter")]
 pub struct InvalidBindingId {

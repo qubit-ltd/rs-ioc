@@ -71,6 +71,7 @@ impl BuildFailure {
     /// # Returns
     ///
     /// Returns a shared reference to the boxed [`BuildError`].
+    #[must_use]
     #[inline]
     pub fn cause(&self) -> &BuildError {
         &self.cause
@@ -100,6 +101,7 @@ impl BuildFailure {
     /// Returns the original [`BuildError`] together with the still-owned
     /// cleanup handle, or `None` in that second position when no managed
     /// cleanup remains to take.
+    #[must_use = "inspect the original build error and any remaining cleanup"]
     pub fn into_parts(self) -> (BuildError, Option<ShutdownHandle>) {
         (
             *self.cause,

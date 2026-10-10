@@ -23,6 +23,7 @@ use super::internal::ConfigReadContext;
 /// let error = FactoryError::new(std::io::Error::other("connection refused"));
 /// assert!(std::error::Error::source(&error).is_some());
 /// ```
+#[must_use]
 #[derive(Debug, Error)]
 #[error("factory failed: {source}")]
 pub struct FactoryError {
@@ -46,7 +47,6 @@ impl FactoryError {
     /// # Returns
     ///
     /// Returns a wrapper whose configuration-read context is `None`.
-    #[must_use]
     pub fn new<E: Error + Send + Sync + 'static>(source: E) -> Self {
         Self {
             source: Box::new(source),
@@ -75,7 +75,6 @@ impl FactoryError {
     /// Returns a wrapper that additionally carries `Some` read context with
     /// the copied key and target.
     #[cfg(feature = "config")]
-    #[must_use]
     pub(crate) fn config_read<E: Error + Send + Sync + 'static>(source: E, path_key: &str, target: &str) -> Self {
         Self {
             source: Box::new(source),

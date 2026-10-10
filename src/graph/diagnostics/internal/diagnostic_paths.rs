@@ -89,6 +89,10 @@ impl DiagnosticPaths {
     ///
     /// The returned slice borrows `self` and stays empty until
     /// [`DiagnosticPaths::record_root`] records the first root.
+    ///
+    /// # Returns
+    ///
+    /// Root locations in selection order, borrowed from this value.
     #[must_use]
     #[inline]
     pub(crate) fn roots(&self) -> &[BindingLocation] {

@@ -5,28 +5,33 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
+use std::io;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::time::Duration;
 
 use ioc::bean;
 use ioc::ContainerBuilder;
-use ioc::WaitPolicy;
+use ioc::Managed;
 use ioc::ShutdownMode;
+use ioc::WaitPolicy;
+use tokio::runtime::Builder;
+use tokio::time::sleep;
 
 static STOPS: AtomicUsize = AtomicUsize::new(0);
 
 #[bean]
-fn synchronous() -> Result<ioc::Managed<u32>, std::io::Error> {
-    Ok(ioc::Managed::synchronous(Arc::new(7), |_| {
+fn synchronous() -> Result<Managed<u32>, io::Error> {
+    Ok(Managed::synchronous(Arc::new(7), |_| {
         STOPS.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }))
 }
 
 #[bean]
-async fn asynchronous() -> Result<::ioc::Managed<String>, std::io::Error> {
-    Ok(ioc::Managed::synchronous(Arc::new(String::from("async")), |_| {
+async fn asynchronous() -> Result<Managed<String>, io::Error> {
+    Ok(Managed::synchronous(Arc::new(String::from("async")), |_| {
         STOPS.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }))
@@ -34,13 +39,13 @@ async fn asynchronous() -> Result<::ioc::Managed<String>, std::io::Error> {
 
 fn verify_managed_output_path() {
     let mut builder = ContainerBuilder::new().wait_policy(WaitPolicy::bounded(
-            std::time::Duration::from_secs(30),
-            std::time::Duration::from_secs(5),
-            |duration| Box::pin(tokio::time::sleep(duration)),
-        ));
+        Duration::from_secs(30),
+        Duration::from_secs(5),
+        |duration| Box::pin(sleep(duration)),
+    ));
     builder.install::<SynchronousBean>().unwrap();
     builder.install::<AsynchronousBean>().unwrap();
-    let runtime = tokio::runtime::Builder::new_current_thread().enable_time().build().unwrap();
+    let runtime = Builder::new_current_thread().enable_time().build().unwrap();
     let application = runtime.block_on(builder.build_all_async()).unwrap();
     let context = application.context();
     assert_eq!(*context.get::<u32>().unwrap(), 7);
@@ -49,7 +54,6 @@ fn verify_managed_output_path() {
     runtime.block_on(shutdown.wait()).unwrap();
     assert_eq!(STOPS.load(Ordering::SeqCst), 2);
 }
-
 
 fn main() {
     verify_managed_output_path();

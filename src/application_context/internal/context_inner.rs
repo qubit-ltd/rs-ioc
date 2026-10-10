@@ -28,6 +28,19 @@ pub(crate) struct ContextInner {
 
 impl ContextInner {
     /// Builds query indexes once and initializes a successfully built graph.
+    ///
+    /// # Parameters
+    ///
+    /// - `store`: Owns the constructed instances for as long as this context
+    ///   remains alive.
+    /// - `bindings`: Supplies stable binding metadata used to build the query
+    ///   indexes.
+    ///
+    /// # Returns
+    ///
+    /// A shared context with its lifecycle state set to
+    /// [`ApplicationState::Running`].
+    #[must_use]
     pub(crate) fn new(store: InstanceStore, bindings: Vec<BuiltBinding>) -> Self {
         let query_index = QueryIndex::new(&bindings);
         Self {

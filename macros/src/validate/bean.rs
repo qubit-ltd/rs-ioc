@@ -159,9 +159,9 @@ pub(super) fn bean(mut item: ItemFn, options: ValidatedOptions, runtime: &Runtim
 /// * the signature has no return type — reported as `#[bean] requires a return
 ///   type`.
 /// * a future is syntactically visible in the returned value — reported as
-///   `#[bean] does not support a nested future output; use `async fn` instead`.
+///   `#[bean] does not support a nested future output; use async fn instead`.
 /// * the component type, before or after applying `explicit_type`, is `impl
-///   Trait` or a reference — reported as `#[bean] does not support `impl Trait`
+///   Trait` or a reference — reported as `#[bean] does not support impl Trait
 ///   or borrowed outputs` and `#[bean] requires an owned concrete output type`
 ///   respectively.
 fn output(return_type: &ReturnType, explicit_type: Option<&Type>, runtime: &RuntimePath) -> Result<OutputIr> {
@@ -220,8 +220,8 @@ fn output(return_type: &ReturnType, explicit_type: Option<&Type>, runtime: &Runt
 ///
 /// Returns `None` for any other shape, including a qualified path such as
 /// `some::module::Result`, an explicit `::Result` with a leading colon, a
-/// qualified self type, a non-angle-bracketed argument list, and a `Result`
-/// whose arguments are not exactly two types.
+/// qualified self type, and a `Result` whose arguments are not exactly two
+/// types.
 ///
 /// # Returns
 ///
@@ -230,13 +230,12 @@ fn output(return_type: &ReturnType, explicit_type: Option<&Type>, runtime: &Runt
 /// arguments being type arguments, borrowing the success and error types from
 /// `ty`. `None` for every other shape, namely a qualified
 /// `some::module::Result`, an explicit `::Result` with a leading colon, a
-/// qualified self type, a non-angle-bracketed argument list such as `Result<A,
-/// E, F>`, and a `Result` whose two arguments are not both type arguments.
+/// qualified self type, an argument list such as `Result<A, E, F>`, and a
+/// `Result` whose two arguments are not both type arguments.
 ///
 /// # Parameters
 ///
 /// * `ty` - the candidate type, borrowed for the duration of the inspection.
-#[must_use]
 fn result_types(ty: &Type) -> Option<(&Type, &Type)> {
     let Type::Path(path) = ty else { return None };
     if path.qself.is_some() {

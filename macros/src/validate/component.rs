@@ -268,10 +268,11 @@ fn classify_dependency(ty: &Type) -> Result<(DependencyKind, Type)> {
 /// Returns the single type argument of a supported standard generic path.
 ///
 /// `name` selects the accepted path list and must be one of `Arc`, `Option`, or
-/// `Vec`; any other value matches nothing and yields `None`. Each name accepts
-/// the bare path plus its `std`/`core`/`alloc` qualified spellings. The
-/// returned reference borrows from `ty` and performs no allocation beyond the
-/// temporary segment-name vector used for the comparison.
+/// `Vec`; any other value matches nothing and yields `None`. `Arc` accepts the
+/// bare, `std`, and `alloc` paths; `Option` accepts the bare, `std`, and `core`
+/// paths; `Vec` accepts the bare, `std`, and `alloc` paths. The returned
+/// reference borrows from `ty` and performs no allocation beyond the temporary
+/// segment-name vector used for the comparison.
 ///
 /// # Parameters
 ///

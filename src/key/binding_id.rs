@@ -32,6 +32,10 @@ impl BindingId {
     /// An empty value or any segment outside `[A-Za-z][A-Za-z0-9_]*`
     /// returns [`InvalidBindingId`] containing the original input.
     ///
+    /// # Parameters
+    ///
+    /// `value` is the identifier text to validate and own.
+    ///
     /// # Returns
     ///
     /// The owned identifier with the supplied spelling.
@@ -40,10 +44,6 @@ impl BindingId {
     ///
     /// Returns [`InvalidBindingId`] when the input is empty or any
     /// dot-delimited segment violates the identifier grammar.
-    ///
-    /// # Parameters
-    ///
-    /// `value` is the identifier text to validate and own.
     pub fn parse(value: &str) -> Result<Self, InvalidBindingId> {
         if value.split('.').all(valid_segment) {
             Ok(Self(value.to_owned()))

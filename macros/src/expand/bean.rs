@@ -37,9 +37,9 @@ use crate::ir::OutputShape;
 ///
 /// # Errors
 ///
-/// Returns the [`syn::Error`] produced while the generated tokens are parsed,
-/// which surfaces an inconsistent intermediate representation to the macro
-/// caller instead of emitting code that cannot compile.
+/// This expansion currently has no fallible steps and returns `Ok` for every
+/// input. Any invalid generated tokens are diagnosed when the macro output is
+/// parsed by the compiler.
 ///
 /// # Panics
 ///

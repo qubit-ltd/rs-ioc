@@ -22,6 +22,7 @@ use thiserror::Error;
 /// assert!(std::error::Error::source(&error).is_some());
 /// ```
 #[derive(Debug, Error)]
+#[must_use = "cleanup errors should be handled"]
 #[error("component cleanup failed: {source}")]
 pub struct CleanupError {
     /// The original cleanup error.

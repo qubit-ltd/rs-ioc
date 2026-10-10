@@ -58,6 +58,7 @@ impl<T: ?Sized + Send + Sync + 'static> Definition<T> {
     }
 
     /// Transfers the validated bindings to the container's staging area.
+    #[must_use]
     pub(crate) fn into_pending(self) -> PendingDefinition {
         self.pending
     }

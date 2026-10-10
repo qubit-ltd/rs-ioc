@@ -30,13 +30,15 @@ use crate::ir::FieldIr;
 ///
 /// The [`ComponentIr`] is destructured, so the caller keeps no handle on it
 /// afterwards, and the returned tokens are the original struct followed by the
-/// `ComponentDefinition` implementation. Every declared field contributes
-/// exactly one graph request inside `register` and one resolved value inside
-/// the factory closure, each prefixed by the field's activation conditions, and
-/// a field that reads configuration is wrapped in the runtime's configuration
-/// guard on both sides. A field the validator already rejected is re-emitted as
-/// its compile error with a diverging initializer, so the rest of the struct
-/// still type-checks while the macro reports the original diagnostic.
+/// `ComponentDefinition` implementation. Each accepted non-configuration field
+/// contributes a dependency request inside `register`, while configuration
+/// fields use a guarded configuration request; every field contributes one
+/// resolved value inside the factory closure, prefixed by its activation
+/// conditions. A field that reads configuration is wrapped in the runtime's
+/// configuration guard on both sides. A field the validator already rejected
+/// is re-emitted as its compile error with a diverging initializer, so the rest
+/// of the struct still type-checks while the macro reports the original
+/// diagnostic.
 ///
 /// # Errors
 ///

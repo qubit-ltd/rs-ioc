@@ -29,7 +29,7 @@ use crate::graph::internal::resolved_dependency::ResolvedDependency;
 use crate::key::BindingId;
 use crate::key::BindingKey;
 
-/// Resolves each required root and returns the selected binding positions.
+/// Resolves each root request and returns the selected binding positions.
 ///
 /// Candidate positions are deduplicated while preserving the request order of
 /// `roots`, so a binding reachable from several roots is selected once at the
@@ -37,10 +37,11 @@ use crate::key::BindingKey;
 ///
 /// # Errors
 ///
-/// Returns [`BuildError::MissingRoot`] when a root request has no candidate, or
-/// [`BuildError::AmbiguousRoot`] when one request resolves to several
-/// candidates. Both variants report the failing request and the candidate keys
-/// known to the index at that point.
+/// Returns [`BuildError::MissingRoot`] when a required root request has no
+/// candidate, or [`BuildError::AmbiguousRoot`] when one request resolves to
+/// several candidates. Both variants report the failing request and the
+/// candidate keys known to the index at that point. An optional root without
+/// candidates contributes no selected binding and is not an error.
 ///
 /// # Parameters
 ///

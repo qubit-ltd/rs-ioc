@@ -544,7 +544,9 @@ fn test_cancelled_wait_phase_has_already_stopped_all_components() {
     assert_eq!(waits.load(Ordering::SeqCst), 1);
 }
 
-trait Service: Send + Sync {}
+trait Service: Send + Sync {
+    // empty
+}
 
 struct ConcreteService;
 

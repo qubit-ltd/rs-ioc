@@ -19,6 +19,7 @@ use crate::binding::PendingBindingKind;
 use crate::build_context::BuildContext;
 use crate::error::FactoryError;
 use crate::key::BindingKey;
+use crate::managed::ManagedFactoryFuture;
 use crate::options::DefinitionSource;
 
 /// A single concrete binding or interface alias in a definition.
@@ -46,6 +47,15 @@ impl PendingBinding {
     /// * `primary` — Whether unnamed dependency requests may prefer this
     ///   binding.
     /// * `order` — Collection ordering value compared before ID and source.
+    ///
+    /// # Type Parameters
+    ///
+    /// * `T` — Instance type. It may be unsized and must be `Send + Sync +
+    ///   'static`.
+    ///
+    /// # Returns
+    ///
+    /// The staged binding owns a shared instance erased for graph execution.
     pub(crate) fn instance<T: ?Sized + Send + Sync + 'static>(
         key: BindingKey,
         value: Arc<T>,
@@ -77,6 +87,18 @@ impl PendingBinding {
     ///   the resolved [`BuildContext`]; it owns every dependency value it
     ///   needs, because the returned [`PendingBinding`] is `Send` and may be
     ///   moved to another thread.
+    ///
+    /// # Type Parameters
+    ///
+    /// * `T` — Produced instance type. It may be unsized and must be `Send +
+    ///   Sync + 'static`.
+    /// * `F` — Sendable one-shot factory returning a shared instance or
+    ///   deferred factory error.
+    ///
+    /// # Returns
+    ///
+    /// The staged binding owns the erased factory and invokes it during graph
+    /// execution.
     ///
     /// # Errors
     ///
@@ -122,6 +144,13 @@ impl PendingBinding {
     /// The staged binding carries an erasing future. Construction and any
     /// [`FactoryError`] are not observable here: they appear only when the
     /// graph first polls that future while building asynchronously.
+    ///
+    /// # Type Parameters
+    ///
+    /// * `T` — Produced instance type. It may be unsized and must be `Send +
+    ///   Sync + 'static`.
+    /// * `F` — Sendable one-shot factory returning a future that resolves to a
+    ///   shared instance.
     pub(crate) fn async_factory<T, F>(key: BindingKey, primary: bool, order: i32, factory: F) -> Self
     where
         T: ?Sized + Send + Sync + 'static,
@@ -203,7 +232,7 @@ impl PendingBinding {
     pub(crate) fn managed_async_factory<T, F>(key: BindingKey, primary: bool, order: i32, factory: F) -> Self
     where
         T: ?Sized + Send + Sync + 'static,
-        F: FnOnce(BuildContext) -> crate::managed::ManagedFactoryFuture<T> + Send + 'static,
+        F: FnOnce(BuildContext) -> ManagedFactoryFuture<T> + Send + 'static,
     {
         let erased = move |context: BuildContext| -> ErasedManagedFactoryFuture {
             let future = factory(context);

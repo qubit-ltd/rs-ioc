@@ -222,9 +222,11 @@ fn test_graph_profiles_filter_before_duplicate_check() {
     let one = ValidatedGraph::validate(definitions(), &["prod".to_owned()]).expect("inactive duplicate is ignored");
     assert_eq!(ordered_names(&one), vec!["prod"]);
     let both = ValidatedGraph::validate(definitions(), &["prod".to_owned(), "test".to_owned()]);
-    assert!(
-        matches!(both, Err(BuildError::DuplicateBinding { first, second, .. }) if first.item == "prod" && second.item == "test")
-    );
+    assert!(matches!(
+        both,
+        Err(BuildError::DuplicateBinding { first, second, .. })
+            if first.item == "prod" && second.item == "test"
+    ));
 }
 
 #[test]
@@ -328,9 +330,11 @@ fn test_graph_cycle_and_dependency_first_stable_topology() {
         ],
         &[],
     );
-    assert!(
-        matches!(cycle, Err(BuildError::DependencyCycle { path }) if path == vec![BindingKey::of::<A>(None), BindingKey::of::<B>(None), BindingKey::of::<A>(None)])
-    );
+    assert!(matches!(
+        cycle,
+        Err(BuildError::DependencyCycle { path })
+            if path == vec![BindingKey::of::<A>(None), BindingKey::of::<B>(None), BindingKey::of::<A>(None)]
+    ));
 }
 
 #[test]
@@ -423,9 +427,11 @@ fn test_graph_missing_sibling_is_reported_before_descendant_failure() {
         ],
         &[],
     );
-    assert!(
-        matches!(result, Err(BuildError::MissingDependency { path, definition, .. }) if definition.item == "A" && path == vec![BindingKey::of::<A>(None)])
-    );
+    assert!(matches!(
+        result,
+        Err(BuildError::MissingDependency { path, definition, .. })
+            if definition.item == "A" && path == vec![BindingKey::of::<A>(None)]
+    ));
 }
 
 #[test]
@@ -671,9 +677,16 @@ fn test_graph_root_cycle_keeps_complete_root_prefix() {
         &[],
         Some(&[Dependency::of::<A>()]),
     );
-    assert!(
-        matches!(result, Err(BuildError::DependencyCycle { path }) if path == vec![BindingKey::of::<A>(None), BindingKey::of::<B>(None), BindingKey::of::<C>(None), BindingKey::of::<B>(None)])
-    );
+    assert!(matches!(
+        result,
+        Err(BuildError::DependencyCycle { path })
+            if path == vec![
+                BindingKey::of::<A>(None),
+                BindingKey::of::<B>(None),
+                BindingKey::of::<C>(None),
+                BindingKey::of::<B>(None),
+            ]
+    ));
 }
 
 #[test]
@@ -696,9 +709,11 @@ fn test_graph_alias_reachable_duplicate_target_is_rejected() {
         &[],
         Some(&[Dependency::of::<A>()]),
     );
-    assert!(
-        matches!(result, Err(BuildError::DuplicateBinding { key, first, second }) if key == target && first.item == "first" && second.item == "second")
-    );
+    assert!(matches!(
+        result,
+        Err(BuildError::DuplicateBinding { key, first, second })
+            if key == target && first.item == "first" && second.item == "second"
+    ));
 }
 
 #[test]
@@ -713,9 +728,11 @@ fn test_graph_alias_root_still_checks_concrete_member_dependency_edges() {
         |value| value,
     ));
     let result = ValidatedGraph::validate_roots(vec![definition], &[], Some(&[Dependency::with_id::<A>("alias")]));
-    assert!(
-        matches!(result, Err(BuildError::MissingDependency { path, definition, .. }) if path == vec![alias, BindingKey::of::<A>(None)] && definition.item == "member")
-    );
+    assert!(matches!(
+        result,
+        Err(BuildError::MissingDependency { path, definition, .. })
+            if path == vec![alias, BindingKey::of::<A>(None)] && definition.item == "member"
+    ));
 }
 
 #[test]

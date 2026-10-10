@@ -15,7 +15,15 @@ use super::ticket_state::TicketState;
 use crate::managed::CleanupError;
 use crate::managed::CleanupFuture;
 
-/// A request callback returning one ticket for the later wait callback.
+/// A one-shot request callback that produces the ticket consumed by a wait
+/// callback.
+///
+/// # Type Parameters
+///
+/// - `T` is the managed value passed to the request callback through a shared
+///   `Arc`.
+/// - `K` is the ticket returned on success and later passed to the wait
+///   callback.
 pub(super) type TicketRequest<T, K> = Box<dyn FnOnce(Arc<T>) -> Result<K, CleanupError> + Send + 'static>;
 
 /// Stores a request ticket or returns it for disposal when waiting already
@@ -44,6 +52,26 @@ fn take<K>(state: &Mutex<TicketState<K>>) -> Option<K> {
 /// Converts typed requests and wait into ordinary managed cleanup actions.
 /// Request user code runs before locking; the wait callback runs after taking
 /// its ticket and releasing the lock.
+///
+/// # Type Parameters
+///
+/// - `T` is the managed value shared with each cleanup callback.
+/// - `K` is the ticket produced by a request and consumed by the wait callback.
+/// - `A` is the abort request callback.
+/// - `W` is the wait callback that consumes a request ticket.
+///
+/// # Parameters
+///
+/// - `value` is the managed value supplied to cleanup callbacks.
+/// - `abort` requests immediate shutdown and produces a ticket.
+/// - `graceful` optionally requests graceful shutdown and produces a ticket.
+/// - `wait` waits for shutdown using the ticket from the most recent successful
+///   request.
+///
+/// # Returns
+///
+/// A `Managed<T>` whose cleanup actions coordinate request tickets with the
+/// wait callback.
 pub(super) fn adapt<T, K, A, W>(value: Arc<T>, abort: A, graceful: Option<TicketRequest<T, K>>, wait: W) -> Managed<T>
 where
     T: ?Sized + Send + Sync + 'static,

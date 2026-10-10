@@ -53,6 +53,7 @@ impl RuntimePath {
     /// [`Self::managed_argument`] behave as they would for a consumer that
     /// renamed the runtime dependency to `root`.
     #[cfg(test)]
+    #[must_use]
     pub(crate) fn for_root(root: &str) -> Self {
         Self {
             root: Ident::new_raw(root, Span::call_site()),

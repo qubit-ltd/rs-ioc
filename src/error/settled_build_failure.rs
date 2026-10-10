@@ -20,7 +20,9 @@ use crate::managed::ShutdownReport;
 #[derive(Debug)]
 #[must_use = "inspect the build cause and any cleanup report"]
 pub struct SettledBuildFailure {
+    /// Preserves the error that caused construction to fail.
     cause: BuildError,
+    /// Records the result of any owned rollback that completed before return.
     cleanup_report: Option<ShutdownReport>,
 }
 

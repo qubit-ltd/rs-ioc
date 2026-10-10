@@ -202,6 +202,23 @@ impl<T: ?Sized + Send + Sync + 'static> Managed<T> {
     /// Use [`Self::asynchronous_with_graceful_ticket`] when a graceful request
     /// is needed so its ticket can be passed to `wait`.
     ///
+    /// # Type Parameters
+    ///
+    /// `K` is the sendable ticket passed from a successful abort request to
+    /// `wait`. `A` is a sendable one-shot abort callback, and `W` is a sendable
+    /// one-shot callback that waits using the ticket.
+    ///
+    /// # Parameters
+    ///
+    /// `value` is the shared component exposed to lookups. `abort` requests
+    /// termination and may return a [`CleanupError`]. `wait` observes
+    /// termination using the ticket returned by `abort`.
+    ///
+    /// # Returns
+    ///
+    /// A managed component whose explicit asynchronous wait uses the abort
+    /// request's ticket.
+    ///
     /// # Errors
     ///
     /// Request and wait errors are retained in the final shutdown report. If
@@ -238,6 +255,25 @@ impl<T: ?Sized + Send + Sync + 'static> Managed<T> {
     /// use [`Self::asynchronous_with_ticket`] when no graceful request is
     /// needed.
     ///
+    /// # Type Parameters
+    ///
+    /// `K` is the sendable ticket passed from a successful request to `wait`.
+    /// `A` and `G` are sendable one-shot abort and graceful request callbacks.
+    /// `W` is a sendable one-shot callback that waits using the selected
+    /// ticket.
+    ///
+    /// # Parameters
+    ///
+    /// `value` is the shared component exposed to lookups. `abort` and
+    /// `graceful` request termination and may return a [`CleanupError`].
+    /// `wait` observes final termination using the ticket from the request
+    /// that started the wait.
+    ///
+    /// # Returns
+    ///
+    /// A managed component with ticket-producing graceful and abort actions
+    /// and a ticket-aware asynchronous wait.
+    ///
     /// # Errors
     ///
     /// Request and wait errors are retained in the final shutdown report. If
@@ -254,6 +290,13 @@ impl<T: ?Sized + Send + Sync + 'static> Managed<T> {
     }
 
     /// Converts the value and cleanup actions to type-erased internal storage.
+    ///
+    /// The component is transferred into erased instance storage, and its
+    /// callbacks become a cleanup action that can be invoked by the container.
+    ///
+    /// # Returns
+    ///
+    /// The erased component instance and its associated cleanup action.
     pub(crate) fn into_parts(mut self) -> (ErasedInstance, CleanupAction) {
         let value = self.value.take().expect("managed value has not been transferred");
         let stop_value = Arc::clone(&value);

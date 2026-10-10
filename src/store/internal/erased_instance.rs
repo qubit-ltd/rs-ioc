@@ -5,8 +5,6 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
-//! Storage for constructed component values.
-
 //! Type-erased shared component values.
 
 use std::any::Any;

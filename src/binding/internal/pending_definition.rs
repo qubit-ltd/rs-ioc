@@ -35,6 +35,7 @@ impl PendingDefinition {
     /// `profile` and IDs must already be validated by the registration entry.
     /// Call [`Self::validate_self_keys`] before adding the definition to a
     /// builder.
+    #[must_use]
     pub(crate) fn new(
         source: DefinitionSource,
         profile: Option<String>,

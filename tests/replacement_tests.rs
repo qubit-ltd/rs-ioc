@@ -9,6 +9,8 @@
 #![allow(clippy::result_large_err)]
 
 use std::sync::Arc;
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
 
 use qubit_ioc::BindingKey;
 use qubit_ioc::BindingOptions;
@@ -210,9 +212,6 @@ fn test_replacement_uses_default_and_explicit_profile_selection() {
 
 #[test]
 fn test_replacement_reports_ambiguous_active_originals_before_factories() {
-    use std::sync::atomic::AtomicUsize;
-    use std::sync::atomic::Ordering;
-
     let calls = Arc::new(AtomicUsize::new(0));
     let mut builder = ContainerBuilder::new();
     builder.register_instance(Arc::new(1_u64)).unwrap();

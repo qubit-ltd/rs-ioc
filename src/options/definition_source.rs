@@ -7,6 +7,10 @@
 // =============================================================================
 //! Source location retained for diagnostics.
 
+use std::fmt::Display;
+use std::fmt::Formatter;
+use std::fmt::Result;
+
 /// Stable source location for a registered definition.
 ///
 /// # Examples
@@ -66,9 +70,9 @@ impl DefinitionSource {
     }
 }
 
-impl std::fmt::Display for DefinitionSource {
+impl Display for DefinitionSource {
     /// Formats the source file, line, column, and declared item name.
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> Result {
         write!(formatter, "{}:{}:{} ({})", self.file, self.line, self.column, self.item)
     }
 }

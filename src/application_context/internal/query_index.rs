@@ -28,7 +28,22 @@ pub(crate) struct QueryIndex {
 }
 
 impl QueryIndex {
-    /// Builds the indexes once from validated, unique active binding keys.
+    /// Builds typed and exact-key indexes from validated active bindings.
+    ///
+    /// Each binding's position in `bindings` is retained as the lookup result.
+    /// Typed positions preserve registration order and are also sorted by
+    /// collection precedence for collection queries. Binding keys are expected
+    /// to be unique after override de-duplication.
+    ///
+    /// # Parameters
+    ///
+    /// - `bindings`: The stable binding vector to index. Returned positions
+    ///   remain meaningful only relative to this vector.
+    ///
+    /// # Returns
+    ///
+    /// An index containing each binding's position by Rust type and exact
+    /// typed key.
     pub(crate) fn new(bindings: &[BuiltBinding]) -> Self {
         let mut index = Self::default();
         for (position, binding) in bindings.iter().enumerate() {

@@ -8,6 +8,7 @@
 
 #![allow(clippy::result_large_err)]
 
+use std::any::type_name;
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
@@ -201,9 +202,10 @@ fn test_all_active_async_build_validates_before_factories() {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .build()
         .expect("test runtime");
-    assert!(
-        matches!(runtime.block_on(builder.build_async()), Err(failure) if matches!(failure.cause(), BuildError::MissingDependency { .. }))
-    );
+    assert!(matches!(
+        runtime.block_on(builder.build_async()),
+        Err(failure) if matches!(failure.cause(), BuildError::MissingDependency { .. })
+    ));
     assert_eq!(calls.load(Ordering::SeqCst), 0);
 }
 
@@ -480,8 +482,8 @@ fn test_root_build_missing_dependency_reports_complete_path() {
     match error.cause() {
         BuildError::MissingDependency { path, .. } => {
             assert_eq!(path.len(), 2);
-            assert_eq!(path[0].type_name(), std::any::type_name::<RootService>());
-            assert_eq!(path[1].type_name(), std::any::type_name::<MiddleService>());
+            assert_eq!(path[0].type_name(), type_name::<RootService>());
+            assert_eq!(path[1].type_name(), type_name::<MiddleService>());
         }
         other => panic!("unexpected build error: {other}"),
     }
@@ -516,8 +518,8 @@ fn test_root_build_factory_failure_ignores_unselected_consumers() {
     match error.cause() {
         BuildError::FactoryFailed { path, .. } => {
             assert_eq!(path.len(), 2);
-            assert_eq!(path[0].type_name(), std::any::type_name::<SelectedConsumer>());
-            assert_eq!(path[1].type_name(), std::any::type_name::<FailingDependency>());
+            assert_eq!(path[0].type_name(), type_name::<SelectedConsumer>());
+            assert_eq!(path[1].type_name(), type_name::<FailingDependency>());
         }
         other => panic!("unexpected build error: {other}"),
     }
