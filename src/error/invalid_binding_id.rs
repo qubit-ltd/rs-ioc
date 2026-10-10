@@ -40,7 +40,6 @@ impl InvalidBindingId {
     /// # Returns
     ///
     /// Returns an error owning the rejected text for later reporting.
-    #[must_use]
     pub fn new(value: &str) -> Self {
         Self {
             value: value.to_owned(),

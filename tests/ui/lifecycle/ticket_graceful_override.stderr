@@ -1,13 +1,13 @@
 error[E0599]: no method named `with_graceful_stop` found for struct `Managed<T>` in the current scope
-  --> tests/ui/lifecycle/ticket_graceful_override.rs:19:6
+  --> tests/ui/lifecycle/ticket_graceful_override.rs:20:6
    |
-13 |       let _managed = Managed::asynchronous_with_graceful_ticket(
+14 |       let _managed = Managed::asynchronous_with_graceful_ticket(
    |  ____________________-
-14 | |         Arc::new(1_u8),
-15 | |         |_| Ok::<(), qubit_ioc::CleanupError>(()),
-16 | |         |_| Ok::<(), qubit_ioc::CleanupError>(()),
+15 | |         Arc::new(1_u8),
+16 | |         |_| Ok::<(), CleanupError>(()),
+17 | |         |_| Ok::<(), CleanupError>(()),
 ...  |
-19 | |     .with_graceful_stop(|_| Ok(()));
+20 | |     .with_graceful_stop(|_| Ok(()));
    | |     -^^^^^^^^^^^^^^^^^^ method not found in `Managed<u8>`
    | |_____|
    |

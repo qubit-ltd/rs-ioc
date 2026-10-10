@@ -71,7 +71,6 @@ impl BuildFailure {
     /// # Returns
     ///
     /// Returns a shared reference to the boxed [`BuildError`].
-    #[must_use]
     #[inline]
     pub fn cause(&self) -> &BuildError {
         &self.cause

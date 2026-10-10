@@ -1,18 +1,18 @@
 error[E0277]: the trait bound `NotARepository: Repository` is not satisfied
-  --> tests/ui/component/unimplemented_trait.rs:12:1
+  --> tests/ui/component/unimplemented_trait.rs:14:1
    |
-12 | #[Component(bind = dyn Repository)]
+14 | #[Component(bind = dyn Repository)]
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
    |
 help: the trait `Repository` is not implemented for `NotARepository`
-  --> tests/ui/component/unimplemented_trait.rs:13:1
+  --> tests/ui/component/unimplemented_trait.rs:15:1
    |
-13 | struct NotARepository;
+15 | struct NotARepository;
    | ^^^^^^^^^^^^^^^^^^^^^
 help: this trait has no implementations, consider adding one
   --> tests/ui/component/unimplemented_trait.rs:10:1
    |
-10 | trait Repository: Send + Sync {}
+10 | trait Repository: Send + Sync {
    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
    = note: required for the cast from `Arc<NotARepository>` to `Arc<dyn Repository>`
    = note: this error originates in the attribute macro `Component` (in Nightly builds, run with -Z macro-backtrace for more info)
