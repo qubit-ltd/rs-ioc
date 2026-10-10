@@ -1,5 +1,7 @@
 # qubit-ioc 容器内核设计
 
+[English historical draft](design.md)
+
 > **历史草案，不作为当前 API 指南。** 当前实现契约见[当前设计](complete-design.zh_CN.md)，接入步骤见[中文用户手册](user_guide.zh_CN.md)和[English user guide](user_guide.md)。本文保留早期设计背景，其中反射集成和 `reflect` feature 未实现。
 
 > 状态：历史设计草案；本文成稿时尚未实现。本文定义显式注册与容器构建的底层契约；

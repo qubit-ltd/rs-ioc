@@ -1,5 +1,7 @@
 # qubit-ioc 注解与自动装配设计
 
+[English historical draft](annotation-design.md)
+
 > **历史草案，不作为当前 API 指南。** 当前实现契约见[当前设计](complete-design.zh_CN.md)，接入步骤见[中文用户手册](user_guide.zh_CN.md)和[English user guide](user_guide.md)。本文保留早期设计背景；反射集成与 `reflect` feature 未实现。
 
 > 当前运行时要求应用显式调用 `install::<D>()` 或提供者 crate 的 `register_ioc(&mut builder)`；宏不再提交链接器级全局注册项。
@@ -141,7 +143,7 @@ mod data_access {
 未显式指定 profile 的内层 bean 的默认值。
 
 绑定 ID 的语法与 `rs-model-metadata` 的
-[`#[Entity(id = "...")]` 校验规则](../../rs-model-metadata/src/model_id.rs)保持一致：
+[`#[Entity(id = "...")]` 校验规则](../../rs-model-metadata/model-id/src/model_id.rs)保持一致：
 非空的点分段字符串，每段匹配 `[A-Za-z][A-Za-z0-9_]*`。例如
 `example.repository.postgres` 合法；空串、`.example`、`example..cache`、
 `example.1cache`、含连字符或非 ASCII 字符的 ID 均非法。宏要求字符串字面量，

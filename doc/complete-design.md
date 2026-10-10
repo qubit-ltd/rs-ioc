@@ -36,7 +36,7 @@ cancellation and tie-breaking behavior.
 > This document describes the implemented design and public contracts of
 > `qubit-ioc` 0.3.0. For usage, see the [English user guide](user_guide.md) or
 > [中文用户手册](user_guide.zh_CN.md). Historical design notes remain available
-> in [the kernel draft](design.zh_CN.md) and [the annotation draft](annotation-design.zh_CN.md).
+> in [the kernel draft](design.md) and [the annotation draft](annotation-design.md).
 > The implementation and tests define behavior; this document does not promise
 > capabilities absent from the public API.
 
