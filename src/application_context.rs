@@ -141,8 +141,8 @@ impl ApplicationContext {
 
     /// Returns the `T` bound to the exact, case-sensitive `id`.
     ///
-    /// Invalid IDs, missing bindings and ambiguous bindings return
-    /// [`ResolveError`] with the original request and candidates.
+    /// The ID is matched exactly. Other bindings of `T` cannot make this
+    /// lookup ambiguous.
     ///
     /// # Type Parameters
     ///
@@ -159,8 +159,9 @@ impl ApplicationContext {
     ///
     /// # Errors
     ///
-    /// Returns [`ResolveError`] for an invalid ID, missing binding, or
-    /// ambiguous selection.
+    /// Returns [`ResolveError::InvalidBindingId`] when `id` is invalid and
+    /// [`ResolveError::MissingComponent`] when no binding matches the exact
+    /// ID.
     #[must_use = "handle the component lookup result"]
     pub fn get_by_id<T: ?Sized + Send + Sync + 'static>(&self, id: &str) -> Result<Arc<T>, ResolveError> {
         let request = BindingKey::of::<T>(Some(BindingId::parse(id)?));
