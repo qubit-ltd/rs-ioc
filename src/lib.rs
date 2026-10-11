@@ -31,9 +31,9 @@
 //! Registration order does not affect dependency correctness: dependencies
 //! are constructed before their consumers. It does provide a stable order for
 //! independent definitions, which also affects reverse shutdown order. A
-//! component is reachable only when it is selected as a root, so
-//! [`ContainerBuilder::build`] requires at least one selected root and
-//! constructs nothing else.
+//! component is reachable when selected as a root or required by a selected
+//! root's dependency closure. [`ContainerBuilder::build`] requires at least
+//! one selected root and constructs only that closure.
 //!
 //! # Examples
 //!

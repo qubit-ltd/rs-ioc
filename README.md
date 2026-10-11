@@ -124,11 +124,11 @@ Read the [English user guide](doc/user_guide.md) or [中文用户手册](doc/use
 ## Testing
 
 ```bash
-# Run tests with the default feature set
-cargo test
+# Run all workspace packages with their default features
+cargo test --workspace
 
-# Run tests with all declared features
-cargo test --all-features
+# Run all workspace packages with all declared features
+cargo test --workspace --all-features
 
 # Project CI checks
 .infra/bin/ci-check.sh

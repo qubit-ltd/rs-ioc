@@ -87,11 +87,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 ## 测试
 
 ```bash
-# 使用默认 feature 集运行测试
-cargo test
+# 使用默认 feature 测试整个 workspace
+cargo test --workspace
 
-# 使用项目声明的全部 feature 运行测试
-cargo test --all-features
+# 使用全部已声明 feature 测试整个 workspace
+cargo test --workspace --all-features
 
 # 运行项目 CI 检查
 .infra/bin/ci-check.sh

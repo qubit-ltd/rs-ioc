@@ -65,11 +65,11 @@ abort 但不等待；查询 context Drop 不关闭资源。完整步骤与迁移
 `cd ..` 切换到上一级：
 
 ```bash
-# 使用默认 feature 集运行测试
-cargo test
+# 使用默认 feature 测试整个 workspace
+cargo test --workspace
 
-# 使用项目声明的全部 feature 运行测试
-cargo test --all-features
+# 使用全部已声明 feature 测试整个 workspace
+cargo test --workspace --all-features
 
 # 运行项目 CI 检查
 ./.infra/bin/ci-check.sh

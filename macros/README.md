@@ -74,11 +74,11 @@ Run these workspace checks from the repository root. If your shell is in
 `macros`, first change to its parent directory with `cd ..`:
 
 ```bash
-# Run tests with the default feature set
-cargo test
+# Run all workspace packages with their default features
+cargo test --workspace
 
-# Run tests with all declared features
-cargo test --all-features
+# Run all workspace packages with all declared features
+cargo test --workspace --all-features
 
 # Project CI checks
 ./.infra/bin/ci-check.sh
