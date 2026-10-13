@@ -107,7 +107,8 @@ provider crate 应导出显式 `register_ioc(&mut builder)`，由应用决定纳
 `WaitPolicy`；实际应用通过 `WaitPolicy::bounded(grace, termination, timer)` 和正常
 驱动的计时器设置期限。
 `WaitPolicy::bounded_with_total(grace, termination, total, timer)` 增加应用级预算，在
-首次 poll `wait()` 时启动。总时限失败由 `overall_failure()` 暴露，未确认资源仍列于
+首次 poll `wait()` 时启动，并跨取消与 abort 升级继续计时。总时限失败由
+`overall_failure()` 暴露，未确认资源仍列于
 `incomplete()`。总失败会令 `is_success()` 返回 false，即使 abort 请求均成功。它无法
 抢占同步工作或一次阻塞的 poll。取消与边界优先级见[生命周期说明](lifecycle.zh_CN.md)。`Managed::synchronous` 要求 stop 成功时资源已终止；
 `Managed::asynchronous` 将非阻塞的 abort 请求与终止等待配对。需要优雅关闭时，构造阶段
