@@ -98,6 +98,8 @@ jobs:
           toolchain: 1.94
       - name: Check config-only runtime feature
         run: cargo +1.94.0 check -p qubit-ioc --no-default-features --features config --locked
+      - name: Test config-only runtime behavior
+        run: cargo +1.94.0 test -p qubit-ioc --no-default-features --features config --test config_tests --locked
       - name: Test cross-crate provider assembly
         run: cargo +1.94.0 test --manifest-path tests/fixtures/ioc_cross_crate/Cargo.toml -p qubit-ioc-fixture-app --locked
       - name: Test feature-minimal manual assembly
