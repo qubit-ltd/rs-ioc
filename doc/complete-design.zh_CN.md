@@ -1,33 +1,5 @@
 # qubit-ioc 当前设计
 
-## 类型化同步注册与总关闭时限
-
-手工同步工厂可接收零至八个类型化元组参数。`Arc<T>`、`Option<Arc<T>>` 和
-`Vec<Arc<T>>` 分别生成必需、可选和集合依赖请求。依赖请求与工厂实际读取的值来自同一
-元组类型；完全相同的请求会去重。例如：
-
-```rust
-use std::error::Error;
-use std::sync::Arc;
-use qubit_ioc::ContainerBuilder;
-
-fn build() -> Result<(), Box<dyn Error>> {
-    let mut builder = ContainerBuilder::new();
-    builder.register_instance(Arc::new(String::from("service")))?;
-    builder.register_injected_factory::<usize, (Arc<String>,), _>(|(name,)| {
-        Ok(Arc::new(name.len()))
-    })?;
-    builder.root::<usize>();
-    let _application = builder.build()?;
-    Ok(())
-}
-```
-
-`WaitPolicy::bounded_with_total(grace, termination, total, timer)` 增加应用级预算，在
-首次 poll `wait()` 时启动。总时限失败由 `overall_failure()` 暴露，未确认资源仍列于
-`incomplete()`。总失败会令 `is_success()` 返回 false，即使 abort 请求均成功。它无法
-抢占同步工作或一次阻塞的 poll。取消与边界优先级见[生命周期说明](lifecycle.zh_CN.md)。
-
 > 本文描述 `qubit-ioc` 0.3.0 当前实现的设计与公开契约。英文版见[Current Design](complete-design.md)。历史设计背景见[容器内核草案](design.zh_CN.md)和[注解草案](annotation-design.zh_CN.md)；接入步骤见[中文用户手册](user_guide.zh_CN.md)与[English user guide](user_guide.md)。实现和测试是事实依据，本文不承诺未在公开 API 中提供的能力。
 
 ## 1. 目标与边界
@@ -73,6 +45,27 @@ workspace 包含运行时 `qubit-ioc` 与过程宏 `qubit-ioc-macros`。Edition 
 
 `build()` 从一个或多个 `root` 构造所选定义的依赖闭包；至少需要一个 root。`build_all()` 构造所有生效定义，并允许空图。异步对应方法为 `build_async()` 与 `build_all_async()`。若选中图含异步工厂，同步 build 会在运行任何工厂前返回 `AsyncRequired`。异步构建由应用提供执行器，且可以混合同步和异步工厂。
 
+手工同步工厂可接收零至八个类型化元组参数。`Arc<T>`、`Option<Arc<T>>` 和
+`Vec<Arc<T>>` 分别生成必需、可选和集合依赖请求。依赖请求与工厂实际读取的值来自同一
+元组类型；完全相同的请求会去重。例如：
+
+```rust
+use std::error::Error;
+use std::sync::Arc;
+use qubit_ioc::ContainerBuilder;
+
+fn build() -> Result<(), Box<dyn Error>> {
+    let mut builder = ContainerBuilder::new();
+    builder.register_instance(Arc::new(String::from("service")))?;
+    builder.register_injected_factory::<usize, (Arc<String>,), _>(|(name,)| {
+        Ok(Arc::new(name.len()))
+    })?;
+    builder.root::<usize>();
+    let _application = builder.build()?;
+    Ok(())
+}
+```
+
 图验证先解析请求候选，再检查缺失、歧义、重复 primary 和环路；同步构建还会预检整个选中图是否包含异步工厂。图验证与适用的同步预检全部通过后，才会运行工厂或 alias projector。可选依赖无候选时解析为 `None`，集合依赖无候选时为空；命中的依赖仍参与图验证。构造顺序保证依赖先于消费者；依赖关系决定正确性，不要求按特定顺序注册。互不依赖的定义按注册和依赖声明顺序稳定排序，因此注册顺序会影响其构造及逆序关闭顺序。构建串行执行；构建成功才发布 context，失败不暴露部分容器。
 
 `BuildContext` 只允许工厂访问其声明并由图解析出的依赖。未声明访问返回 `BuildAccessError`。`ApplicationContext` 查询已构造实例，不会重跑工厂。发布时建立不可变的精确键索引和按类型索引；每个类型索引按 binding order、ID、来源位置和注册位置排序一次。单值与 ID 查询直接遍历该索引，集合查询复用其顺序。`BuildContext::get_all` 和 `ApplicationContext::get_all` 都按 `order`、ID、来源位置升序排列，完全相同的项保留注册顺序。错误候选和可用绑定保留注册顺序。
@@ -91,18 +84,6 @@ provider crate 应导出显式 `register_ioc(&mut builder)`，由应用决定纳
 
 `#[value]` 与结构化反序列化都不执行插值；结构化反序列化默认拒绝未知字段。应用需要插值时，可在手工工厂中调用 `Config::get_interpolated`。
 
-
-
-## Settled 构建入口
-
-四个 settled 入口都是 async 方法，均返回 `Result<Application, SettledBuildFailure>`：仅使用同步工厂的图可调用 `build_settled()` 或 `build_all_settled()`，但仍须 `.await`；包含异步工厂时调用 `build_async_settled()` 或 `build_all_async_settled()`。`SettledBuildFailure::cause()` 保留原始 `BuildError`，`cleanup_report()` 返回可选的最终回滚报告。原始构建方法仍在请求 abort 后返回 `BuildFailure`；需要立即返回时使用原始入口。若需从已取消的清理等待恢复，应保留 `BuildFailure` 并再次调用其 `wait_cleanup()`。`take_cleanup()` 和 `into_parts()` 仍可用于转移清理所有权。
-
-正常完成时，settled 方法会在返回错误前等待回滚观察结束。清理仍可能失败或未完成，原始构建原因仍是错误来源链首项。图或预检失败没有清理报告。取消或丢弃 settled future 会中断等待，并且只尽力请求 abort；它不保证回滚观察完成。计时器不能抢占同步阻塞回调或单次阻塞的 future poll。
-
-`BuildSession` 提供独立的单次执行契约：首次轮询前丢弃 `run()` future 后，session 仍可运行；首次轮询后丢弃，再次调用 `run()` 会返回 `Cancelled`。`BuildSessionError::Build` 携带拥有回滚清理的 `BuildFailure`；取消后，可选清理由 session 持有。可通过 `wait_cancelled_cleanup()` 恢复清理观察，或通过 `take_cancelled_cleanup()` 单次移交句柄。参见[构建期间取消后继续观察清理](user_guide.zh_CN.md#构建期间取消后继续观察清理)。该 session API 不改变图验证、构造或关闭算法。
-
-如需单一的全局关闭预算，应显式选择 `WaitPolicy::bounded_with_total(grace, termination, total, timer)`。总计时从首次轮询 `ShutdownHandle::wait()` 开始，并跨取消及 abort 升级继续计时。
-
 ## 6. 错误与生命周期
 
 `RegistrationError` 表示定义或键格式不合法。`BuildError` 是图、配置或工厂失败的
@@ -114,9 +95,21 @@ provider crate 应导出显式 `register_ioc(&mut builder)`，由应用决定纳
 预检失败时没有已构造资源，也没有清理句柄。工厂 unwind panic 仍向外传播；取消异步
 构建只请求 abort，不能等待。
 
+### Settled 构建入口
+
+四个 settled 入口都是 async 方法，均返回 `Result<Application, SettledBuildFailure>`：仅使用同步工厂的图可调用 `build_settled()` 或 `build_all_settled()`，但仍须 `.await`；包含异步工厂时调用 `build_async_settled()` 或 `build_all_async_settled()`。`SettledBuildFailure::cause()` 保留原始 `BuildError`，`cleanup_report()` 返回可选的最终回滚报告。原始构建方法仍在请求 abort 后返回 `BuildFailure`；需要立即返回时使用原始入口。若需从已取消的清理等待恢复，应保留 `BuildFailure` 并再次调用其 `wait_cleanup()`。`take_cleanup()` 和 `into_parts()` 仍可用于转移清理所有权。
+
+正常完成时，settled 方法会在返回错误前等待回滚观察结束。清理仍可能失败或未完成，原始构建原因仍是错误来源链首项。图或预检失败没有清理报告。取消或丢弃 settled future 会中断等待，并且只尽力请求 abort；它不保证回滚观察完成。计时器不能抢占同步阻塞回调或单次阻塞的 future poll。
+
+`BuildSession` 提供独立的单次执行契约：首次轮询前丢弃 `run()` future 后，session 仍可运行；首次轮询后丢弃，再次调用 `run()` 会返回 `Cancelled`。`BuildSessionError::Build` 携带拥有回滚清理的 `BuildFailure`；取消后，可选清理由 session 持有。可通过 `wait_cancelled_cleanup()` 恢复清理观察，或通过 `take_cancelled_cleanup()` 单次移交句柄。参见[构建期间取消后继续观察清理](user_guide.zh_CN.md#构建期间取消后继续观察清理)。该 session API 不改变图验证、构造或关闭算法。
+
 `Application` 独占生命周期，与可克隆的查询 context 分离。选中托管图须显式配置
 `WaitPolicy`；实际应用通过 `WaitPolicy::bounded(grace, termination, timer)` 和正常
-驱动的计时器设置期限。`Managed::synchronous` 要求 stop 成功时资源已终止；
+驱动的计时器设置期限。
+`WaitPolicy::bounded_with_total(grace, termination, total, timer)` 增加应用级预算，在
+首次 poll `wait()` 时启动。总时限失败由 `overall_failure()` 暴露，未确认资源仍列于
+`incomplete()`。总失败会令 `is_success()` 返回 false，即使 abort 请求均成功。它无法
+抢占同步工作或一次阻塞的 poll。取消与边界优先级见[生命周期说明](lifecycle.zh_CN.md)。`Managed::synchronous` 要求 stop 成功时资源已终止；
 `Managed::asynchronous` 将非阻塞的 abort 请求与终止等待配对。需要优雅关闭时，构造阶段
 选择 `Managed::synchronous_with_graceful` 或 `Managed::asynchronous_with_graceful`；ticket
 构造器则将 graceful 请求与对应 wait 回调绑定。所选构造器会固定 graceful 回调；选择方式与 ticket 所有权见

@@ -1,38 +1,5 @@
 # qubit-ioc Current Design
 
-## Typed synchronous registration and total deadline
-
-Manual synchronous factories may accept typed tuples from zero to eight
-arguments. `Arc<T>`, `Option<Arc<T>>`, and `Vec<Arc<T>>` map to required,
-optional, and collection graph requests. The requests and factory values come
-from the same tuple type, and duplicate identical requests are deduplicated.
-For example:
-
-```rust
-use std::error::Error;
-use std::sync::Arc;
-use qubit_ioc::ContainerBuilder;
-
-fn build() -> Result<(), Box<dyn Error>> {
-    let mut builder = ContainerBuilder::new();
-    builder.register_instance(Arc::new(String::from("service")))?;
-    builder.register_injected_factory::<usize, (Arc<String>,), _>(|(name,)| {
-        Ok(Arc::new(name.len()))
-    })?;
-    builder.root::<usize>();
-    let _application = builder.build()?;
-    Ok(())
-}
-```
-
-`WaitPolicy::bounded_with_total(grace, termination, total, timer)` adds one
-application-wide budget beginning at the first `wait()` poll. The report
-exposes its failure through `overall_failure()` and keeps unconfirmed resources
-in `incomplete()`. `is_success()` is false after an overall failure even when
-all abort requests succeeded. The deadline cannot preempt synchronous work or
-a single blocking poll. The [lifecycle guide](lifecycle.md) specifies
-cancellation and tie-breaking behavior.
-
 > This document describes the implemented design and public contracts of
 > `qubit-ioc` 0.3.0. For usage, see the [English user guide](user_guide.md) or
 > [中文用户手册](user_guide.zh_CN.md). Historical design notes remain available
@@ -152,6 +119,29 @@ declaration order for ties. Dependency edges determine correctness; registration
 order affects only independent definitions and therefore their stable reverse
 shutdown order. A failure never publishes a partial context.
 
+Manual synchronous factories may accept typed tuples from zero to eight
+arguments. `Arc<T>`, `Option<Arc<T>>`, and `Vec<Arc<T>>` map to required,
+optional, and collection graph requests. The requests and factory values come
+from the same tuple type, and duplicate identical requests are deduplicated.
+For example:
+
+```rust
+use std::error::Error;
+use std::sync::Arc;
+use qubit_ioc::ContainerBuilder;
+
+fn build() -> Result<(), Box<dyn Error>> {
+    let mut builder = ContainerBuilder::new();
+    builder.register_instance(Arc::new(String::from("service")))?;
+    builder.register_injected_factory::<usize, (Arc<String>,), _>(|(name,)| {
+        Ok(Arc::new(name.len()))
+    })?;
+    builder.root::<usize>();
+    let _application = builder.build()?;
+    Ok(())
+}
+```
+
 Diagnostic paths retain one deterministic predecessor per selected binding,
 then reconstruct the full path only when reporting an error. Multiple roots
 keep their declared order. A cycle path keeps its root prefix and the actual
@@ -194,16 +184,6 @@ order. IoC does not depend on SPI or discover providers implicitly.
 
 
 
-## Settled build APIs
-
-All four settled methods are async and return `Result<Application, SettledBuildFailure>`. For graphs with synchronous factories, call `build_settled()` or `build_all_settled()` and still `.await` the result; for graphs with asynchronous factories, use `build_async_settled()` or `build_all_async_settled()`. `SettledBuildFailure::cause()` retains the original `BuildError`; `cleanup_report()` returns the optional final rollback report. The original build methods still return `BuildFailure` after requesting abort. Retain that failure when immediate return matters or when you need to resume a cancelled `wait_cleanup()` future by calling `wait_cleanup()` again. `take_cleanup()` and `into_parts()` remain available to transfer cleanup ownership.
-
-On normal completion a settled method waits for rollback observation before returning its error. Cleanup can still fail or remain incomplete, and the original build cause remains first in the error source chain. Graph/preflight failures have no cleanup report. Cancelling/dropping a settled future can interrupt the wait and only requests best-effort abort; it does not guarantee rollback observation finishes. Timers cannot preempt synchronous blocking callbacks or a blocking future poll.
-
-`BuildSession` is a separate single-use contract: dropping `run()` before its first poll leaves the session ready to run, while dropping it after polling makes another `run()` return `Cancelled`. `BuildSessionError::Build` carries the `BuildFailure` that owns rollback; after cancellation, the session owns optional cleanup. Cleanup observation can resume through `wait_cancelled_cleanup()`, or its handle can be transferred once with `take_cancelled_cleanup()`. See [Observe cleanup after cancelling an in-progress build](user_guide.md#observe-cleanup-after-cancelling-an-in-progress-build). This session API does not change graph validation, construction, or shutdown algorithms.
-
-For one whole-shutdown budget, explicitly select `WaitPolicy::bounded_with_total(grace, termination, total, timer)`. Its timer starts on the first poll of `ShutdownHandle::wait()` and continues across cancellation and abort upgrades.
-
 ## 6. Errors and lifecycle
 
 `RegistrationError` covers malformed definitions and keys. `BuildError` is the
@@ -220,9 +200,21 @@ Graph and preflight failures construct nothing and have no cleanup handle.
 Factory unwind panic continues to propagate. Cancellation of async build
 requests abort but cannot wait.
 
+### Settled build APIs
+
+All four settled methods are async and return `Result<Application, SettledBuildFailure>`. For graphs with synchronous factories, call `build_settled()` or `build_all_settled()` and still `.await` the result; for graphs with asynchronous factories, use `build_async_settled()` or `build_all_async_settled()`. `SettledBuildFailure::cause()` retains the original `BuildError`; `cleanup_report()` returns the optional final rollback report. The original build methods still return `BuildFailure` after requesting abort. Retain that failure when immediate return matters or when you need to resume a cancelled `wait_cleanup()` future by calling `wait_cleanup()` again. `take_cleanup()` and `into_parts()` remain available to transfer cleanup ownership.
+
+On normal completion a settled method waits for rollback observation before returning its error. Cleanup can still fail or remain incomplete, and the original build cause remains first in the error source chain. Graph/preflight failures have no cleanup report. Cancelling/dropping a settled future can interrupt the wait and only requests best-effort abort; it does not guarantee rollback observation finishes. Timers cannot preempt synchronous blocking callbacks or a blocking future poll.
+
+`BuildSession` is a separate single-use contract: dropping `run()` before its first poll leaves the session ready to run, while dropping it after polling makes another `run()` return `Cancelled`. `BuildSessionError::Build` carries the `BuildFailure` that owns rollback; after cancellation, the session owns optional cleanup. Cleanup observation can resume through `wait_cancelled_cleanup()`, or its handle can be transferred once with `take_cancelled_cleanup()`. See [Observe cleanup after cancelling an in-progress build](user_guide.md#observe-cleanup-after-cancelling-an-in-progress-build). This session API does not change graph validation, construction, or shutdown algorithms.
+
 `Application` owns cleanup independently of its cloneable query context.
 Selected managed graphs require an explicit `WaitPolicy`; a real application
 uses `WaitPolicy::bounded(grace, termination, timer)` with a driven timer.
+For one whole-shutdown budget, explicitly select
+`WaitPolicy::bounded_with_total(grace, termination, total, timer)`. Its timer
+starts on the first poll of `ShutdownHandle::wait()` and continues across
+cancellation and abort upgrades.
 `Managed::synchronous` requires successful stop to confirm termination;
 `Managed::asynchronous` pairs a non-blocking abort request with a termination
 wait. Choose graceful behavior at construction with
