@@ -11,8 +11,29 @@
 /// roots.
 ///
 /// Both modes construct only the root dependency closure. `AllActive` checks
-/// every active definition after profile filtering and replacement, without
-/// running unselected factories or requiring their async mode or wait policy.
+/// every active definition after profile filtering and replacement, while
+/// construction remains limited to the dependency closure of the selected
+/// roots.
+///
+/// # Examples
+///
+/// `AllActive` validates all active definitions, but this example constructs
+/// only the dependency closure of its selected root:
+///
+/// ```
+/// use std::sync::Arc;
+/// use qubit_ioc::{ContainerBuilder, ValidationScope};
+///
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// let mut builder = ContainerBuilder::new()
+///     .validation_scope(ValidationScope::AllActive);
+/// builder.register_instance(Arc::new(String::from("ready")))?;
+/// builder.root::<String>();
+/// let application = builder.build()?;
+/// assert_eq!(application.context().get::<String>()?.as_str(), "ready");
+/// # Ok(())
+/// # }
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ValidationScope {
     /// Validate only definitions reachable from selected roots.

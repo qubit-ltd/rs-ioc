@@ -17,6 +17,32 @@ use crate::managed::ShutdownReport;
 ///
 /// A completed wait can still report cleanup failures. The original build
 /// error remains the first source in this error's source chain.
+///
+/// `cleanup_report()` returns `None` when the failed build did not own any
+/// managed resources to clean up. `Some` contains the final cleanup report;
+/// inspect it to determine whether cleanup succeeded or left entries
+/// incomplete.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_ioc::{BuildError, ContainerBuilder, FactoryError};
+///
+/// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+/// let mut builder = ContainerBuilder::new();
+/// builder.register_factory::<u8, _>(&[], |_| {
+///     Err(FactoryError::new(std::io::Error::other("startup failed")))
+/// })?;
+/// builder.root::<u8>();
+/// let failure = match builder.build_settled().await {
+///     Ok(_) => unreachable!("the factory always fails"),
+///     Err(failure) => failure,
+/// };
+/// assert!(matches!(failure.cause(), BuildError::FactoryFailed { .. }));
+/// assert!(failure.cleanup_report().is_none());
+/// # Ok(())
+/// # }
+/// ```
 #[derive(Debug)]
 #[must_use = "inspect the build cause and any cleanup report"]
 pub struct SettledBuildFailure {
