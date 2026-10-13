@@ -13,7 +13,8 @@
 /// Both modes construct only the root dependency closure. `AllActive` checks
 /// every active definition after profile filtering and replacement, while
 /// construction remains limited to the dependency closure of the selected
-/// roots.
+/// roots. Validation does not run unselected factories or require them to
+/// satisfy their async mode or wait policy.
 ///
 /// # Examples
 ///
