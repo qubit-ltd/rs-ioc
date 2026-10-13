@@ -379,7 +379,7 @@ The same paths work inside `Result<Managed<T>, E>` for sync and async beans.
 The macro does not guess that `application::Managed<T>` or a type alias is the
 runtime wrapper; those remain ordinary component outputs. Independent consumer
 workspaces exercise each path in
-[`managed_paths`](../tests/fixtures/managed_paths/).
+[`managed_paths`](https://github.com/qubit-ltd/rs-ioc/tree/f0f7c9a4c83265d3d73760551f8cc21162986a98/tests/fixtures/managed_paths).
 
 ## Cross-crate application assembly
 
@@ -387,7 +387,9 @@ A provider crate owns component definitions, while the application chooses which
 
 The provider crate exports `register_ioc(&mut builder)`. The app fixture's `app/src/discovery.rs` defines `assemble(config, profiles)`: it creates a builder, stages the configuration snapshot and active profiles, then calls the provider registration function. Registration only stages definitions; factories still wait for `build()` or `build_all()`.
 
-For a consuming application, the dependency roles are visible in `tests/fixtures/ioc_cross_crate/app/Cargo.toml`: `qubit-ioc`, `qubit-config`, the provider crate and the contracts crate. The fixture test creates a `Config`, sets `fixture.label`, and then calls `assemble(config, &[])`. It builds the graph and queries `AppService`, a concrete repository by ID, and the primary `dyn Repository` binding. The test verifies that concrete and trait queries share the same allocation, and that a bean in the provider crate reads the staged configuration. Run the contract with:
+For a consuming application, the dependency roles are visible in [`tests/fixtures/ioc_cross_crate/app/Cargo.toml`](https://github.com/qubit-ltd/rs-ioc/blob/f0f7c9a4c83265d3d73760551f8cc21162986a98/tests/fixtures/ioc_cross_crate/app/Cargo.toml): `qubit-ioc`, `qubit-config`, the provider crate and the contracts crate. The [cross-crate fixture](https://github.com/qubit-ltd/rs-ioc/tree/f0f7c9a4c83265d3d73760551f8cc21162986a98/tests/fixtures/ioc_cross_crate) test creates a `Config`, sets `fixture.label`, and then calls `assemble(config, &[])`. It builds the graph and queries `AppService`, a concrete repository by ID, and the primary `dyn Repository` binding. The test verifies that concrete and trait queries share the same allocation, and that a bean in the provider crate reads the staged configuration. Run the contract with:
+
+Run this command from the root of a complete rs-ioc source checkout; the published crate archive does not include this fixture:
 
 ```bash
 cargo test --manifest-path tests/fixtures/ioc_cross_crate/Cargo.toml

@@ -267,10 +267,13 @@ repeated candidate/member scans; the whole graph algorithm is not promised to
 be strictly linear, and no fixed timing or production speedup is guaranteed.
 
 Downstream lifecycle verification keeps separate
-[historical](../tests/fixtures/application_consumer/Cargo.toml) and
-[current](../tests/fixtures/application_consumer_current/Cargo.toml) locked
+[historical](https://github.com/qubit-ltd/rs-ioc/blob/f0f7c9a4c83265d3d73760551f8cc21162986a98/tests/fixtures/application_consumer/Cargo.toml) and
+[current](https://github.com/qubit-ltd/rs-ioc/blob/f0f7c9a4c83265d3d73760551f8cc21162986a98/tests/fixtures/application_consumer_current/Cargo.toml) locked
 snapshots. Both manifests and lockfiles now specify EventBus 0.20, but the
 historical lane retains its earlier consumer source and does not exercise the
 current request/ticket adapter. The workflow defines the external checkout
 revisions for each lane; IoC is the revision under test.
+The [current consumer fixture notes](https://github.com/qubit-ltd/rs-ioc/blob/f0f7c9a4c83265d3d73760551f8cc21162986a98/tests/fixtures/application_consumer_current/SOURCE.md)
+describe the adapter's verification scope and cleanup responsibilities on build
+failure and application exit.
 See the [current design](complete-design.md) for these boundaries.

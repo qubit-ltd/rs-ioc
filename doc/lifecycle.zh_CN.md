@@ -190,7 +190,7 @@ Immediate 请求会加强同一次关闭。ticket 绑定那次关闭的 generati
 或取消异步观察都不会取消后台关闭。`ticket.wait(timeout)` 限制同步观察者的等待，
 IoC `WaitPolicy` 限制异步 wait；两者都不能强制杀死 provider。用 `spawn_blocking`
 包装同步 shutdown 也不符合 abort 请求契约。
-[当前下游消费夹具说明](../tests/fixtures/application_consumer_current/SOURCE.md)
+[当前下游消费夹具说明](https://github.com/qubit-ltd/rs-ioc/blob/f0f7c9a4c83265d3d73760551f8cc21162986a98/tests/fixtures/application_consumer_current/SOURCE.md)
 记录了 request/ticket 适配器的验证范围，以及构建失败和业务退出时的清理责任。
 
 ## 从 0.2 迁移到 0.3
@@ -214,8 +214,8 @@ IoC `WaitPolicy` 限制异步 wait；两者都不能强制杀死 provider。用 
 它与构建、清理顺序各有用途。精确键与类型索引消除了特定候选和成员的重复扫描，
 但不承诺整体图算法严格线性，也不承诺固定耗时或生产环境加速倍数。
 
-下游验证保留独立锁定的[历史快照](../tests/fixtures/application_consumer/Cargo.toml)和
-[当前快照](../tests/fixtures/application_consumer_current/Cargo.toml)。两份 manifest
+下游验证保留独立锁定的[历史快照](https://github.com/qubit-ltd/rs-ioc/blob/f0f7c9a4c83265d3d73760551f8cc21162986a98/tests/fixtures/application_consumer/Cargo.toml)和
+[当前快照](https://github.com/qubit-ltd/rs-ioc/blob/f0f7c9a4c83265d3d73760551f8cc21162986a98/tests/fixtures/application_consumer_current/Cargo.toml)。两份 manifest
 和 lockfile 现均指定 EventBus 0.20；历史 lane 保留较早的消费者源码，不覆盖当前的
 request/ticket 适配器。各 lane 的外部 checkout 修订由工作流定义，IoC 则使用待验证的
 当前修订。边界见[当前设计](complete-design.zh_CN.md)。

@@ -328,7 +328,7 @@ fn replace_for_test() -> Result<(), Box<dyn Error>> {
 同步和异步 bean 的 `Result<Managed<T>, E>` 也支持这些路径。宏不会猜测
 `application::Managed<T>` 或类型别名就是运行时封装；它们仍按普通组件输出处理。
 独立消费 workspace 在
-[`managed_paths`](../tests/fixtures/managed_paths/) 中覆盖了每种路径。
+[`managed_paths`](https://github.com/qubit-ltd/rs-ioc/tree/f0f7c9a4c83265d3d73760551f8cc21162986a98/tests/fixtures/managed_paths) 中覆盖了每种路径。
 
 ## 跨 crate 装配：应用选择 provider
 
@@ -336,7 +336,9 @@ provider crate 负责组件定义；应用负责决定安装哪些 provider、�
 
 provider crate 导出 `register_ioc(&mut builder)`。应用夹具的 `app/src/discovery.rs` 提供 `assemble(config, profiles)`：创建 builder，登记配置快照并选择 profile，再调用 provider 的注册入口。登记只暂存定义；工厂要等到 `build()` 或 `build_all()` 才会运行。
 
-消费方依赖关系见 `tests/fixtures/ioc_cross_crate/app/Cargo.toml`：应用直接依赖 `qubit-ioc`、`qubit-config`、provider crate 和 contracts crate。集成测试先创建 `Config` 并设置 `fixture.label`，再调用 `assemble(config, &[])` 构图，查询 `AppService`、按 ID 查询具体 repository，并查询 primary 的 `dyn Repository`。测试验证具体类型和 trait alias 指向同一份实例，也验证 provider crate 中的 bean 能读取应用登记的配置。运行这组契约测试：
+消费方依赖关系见 [`tests/fixtures/ioc_cross_crate/app/Cargo.toml`](https://github.com/qubit-ltd/rs-ioc/blob/f0f7c9a4c83265d3d73760551f8cc21162986a98/tests/fixtures/ioc_cross_crate/app/Cargo.toml)：应用直接依赖 `qubit-ioc`、`qubit-config`、provider crate 和 contracts crate。[跨 crate 夹具](https://github.com/qubit-ltd/rs-ioc/tree/f0f7c9a4c83265d3d73760551f8cc21162986a98/tests/fixtures/ioc_cross_crate) 集成测试先创建 `Config` 并设置 `fixture.label`，再调用 `assemble(config, &[])` 构图，查询 `AppService`、按 ID 查询具体 repository，并查询 primary 的 `dyn Repository`。测试验证具体类型和 trait alias 指向同一份实例，也验证 provider crate 中的 bean 能读取应用登记的配置。运行这组契约测试：
+
+请在完整 rs-ioc 源码 checkout 的仓库根目录运行；发布的 crate 包不包含该夹具：
 
 ```bash
 cargo test --manifest-path tests/fixtures/ioc_cross_crate/Cargo.toml
