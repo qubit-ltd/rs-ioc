@@ -25,6 +25,13 @@ current lane builds the IoC revision under test with workflow-selected external
 checkouts. The workflow records exact source revisions; a local path checkout
 alone is not evidence of a passing remote CI run.
 
+The overlay commands use `rs-ioc/tests/fixtures/application_consumer_current/Cargo.lock`.
+The current CI lane also runs `cargo +1.94.0 test --manifest-path
+tests/fixtures/ioc_application_consumer/Cargo.toml --locked` from the
+`rs-execution-services` checkout. That command uses the downstream fixture's
+own `Cargo.lock`; updating the downstream checkout ref alone would not test
+that lockfile through the wrapper commands.
+
 The current consumer source also observes `BuildFailure` cleanup before returning
 its cause, uses Graceful shutdown after successful business work, and waits for
 Immediate shutdown before returning a business error. Its successful run checks
