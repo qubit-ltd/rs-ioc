@@ -214,9 +214,11 @@ fn edge_problem(edge: &Edge, node: &Node, path: Vec<BindingKey>) -> Option<Build
 ///
 /// # Returns
 ///
-/// One node position per graph component that no other node depends on, in
-/// registration order. An isolated node is such a component, and the result is
-/// empty only when every node has an incoming dependency.
+/// Seeds are chosen in registration order. Nodes with no incoming dependency
+/// edge are considered first; then the first still-uncovered node of each
+/// remaining region is added so cycles are also reached by validation.
+/// Every node is covered by the resulting seed closures. An empty graph
+/// produces an empty vector.
 pub(in crate::graph) fn build_all_seeds(nodes: &[Node], edges: &[Vec<Edge>]) -> Vec<usize> {
     let mut has_incoming = vec![false; nodes.len()];
     for requests in edges {
@@ -244,8 +246,7 @@ pub(in crate::graph) fn build_all_seeds(nodes: &[Node], edges: &[Vec<Edge>]) -> 
             mark_build_all_closure(index, nodes, edges, &members, &mut selected, &mut definition_expanded);
         }
     }
-    let indices = (0..selected.len()).collect::<Vec<_>>();
-    for index in indices {
+    for index in 0..selected.len() {
         if !selected[index] {
             seeds.push(index);
             mark_build_all_closure(index, nodes, edges, &members, &mut selected, &mut definition_expanded);
