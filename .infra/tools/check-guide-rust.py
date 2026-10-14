@@ -85,6 +85,23 @@ def _indent_after_quote_depth(line: str, quote_depth: int) -> int:
     return len(content) - len(content.lstrip(" "))
 
 
+def _list_context_fence(
+    line: str,
+    quote_depth: int,
+    list_contexts: list[tuple[int, int, int]] | tuple[tuple[int, int, int], ...],
+) -> re.Match[str] | None:
+    """Match a fence after removing a known list continuation indentation."""
+    indent = len(line) - len(line.lstrip(" "))
+    for context in reversed(list_contexts):
+        if context[0] != quote_depth:
+            continue
+        candidate = line[context[2]:] if indent >= context[2] else line
+        match = FENCE.fullmatch(candidate)
+        if match is not None:
+            return match
+    return None
+
+
 def _line_list_prefixes(line: str) -> tuple[int, list[tuple[int, int, int]]]:
     """Return list contexts while preserving mixed quote/list prefix order."""
     remaining = line.rstrip("\r\n")
@@ -230,7 +247,11 @@ def parse_guide(path: Path, text: str) -> dict[str, Snippet]:
                     if context_indent < list_context[2]:
                         container_exited = True
                         break
-            fence_match = source_fence or normalized_fence
+            fence_match = (
+                source_fence
+                or normalized_fence
+                or _list_context_fence(logical_line, quote_depth, fence_list_contexts)
+            )
             if container_exited:
                 enclosing_fence = None
             else:
@@ -250,6 +271,7 @@ def parse_guide(path: Path, text: str) -> dict[str, Snippet]:
         list_contexts = [context for context in list_contexts if context[0] <= quote_depth]
         matching_contexts = [context for context in list_contexts if context[0] == quote_depth]
 
+        context_fence_match = None
         if logical_line.strip():
             while matching_contexts and _indent_after_quote_depth(
                 expanded_line, matching_contexts[-1][0]
@@ -261,6 +283,7 @@ def parse_guide(path: Path, text: str) -> dict[str, Snippet]:
             ) >= matching_contexts[-1][2]:
                 content_indent = matching_contexts[-1][2]
                 candidate = logical_line[content_indent:] if indent >= content_indent else logical_line
+                context_fence_match = FENCE.fullmatch(candidate)
                 nested_rust_fence = nested_rust_fence or _is_rust_fence(FENCE.fullmatch(candidate))
                 nested_rust_fence = nested_rust_fence or _is_container_rust_fence(candidate)
 
@@ -291,8 +314,11 @@ def parse_guide(path: Path, text: str) -> dict[str, Snippet]:
                 "Rust fences inside blockquotes or indented Markdown containers are unsupported; move the fence to the document root",
             )
         marker_match = MARKER.fullmatch(source_line)
-        fence_match = source_fence or normalized_fence or FENCE.fullmatch(
-            _strip_fence_container_prefixes(normalized_source)
+        fence_match = (
+            source_fence
+            or normalized_fence
+            or context_fence_match
+            or FENCE.fullmatch(_strip_fence_container_prefixes(normalized_source))
         )
         if marker_match:
             snippet_id, mode, features, reason = _parse_marker(path, line_number, marker_match.group(1))

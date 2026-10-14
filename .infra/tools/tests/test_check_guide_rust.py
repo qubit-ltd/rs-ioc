@@ -188,6 +188,15 @@ class ParseGuideTests(unittest.TestCase):
         with self.assertRaisesRegex(CHECKER.GuideError, "Rust fences inside"):
             CHECKER.parse_guide(Path("guide.md"), content)
 
+    def test_nested_list_text_fence_inside_blockquote(self):
+        content = (
+            guide()
+            + "> - outer\n>   - inner\n>     ````text\n"
+            + ">     ```rust\n>     literal\n>     ```\n>     ````\n"
+        )
+        parsed = CHECKER.parse_guide(Path("guide.md"), content)
+        self.assertEqual(set(parsed), set(EXPECTED))
+
     def test_exiting_quote_closes_its_list_context(self):
         content = (
             guide()
