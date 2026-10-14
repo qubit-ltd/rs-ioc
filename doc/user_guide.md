@@ -42,6 +42,7 @@ qubit-ioc = { version = "0.3", default-features = false }
 Place the following code in `src/main.rs`, then run `cargo run` in that
 application:
 
+<!-- guide-rust: id=manual mode=run features=none -->
 ```rust
 use std::sync::Arc;
 use qubit_ioc::{ContainerBuilder, Dependency};
@@ -93,6 +94,7 @@ related beans. It uses Rust 2024, Rust 1.94, and only the `macros` feature:
 qubit-ioc = { version = "0.3", default-features = false, features = ["macros"] }
 ```
 
+<!-- guide-rust: id=beans mode=run features=macros -->
 ```rust
 use std::sync::Arc;
 
@@ -197,6 +199,7 @@ factory's responsibility if construction later fails or is cancelled.
 For example, this complete function uses a required `String` dependency and
 builds all active definitions asynchronously:
 
+<!-- guide-rust: id=typed_async mode=check features=none -->
 ```rust
 use std::error::Error;
 use std::sync::Arc;
@@ -258,6 +261,7 @@ For example, this unselected definition has a missing dependency; the root
 build succeeds under `Reachable`, while `AllActive` rejects it before running
 the root factory:
 
+<!-- guide-rust: id=scope mode=run features=none -->
 ```rust
 use std::sync::Arc;
 use qubit_ioc::{BuildError, ContainerBuilder, Dependency, ValidationScope};
@@ -310,6 +314,7 @@ is cancelled.
 Applications can replace one binding while capturing runtime state in the
 registration callback:
 
+<!-- guide-rust: id=replacement mode=check features=none -->
 ```rust
 use std::error::Error;
 use std::sync::Arc;
@@ -430,6 +435,7 @@ example, `builder` is the configured `ContainerBuilder`, and
 `tokio::select!` is Tokio's application-level way to race those futures;
 `qubit-ioc` does not create or require Tokio, or bind itself to an executor.
 
+<!-- guide-rust: id=cancellation mode=skip reason=application-provided-builder-and-signal -->
 ```rust
 use qubit_ioc::{BuildSessionError, ShutdownMode};
 
@@ -487,6 +493,7 @@ synchronous callbacks or an individual blocking future poll.
 
 This example makes `Startup` fail after `Worker` has been constructed, then observes both successful and failed cleanup reports:
 
+<!-- guide-rust: id=rollback mode=check features=none -->
 ```rust
 use std::error::Error;
 use std::sync::Arc;

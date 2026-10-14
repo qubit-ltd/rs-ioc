@@ -37,6 +37,7 @@ qubit-ioc = { version = "0.3", default-features = false }
 
 将下面的代码放到该应用的 `src/main.rs`，然后在应用目录运行 `cargo run`：
 
+<!-- guide-rust: id=manual mode=run features=none -->
 ```rust
 use std::sync::Arc;
 use qubit_ioc::{ContainerBuilder, Dependency};
@@ -86,6 +87,7 @@ provider 通过自由函数创建值时，可以用 `#[bean]` 为函数生成可
 qubit-ioc = { version = "0.3", default-features = false, features = ["macros"] }
 ```
 
+<!-- guide-rust: id=beans mode=run features=macros -->
 ```rust
 use std::sync::Arc;
 
@@ -177,6 +179,7 @@ bounded 集成函数，在构建失败清理和正常关闭两条路径都显式
 
 下面的完整函数通过必需的 `String` 依赖创建异步工厂，并异步构建全部活跃定义：
 
+<!-- guide-rust: id=typed_async mode=check features=none -->
 ```rust
 use std::error::Error;
 use std::sync::Arc;
@@ -222,6 +225,7 @@ async fn build_message_length() -> Result<(), Box<dyn Error>> {
 或租户有意选择部分根闭包时保留默认 `Reachable`。下面未选中的定义缺少依赖：
 `Reachable` 下根构建成功，`AllActive` 在任何工厂运行前拒绝构建：
 
+<!-- guide-rust: id=scope mode=run features=none -->
 ```rust
 use std::sync::Arc;
 use qubit_ioc::{BuildError, ContainerBuilder, Dependency, ValidationScope};
@@ -273,6 +277,7 @@ ASCII 字母，后续只能使用 ASCII 字母、数字或下划线。构建后�
 
 覆盖测试或替换运行时实现时，回调可以捕获应用状态：
 
+<!-- guide-rust: id=replacement mode=check features=none -->
 ```rust
 use std::error::Error;
 use std::sync::Arc;
@@ -368,6 +373,7 @@ cargo test --manifest-path tests/fixtures/ioc_cross_crate/Cargo.toml
 
 下面让 `Worker` 成功创建后再让 `Startup` 失败，并分别演示清理成功与清理失败。它沿用 README 的完整示例，使用 settled 构建等待正常完成的回滚观察：
 
+<!-- guide-rust: id=rollback mode=check features=none -->
 ```rust
 use std::error::Error;
 use std::sync::Arc;
@@ -436,6 +442,7 @@ async fn show_cleanup_reports() -> Result<(), Box<dyn Error>> {
 future；`tokio::select!` 只是 Tokio 应用的选择写法示例，`qubit-ioc` 不绑定 Tokio
 或任何其他异步执行器。
 
+<!-- guide-rust: id=cancellation mode=skip reason=application-provided-builder-and-signal -->
 ```rust
 use qubit_ioc::{BuildSessionError, ShutdownMode};
 
