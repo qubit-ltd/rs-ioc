@@ -249,11 +249,16 @@ def parse_guide(path: Path, text: str) -> dict[str, Snippet]:
         matching_contexts = [context for context in list_contexts if context[0] == quote_depth]
 
         if logical_line.strip():
-            while matching_contexts and indent < matching_contexts[-1][2]:
+            while matching_contexts and _indent_after_quote_depth(
+                expanded_line, matching_contexts[-1][0]
+            ) < matching_contexts[-1][2]:
                 obsolete = matching_contexts.pop()
                 list_contexts.remove(obsolete)
-            if matching_contexts and indent >= matching_contexts[-1][2]:
-                candidate = logical_line[matching_contexts[-1][2]:]
+            if matching_contexts and _indent_after_quote_depth(
+                expanded_line, matching_contexts[-1][0]
+            ) >= matching_contexts[-1][2]:
+                content_indent = matching_contexts[-1][2]
+                candidate = logical_line[content_indent:] if indent >= content_indent else logical_line
                 nested_rust_fence = nested_rust_fence or _is_rust_fence(FENCE.fullmatch(candidate))
                 nested_rust_fence = nested_rust_fence or _is_container_rust_fence(candidate)
 
