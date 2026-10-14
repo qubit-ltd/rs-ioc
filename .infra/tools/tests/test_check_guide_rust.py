@@ -179,6 +179,15 @@ class ParseGuideTests(unittest.TestCase):
         with self.assertRaisesRegex(CHECKER.GuideError, "Rust fence has no adjacent"):
             CHECKER.parse_guide(Path("guide.md"), content)
 
+    def test_nested_list_fence_exits_into_outer_list(self):
+        content = (
+            guide()
+            + "- outer\n  - inner\n    ```text\n    literal\n"
+            + "  ```rust\n  invalid Rust\n  ```\n"
+        )
+        with self.assertRaisesRegex(CHECKER.GuideError, "Rust fences inside"):
+            CHECKER.parse_guide(Path("guide.md"), content)
+
     def test_exiting_quote_closes_its_list_context(self):
         content = (
             guide()

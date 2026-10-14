@@ -211,9 +211,11 @@ def parse_guide(path: Path, text: str) -> dict[str, Snippet]:
         logical_line, quote_depth = _strip_quote_prefixes(expanded_line)
         initial_indent = len(logical_line) - len(logical_line.lstrip(" "))
         normalized_source = expanded_line
+        normalization_offset = 0
         if quote_depth == 0 and initial_indent:
             parents = [context for context in list_contexts if context[0] == 0]
             if parents and initial_indent >= parents[-1][2]:
+                normalization_offset = parents[-1][2]
                 normalized_source = logical_line[parents[-1][2]:]
         scanned_quote_depth, line_list_prefixes = _line_list_prefixes(normalized_source)
         logical_line, stripped_quote_depth = _strip_quote_prefixes(normalized_source)
@@ -263,6 +265,9 @@ def parse_guide(path: Path, text: str) -> dict[str, Snippet]:
                 nested_rust_fence = nested_rust_fence or _is_container_rust_fence(candidate)
 
         for prefix_quote_depth, marker_indent, content_indent in line_list_prefixes:
+            if prefix_quote_depth == 0:
+                marker_indent += normalization_offset
+                content_indent += normalization_offset
             matching_contexts = [
                 context for context in list_contexts if context[0] == prefix_quote_depth
             ]
