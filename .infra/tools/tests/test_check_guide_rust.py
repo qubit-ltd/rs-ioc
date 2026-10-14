@@ -70,6 +70,22 @@ class ParseGuideTests(unittest.TestCase):
                 else:
                     self.fail("unmarked Rust fence was not rejected")
 
+    def test_rejects_unmarked_rust_fences_in_quote_and_list_containers(self):
+        containers = (
+            "> ```rust\n> fn main() {}\n> ```\n",
+            "- example:\n\n    ```rust\n    fn main() {}\n    ```\n",
+        )
+        for container in containers:
+            content = guide() + container
+            with self.subTest(container=container):
+                try:
+                    CHECKER.parse_guide(Path("guide.md"), content)
+                except CHECKER.GuideError as error:
+                    self.assertIn("guide.md:", str(error))
+                    self.assertIn("Rust fence", str(error))
+                else:
+                    self.fail("container Rust fence was not rejected")
+
     def test_parses_marked_long_and_extended_rust_fences(self):
         cases = (
             ("````rust\nfn main() {}\n```\n````\n", "fn main() {}\n```\n"),
@@ -132,6 +148,21 @@ class ParseGuideTests(unittest.TestCase):
             CHECKER.parse_guide(Path("zh.md"), guide()),
         )
 
+    def test_missing_fixed_id_diagnostic_uses_guide_path(self):
+        entries = dict(EXPECTED)
+        del entries["manual"]
+        english_path = Path("/docs/user_guide.md")
+        chinese_path = Path("/docs/user_guide.zh_CN.md")
+        with self.assertRaises(CHECKER.GuideError) as caught:
+            CHECKER.validate_pair(
+                CHECKER.parse_guide(english_path, guide()),
+                CHECKER.parse_guide(chinese_path, guide(entries)),
+                english_path,
+                chinese_path,
+            )
+        self.assertIn("/docs/user_guide.zh_CN.md:1", str(caught.exception))
+        self.assertIn("id=manual", str(caught.exception))
+
 
 class CargoCommandTests(unittest.TestCase):
     def test_cargo_run_and_check_commands(self):
@@ -158,6 +189,12 @@ class CargoCommandTests(unittest.TestCase):
         self.assertIn("id=manual", diagnostic)
         self.assertIn("cargo", diagnostic)
         self.assertIn("could not start command", diagnostic)
+
+    def test_skip_snippet_does_not_start_subprocess(self):
+        snippet = CHECKER.Snippet("cancellation", "skip", None, "application-context", "builder", 8, Path("guide.md"))
+        with patch.object(CHECKER.subprocess, "run") as run:
+            CHECKER.check_snippet(snippet)
+        run.assert_not_called()
 
     def test_nonzero_and_timeout_diagnostics_include_output_and_cleanup(self):
         snippet = CHECKER.Snippet("typed_async", "check", "none", None, "pub fn example() {}\n", 23, Path("zh.md"))

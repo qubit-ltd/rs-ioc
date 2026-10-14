@@ -56,6 +56,31 @@ def _is_rust_fence(match: re.Match[str] | None) -> bool:
     return language.lower() == "rust"
 
 
+def _is_container_rust_fence(line: str) -> bool:
+    """Identify Rust fences nested in blockquotes or list containers."""
+    content = line.rstrip("\r\n")
+    quoted = False
+    while True:
+        quote_prefix = re.match(r"^ {0,3}>[ \t]?", content)
+        if quote_prefix is None:
+            break
+        quoted = True
+        content = content[quote_prefix.end():]
+    if quoted:
+        candidate = content.lstrip(" ")
+        if _is_rust_fence(FENCE.fullmatch(candidate)):
+            return True
+
+    list_item = re.match(r"^ {0,3}(?:[-+*]|[0-9]+[.)])[ \t]+(.*)$", content)
+    if list_item and _is_rust_fence(FENCE.fullmatch(list_item.group(1))):
+        return True
+
+    indent = len(content) - len(content.lstrip(" "))
+    if indent >= 4 and _is_rust_fence(FENCE.fullmatch(content.lstrip(" "))):
+        return True
+    return False
+
+
 def _closes_fence(match: re.Match[str] | None, opening_fence: str) -> bool:
     if match is None:
         return False
@@ -111,6 +136,13 @@ def parse_guide(path: Path, text: str) -> dict[str, Snippet]:
     line_index = 0
     while line_index < len(lines):
         line_number = line_index + 1
+        if _is_container_rust_fence(lines[line_index]):
+            raise GuideError(
+                path,
+                line_number,
+                "<container>",
+                "Rust fences inside blockquotes or indented Markdown containers are unsupported; move the fence to the document root",
+            )
         marker_match = MARKER.fullmatch(lines[line_index].rstrip("\r\n"))
         fence_match = FENCE.fullmatch(lines[line_index].rstrip("\r\n"))
         if marker_match:
@@ -152,11 +184,21 @@ def parse_guide(path: Path, text: str) -> dict[str, Snippet]:
     return snippets
 
 
-def validate_pair(en: dict[str, Snippet], zh: dict[str, Snippet]) -> None:
+def validate_pair(
+    en: dict[str, Snippet],
+    zh: dict[str, Snippet],
+    en_path: Path | None = None,
+    zh_path: Path | None = None,
+) -> None:
     """Require both guides to match the fixed, reviewable snippet inventory."""
-    for label, snippets in (("English", en), ("Chinese", zh)):
+    for label, snippets, guide_path in (
+        ("English", en, en_path),
+        ("Chinese", zh, zh_path),
+    ):
+        if guide_path is None:
+            guide_path = next(iter(snippets.values())).path if snippets else Path(f"{label} guide")
         for snippet_id in EXPECTED.keys() - snippets.keys():
-            raise GuideError(Path(f"{label} guide"), 1, snippet_id, "expected snippet is missing")
+            raise GuideError(guide_path, 1, snippet_id, "expected snippet is missing")
         for snippet_id in snippets.keys() - EXPECTED.keys():
             snippet = snippets[snippet_id]
             raise GuideError(snippet.path, snippet.line, snippet_id, "unexpected snippet ID")
@@ -248,7 +290,7 @@ def main() -> int:
             parse_guide(path, (REPOSITORY_ROOT / path).read_text(encoding="utf-8"))
             for path in GUIDES
         ]
-        validate_pair(*parsed)
+        validate_pair(*parsed, *(REPOSITORY_ROOT / path for path in GUIDES))
         for snippets in parsed:
             for snippet in snippets.values():
                 if snippet.mode == "skip":
