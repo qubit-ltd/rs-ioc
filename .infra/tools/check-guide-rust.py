@@ -74,6 +74,17 @@ def _strip_quote_prefixes(line: str) -> tuple[str, int]:
     return content, depth
 
 
+def _indent_after_quote_depth(line: str, quote_depth: int) -> int:
+    """Return continuation indentation after stripping a list's quote ancestors."""
+    content = line.rstrip("\r\n")
+    for _ in range(quote_depth):
+        quote = re.match(r"^ {0,3}>[ \t]?", content)
+        if quote is None:
+            break
+        content = content[quote.end():]
+    return len(content) - len(content.lstrip(" "))
+
+
 def _line_list_prefixes(line: str) -> tuple[int, list[tuple[int, int, int]]]:
     """Return list contexts while preserving mixed quote/list prefix order."""
     remaining = line.rstrip("\r\n")
@@ -213,9 +224,7 @@ def parse_guide(path: Path, text: str) -> dict[str, Snippet]:
             container_exited = quote_depth < fence_quote_depth
             if logical_line.strip():
                 for list_context in fence_list_contexts:
-                    context_indent = (
-                        initial_indent if list_context[0] == quote_depth else physical_indent
-                    )
+                    context_indent = _indent_after_quote_depth(expanded_line, list_context[0])
                     if context_indent < list_context[2]:
                         container_exited = True
                         break
