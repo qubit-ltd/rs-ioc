@@ -124,6 +124,23 @@ class ParseGuideTests(unittest.TestCase):
         parsed = CHECKER.parse_guide(Path("guide.md"), content)
         self.assertEqual(set(parsed), set(EXPECTED))
 
+    def test_quote_exit_closes_non_rust_fence_context(self):
+        content = guide() + "> ```text\n> example\n\n```rust\ninvalid Rust\n```\n"
+        with self.assertRaisesRegex(CHECKER.GuideError, "Rust fence has no adjacent"):
+            CHECKER.parse_guide(Path("guide.md"), content)
+
+    def test_list_fence_context_and_exit(self):
+        list_fence = "- ````text\n  ```rust\n  literal Rust fence example\n  ```\n  `````\n"
+        parsed = CHECKER.parse_guide(Path("guide.md"), guide() + list_fence)
+        self.assertEqual(set(parsed), set(EXPECTED))
+
+        prefix = guide() + list_fence + "\n"
+        root_fence_line = prefix.count("\n") + 1
+        content = prefix + "```rust\ninvalid Rust\n```\n"
+        with self.assertRaises(CHECKER.GuideError) as caught:
+            CHECKER.parse_guide(Path("guide.md"), content)
+        self.assertIn(f"guide.md:{root_fence_line}", str(caught.exception))
+
     def test_exiting_quote_closes_its_list_context(self):
         content = (
             guide()

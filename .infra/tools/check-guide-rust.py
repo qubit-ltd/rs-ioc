@@ -98,6 +98,21 @@ def _line_list_prefixes(line: str) -> tuple[int, list[tuple[int, int, int]]]:
     return quote_depth, prefixes
 
 
+def _strip_fence_container_prefixes(line: str) -> str:
+    """Strip explicit quote and same-line list prefixes before fence matching."""
+    content = line.rstrip("\r\n")
+    while True:
+        quote = re.match(r"^ {0,3}>[ \t]?", content)
+        if quote is not None:
+            content = content[quote.end():]
+            continue
+        item = re.match(r"^ {0,3}(?:[-+*]|[0-9]+[.)])[ \t]+", content)
+        if item is not None:
+            content = content[item.end():]
+            continue
+        return content
+
+
 def _is_container_rust_fence(line: str) -> bool:
     """Identify Rust fences nested in blockquotes or list containers."""
     content = line.rstrip("\r\n")
@@ -174,7 +189,7 @@ def parse_guide(path: Path, text: str) -> dict[str, Snippet]:
     lines = text.splitlines(keepends=True)
     snippets: dict[str, Snippet] = {}
     list_contexts: list[tuple[int, int, int]] = []
-    enclosing_fence: tuple[str, int] | None = None
+    enclosing_fence: tuple[str, int, tuple[int, int, int] | None] | None = None
     line_index = 0
     while line_index < len(lines):
         line_number = line_index + 1
@@ -193,15 +208,24 @@ def parse_guide(path: Path, text: str) -> dict[str, Snippet]:
         quote_depth = max(quote_depth, scanned_quote_depth, stripped_quote_depth)
         normalized_fence = FENCE.fullmatch(logical_line)
         if enclosing_fence is not None:
-            fence_match = source_fence or normalized_fence
-            if (
-                quote_depth == enclosing_fence[1]
-                and _is_valid_fence_opening(fence_match)
-                and _closes_fence(fence_match, enclosing_fence[0])
-            ):
+            delimiter, fence_quote_depth, fence_list_context = enclosing_fence
+            container_exited = quote_depth < fence_quote_depth
+            if fence_list_context is not None and quote_depth == fence_quote_depth:
+                container_exited = initial_indent < fence_list_context[2]
+            fence_match = source_fence or normalized_fence or FENCE.fullmatch(
+                _strip_fence_container_prefixes(normalized_source)
+            )
+            if container_exited:
                 enclosing_fence = None
-            line_index += 1
-            continue
+            else:
+                if (
+                    quote_depth == fence_quote_depth
+                    and _is_valid_fence_opening(fence_match)
+                    and _closes_fence(fence_match, delimiter)
+                ):
+                    enclosing_fence = None
+                line_index += 1
+                continue
 
         nested_rust_fence = _is_container_rust_fence(source_line) or _is_container_rust_fence(
             normalized_source
@@ -243,7 +267,9 @@ def parse_guide(path: Path, text: str) -> dict[str, Snippet]:
                 "Rust fences inside blockquotes or indented Markdown containers are unsupported; move the fence to the document root",
             )
         marker_match = MARKER.fullmatch(source_line)
-        fence_match = source_fence or normalized_fence
+        fence_match = source_fence or normalized_fence or FENCE.fullmatch(
+            _strip_fence_container_prefixes(normalized_source)
+        )
         if marker_match:
             snippet_id, mode, features, reason = _parse_marker(path, line_number, marker_match.group(1))
             fence_index = line_index + 1
@@ -278,7 +304,11 @@ def parse_guide(path: Path, text: str) -> dict[str, Snippet]:
         if _is_rust_fence(fence_match):
             raise GuideError(path, line_number, "<unmarked>", "Rust fence has no adjacent guide-rust marker")
         if _is_valid_fence_opening(fence_match):
-            enclosing_fence = (fence_match.group(2), quote_depth)
+            active_list_contexts = [
+                context for context in list_contexts if context[0] == quote_depth
+            ]
+            active_list_context = active_list_contexts[-1] if active_list_contexts else None
+            enclosing_fence = (fence_match.group(2), quote_depth, active_list_context)
             line_index += 1
             continue
         if "guide-rust:" in source_line:
