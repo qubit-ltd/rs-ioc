@@ -59,20 +59,21 @@ def _is_rust_fence(match: re.Match[str] | None) -> bool:
 def _is_container_rust_fence(line: str) -> bool:
     """Identify Rust fences nested in blockquotes or list containers."""
     content = line.rstrip("\r\n")
-    quoted = False
+    nested = False
     while True:
         quote_prefix = re.match(r"^ {0,3}>[ \t]?", content)
-        if quote_prefix is None:
-            break
-        quoted = True
-        content = content[quote_prefix.end():]
-    if quoted:
-        candidate = content.lstrip(" ")
-        if _is_rust_fence(FENCE.fullmatch(candidate)):
-            return True
+        if quote_prefix is not None:
+            nested = True
+            content = content[quote_prefix.end():]
+            continue
+        list_item = re.match(r"^ {0,3}(?:[-+*]|[0-9]+[.)])[ \t]+", content)
+        if list_item is not None:
+            nested = True
+            content = content[list_item.end():]
+            continue
+        break
 
-    list_item = re.match(r"^ {0,3}(?:[-+*]|[0-9]+[.)])[ \t]+(.*)$", content)
-    if list_item and _is_rust_fence(FENCE.fullmatch(list_item.group(1))):
+    if nested and _is_rust_fence(FENCE.fullmatch(content.lstrip(" "))):
         return True
 
     indent = len(content) - len(content.lstrip(" "))
