@@ -157,6 +157,14 @@ class ParseGuideTests(unittest.TestCase):
         parsed = CHECKER.parse_guide(Path("guide.md"), content)
         self.assertEqual(set(parsed), set(EXPECTED))
 
+    def test_list_quote_fence_context_exits_before_root_quote_rust(self):
+        content = (
+            guide()
+            + "- > ```text\n  > literal\n> ```rust\n> invalid Rust\n> ```\n"
+        )
+        with self.assertRaisesRegex(CHECKER.GuideError, "Rust fences inside blockquotes"):
+            CHECKER.parse_guide(Path("guide.md"), content)
+
     def test_exiting_quote_closes_its_list_context(self):
         content = (
             guide()

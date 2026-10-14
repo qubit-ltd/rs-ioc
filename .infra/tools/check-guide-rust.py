@@ -189,12 +189,13 @@ def parse_guide(path: Path, text: str) -> dict[str, Snippet]:
     lines = text.splitlines(keepends=True)
     snippets: dict[str, Snippet] = {}
     list_contexts: list[tuple[int, int, int]] = []
-    enclosing_fence: tuple[str, int, tuple[int, int, int] | None] | None = None
+    enclosing_fence: tuple[str, int, tuple[tuple[int, int, int], ...]] | None = None
     line_index = 0
     while line_index < len(lines):
         line_number = line_index + 1
         source_line = lines[line_index].rstrip("\r\n")
         expanded_line = source_line.expandtabs(4)
+        physical_indent = len(expanded_line) - len(expanded_line.lstrip(" "))
         source_fence = FENCE.fullmatch(source_line)
         logical_line, quote_depth = _strip_quote_prefixes(expanded_line)
         initial_indent = len(logical_line) - len(logical_line.lstrip(" "))
@@ -208,12 +209,16 @@ def parse_guide(path: Path, text: str) -> dict[str, Snippet]:
         quote_depth = max(quote_depth, scanned_quote_depth, stripped_quote_depth)
         normalized_fence = FENCE.fullmatch(logical_line)
         if enclosing_fence is not None:
-            delimiter, fence_quote_depth, fence_list_context = enclosing_fence
+            delimiter, fence_quote_depth, fence_list_contexts = enclosing_fence
             container_exited = quote_depth < fence_quote_depth
-            if fence_list_context is not None and quote_depth == fence_quote_depth:
-                container_exited = (
-                    bool(logical_line.strip()) and initial_indent < fence_list_context[2]
-                )
+            if logical_line.strip():
+                for list_context in fence_list_contexts:
+                    context_indent = (
+                        initial_indent if list_context[0] == quote_depth else physical_indent
+                    )
+                    if context_indent < list_context[2]:
+                        container_exited = True
+                        break
             fence_match = source_fence or normalized_fence
             if container_exited:
                 enclosing_fence = None
@@ -304,11 +309,18 @@ def parse_guide(path: Path, text: str) -> dict[str, Snippet]:
         if _is_rust_fence(fence_match):
             raise GuideError(path, line_number, "<unmarked>", "Rust fence has no adjacent guide-rust marker")
         if _is_valid_fence_opening(fence_match):
-            active_list_contexts = [
-                context for context in list_contexts if context[0] == quote_depth
-            ]
-            active_list_context = active_list_contexts[-1] if active_list_contexts else None
-            enclosing_fence = (fence_match.group(2), quote_depth, active_list_context)
+            explicit_contexts = {
+                (prefix_quote_depth, marker_indent, content_indent)
+                for prefix_quote_depth, marker_indent, content_indent in line_list_prefixes
+            }
+            active_list_contexts = tuple(
+                context
+                for context in list_contexts
+                if context in explicit_contexts
+                or context[0] == quote_depth
+                or physical_indent >= context[2]
+            )
+            enclosing_fence = (fence_match.group(2), quote_depth, active_list_contexts)
             line_index += 1
             continue
         if "guide-rust:" in source_line:
