@@ -69,21 +69,28 @@ def _strip_quote_prefixes(line: str) -> tuple[str, int]:
     return content, depth
 
 
-def _list_prefixes(line: str) -> list[tuple[int, int]]:
-    """Return marker and continuation columns for nested list items on a line."""
-    prefixes: list[tuple[int, int]] = []
+def _line_list_prefixes(line: str) -> tuple[int, list[tuple[int, int, int]]]:
+    """Return list contexts while preserving mixed quote/list prefix order."""
+    remaining = line.rstrip("\r\n")
+    quote_depth = 0
     offset = 0
-    remaining = line
+    prefixes: list[tuple[int, int, int]] = []
     while True:
+        quote = re.match(r"^ {0,3}>[ \t]?", remaining)
+        if quote is not None:
+            quote_depth += 1
+            remaining = remaining[quote.end():]
+            offset = 0
+            continue
         item = re.match(r"^( *)([-+*]|[0-9]+[.)])([ ]+)", remaining)
         if item is None:
             break
         marker_indent = offset + len(item.group(1))
         content_indent = offset + item.end()
-        prefixes.append((marker_indent, content_indent))
+        prefixes.append((quote_depth, marker_indent, content_indent))
         offset += item.end()
-        remaining = line[offset:]
-    return prefixes
+        remaining = remaining[item.end():]
+    return quote_depth, prefixes
 
 
 def _is_container_rust_fence(line: str) -> bool:
@@ -168,8 +175,11 @@ def parse_guide(path: Path, text: str) -> dict[str, Snippet]:
         source_line = lines[line_index].rstrip("\r\n")
         expanded_line = source_line.expandtabs(4)
         logical_line, quote_depth = _strip_quote_prefixes(expanded_line)
+        scanned_quote_depth, line_list_prefixes = _line_list_prefixes(expanded_line)
+        quote_depth = max(quote_depth, scanned_quote_depth)
         nested_rust_fence = _is_container_rust_fence(source_line)
         indent = len(logical_line) - len(logical_line.lstrip(" "))
+        list_contexts = [context for context in list_contexts if context[0] <= quote_depth]
         matching_contexts = [context for context in list_contexts if context[0] == quote_depth]
 
         if logical_line.strip():
@@ -181,8 +191,10 @@ def parse_guide(path: Path, text: str) -> dict[str, Snippet]:
                 nested_rust_fence = nested_rust_fence or _is_rust_fence(FENCE.fullmatch(candidate))
                 nested_rust_fence = nested_rust_fence or _is_container_rust_fence(candidate)
 
-        list_prefixes = _list_prefixes(logical_line)
-        for marker_indent, content_indent in list_prefixes:
+        for prefix_quote_depth, marker_indent, content_indent in line_list_prefixes:
+            matching_contexts = [
+                context for context in list_contexts if context[0] == prefix_quote_depth
+            ]
             while matching_contexts and (
                 marker_indent <= matching_contexts[-1][1]
                 or marker_indent < matching_contexts[-1][2]
@@ -190,9 +202,10 @@ def parse_guide(path: Path, text: str) -> dict[str, Snippet]:
                 obsolete = matching_contexts.pop()
                 list_contexts.remove(obsolete)
             if marker_indent <= 3 or matching_contexts:
-                context = (quote_depth, marker_indent, content_indent)
+                context = (prefix_quote_depth, marker_indent, content_indent)
                 matching_contexts.append(context)
-                list_contexts.append(context)
+                if context not in list_contexts:
+                    list_contexts.append(context)
 
         if nested_rust_fence:
             raise GuideError(

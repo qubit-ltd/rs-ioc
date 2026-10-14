@@ -80,6 +80,7 @@ class ParseGuideTests(unittest.TestCase):
             "- outer\n    - ```rust\n      broken\n      ```\n",
             "> - example:\n>\n>     > ```rust\n>     > invalid Rust\n>     > ```\n",
             "- - example:\n\n      > ```rust\n      > invalid Rust\n      > ```\n",
+            "- > - example:\n  >\n  >     ```rust\n  >     invalid Rust\n  >     ```\n",
         )
         for container in containers:
             content = guide() + container
@@ -94,6 +95,15 @@ class ParseGuideTests(unittest.TestCase):
 
     def test_preserves_indented_code_inside_blockquote(self):
         content = guide() + ">     ```rust\n>     invalid Rust\n>     ```\n"
+        parsed = CHECKER.parse_guide(Path("guide.md"), content)
+        self.assertEqual(set(parsed), set(EXPECTED))
+
+    def test_exiting_quote_closes_its_list_context(self):
+        content = (
+            guide()
+            + "> - example:\n>\noutside quote\n\n"
+            + ">     ```rust\n>     invalid Rust\n>     ```\n"
+        )
         parsed = CHECKER.parse_guide(Path("guide.md"), content)
         self.assertEqual(set(parsed), set(EXPECTED))
 
