@@ -76,9 +76,6 @@ def _is_container_rust_fence(line: str) -> bool:
     if nested and _is_rust_fence(FENCE.fullmatch(content.lstrip(" "))):
         return True
 
-    indent = len(content) - len(content.lstrip(" "))
-    if indent >= 4 and _is_rust_fence(FENCE.fullmatch(content.lstrip(" "))):
-        return True
     return False
 
 
@@ -134,18 +131,45 @@ def parse_guide(path: Path, text: str) -> dict[str, Snippet]:
     """Parse marked Rust fences, rejecting unmarked and incomplete blocks."""
     lines = text.splitlines(keepends=True)
     snippets: dict[str, Snippet] = {}
+    list_contexts: list[tuple[int, int]] = []
     line_index = 0
     while line_index < len(lines):
         line_number = line_index + 1
-        if _is_container_rust_fence(lines[line_index]):
+        source_line = lines[line_index].rstrip("\r\n")
+        expanded_line = source_line.expandtabs(4)
+        nested_rust_fence = _is_container_rust_fence(source_line)
+        list_item = re.match(r"^( *)([-+*]|[0-9]+[.)])([ ]+)(.*)$", expanded_line)
+
+        if list_item is not None:
+            indent = len(list_item.group(1))
+            while list_contexts and (
+                indent <= list_contexts[-1][0] or indent < list_contexts[-1][1]
+            ):
+                list_contexts.pop()
+            if list_contexts and indent >= list_contexts[-1][1]:
+                candidate = expanded_line[list_contexts[-1][1]:]
+                nested_rust_fence = nested_rust_fence or _is_container_rust_fence(candidate)
+            content_indent = indent + len(list_item.group(2)) + len(list_item.group(3))
+            if indent <= 3 or list_contexts:
+                list_contexts.append((indent, content_indent))
+        elif expanded_line.strip():
+            indent = len(expanded_line) - len(expanded_line.lstrip(" "))
+            while list_contexts and indent < list_contexts[-1][1]:
+                list_contexts.pop()
+            if list_contexts and indent >= list_contexts[-1][1]:
+                candidate = expanded_line[list_contexts[-1][1]:]
+                nested_rust_fence = nested_rust_fence or _is_rust_fence(FENCE.fullmatch(candidate))
+                nested_rust_fence = nested_rust_fence or _is_container_rust_fence(candidate)
+
+        if nested_rust_fence:
             raise GuideError(
                 path,
                 line_number,
                 "<container>",
                 "Rust fences inside blockquotes or indented Markdown containers are unsupported; move the fence to the document root",
             )
-        marker_match = MARKER.fullmatch(lines[line_index].rstrip("\r\n"))
-        fence_match = FENCE.fullmatch(lines[line_index].rstrip("\r\n"))
+        marker_match = MARKER.fullmatch(source_line)
+        fence_match = FENCE.fullmatch(source_line)
         if marker_match:
             snippet_id, mode, features, reason = _parse_marker(path, line_number, marker_match.group(1))
             fence_index = line_index + 1
@@ -179,7 +203,7 @@ def parse_guide(path: Path, text: str) -> dict[str, Snippet]:
             continue
         if _is_rust_fence(fence_match):
             raise GuideError(path, line_number, "<unmarked>", "Rust fence has no adjacent guide-rust marker")
-        if "guide-rust:" in lines[line_index]:
+        if "guide-rust:" in source_line:
             raise GuideError(path, line_number, "<unknown>", "malformed guide-rust marker")
         line_index += 1
     return snippets

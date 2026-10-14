@@ -76,6 +76,8 @@ class ParseGuideTests(unittest.TestCase):
             "- example:\n\n    ```rust\n    fn main() {}\n    ```\n",
             "- > ```rust\n  > fn main() {}\n  > ```\n",
             "> - ```rust\n>   fn main() {}\n>   ```\n",
+            "- example:\n\n    > ```rust\n    > fn main() {}\n    > ```\n",
+            "- outer\n    - ```rust\n      broken\n      ```\n",
         )
         for container in containers:
             content = guide() + container
