@@ -141,6 +141,22 @@ class ParseGuideTests(unittest.TestCase):
             CHECKER.parse_guide(Path("guide.md"), content)
         self.assertIn(f"guide.md:{root_fence_line}", str(caught.exception))
 
+    def test_blank_line_does_not_exit_list_fence_context(self):
+        content = (
+            guide()
+            + "- ````text\n\n  ```rust\n  literal Rust fence example\n  ```\n  ````\n"
+        )
+        parsed = CHECKER.parse_guide(Path("guide.md"), content)
+        self.assertEqual(set(parsed), set(EXPECTED))
+
+    def test_list_markers_inside_fence_do_not_become_closers(self):
+        content = (
+            guide()
+            + "````text\n- `````\n```rust\nliteral Rust fence example\n```\n````\n"
+        )
+        parsed = CHECKER.parse_guide(Path("guide.md"), content)
+        self.assertEqual(set(parsed), set(EXPECTED))
+
     def test_exiting_quote_closes_its_list_context(self):
         content = (
             guide()

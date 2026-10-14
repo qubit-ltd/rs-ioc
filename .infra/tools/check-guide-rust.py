@@ -211,10 +211,10 @@ def parse_guide(path: Path, text: str) -> dict[str, Snippet]:
             delimiter, fence_quote_depth, fence_list_context = enclosing_fence
             container_exited = quote_depth < fence_quote_depth
             if fence_list_context is not None and quote_depth == fence_quote_depth:
-                container_exited = initial_indent < fence_list_context[2]
-            fence_match = source_fence or normalized_fence or FENCE.fullmatch(
-                _strip_fence_container_prefixes(normalized_source)
-            )
+                container_exited = (
+                    bool(logical_line.strip()) and initial_indent < fence_list_context[2]
+                )
+            fence_match = source_fence or normalized_fence
             if container_exited:
                 enclosing_fence = None
             else:
