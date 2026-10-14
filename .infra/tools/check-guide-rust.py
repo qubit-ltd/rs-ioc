@@ -169,15 +169,32 @@ def parse_guide(path: Path, text: str) -> dict[str, Snippet]:
     lines = text.splitlines(keepends=True)
     snippets: dict[str, Snippet] = {}
     list_contexts: list[tuple[int, int, int]] = []
+    enclosing_fence: str | None = None
     line_index = 0
     while line_index < len(lines):
         line_number = line_index + 1
         source_line = lines[line_index].rstrip("\r\n")
         expanded_line = source_line.expandtabs(4)
+        source_fence = FENCE.fullmatch(source_line)
+        if enclosing_fence is not None:
+            if _closes_fence(source_fence, enclosing_fence):
+                enclosing_fence = None
+            line_index += 1
+            continue
+
         logical_line, quote_depth = _strip_quote_prefixes(expanded_line)
-        scanned_quote_depth, line_list_prefixes = _line_list_prefixes(expanded_line)
-        quote_depth = max(quote_depth, scanned_quote_depth)
-        nested_rust_fence = _is_container_rust_fence(source_line)
+        initial_indent = len(logical_line) - len(logical_line.lstrip(" "))
+        normalized_source = expanded_line
+        if quote_depth == 0 and initial_indent:
+            parents = [context for context in list_contexts if context[0] == 0]
+            if parents and initial_indent >= parents[-1][2]:
+                normalized_source = logical_line[parents[-1][2]:]
+        scanned_quote_depth, line_list_prefixes = _line_list_prefixes(normalized_source)
+        logical_line, stripped_quote_depth = _strip_quote_prefixes(normalized_source)
+        quote_depth = max(quote_depth, scanned_quote_depth, stripped_quote_depth)
+        nested_rust_fence = _is_container_rust_fence(source_line) or _is_container_rust_fence(
+            normalized_source
+        )
         indent = len(logical_line) - len(logical_line.lstrip(" "))
         list_contexts = [context for context in list_contexts if context[0] <= quote_depth]
         matching_contexts = [context for context in list_contexts if context[0] == quote_depth]
@@ -215,7 +232,7 @@ def parse_guide(path: Path, text: str) -> dict[str, Snippet]:
                 "Rust fences inside blockquotes or indented Markdown containers are unsupported; move the fence to the document root",
             )
         marker_match = MARKER.fullmatch(source_line)
-        fence_match = FENCE.fullmatch(source_line)
+        fence_match = source_fence
         if marker_match:
             snippet_id, mode, features, reason = _parse_marker(path, line_number, marker_match.group(1))
             fence_index = line_index + 1
@@ -249,6 +266,10 @@ def parse_guide(path: Path, text: str) -> dict[str, Snippet]:
             continue
         if _is_rust_fence(fence_match):
             raise GuideError(path, line_number, "<unmarked>", "Rust fence has no adjacent guide-rust marker")
+        if fence_match is not None:
+            enclosing_fence = fence_match.group(2)
+            line_index += 1
+            continue
         if "guide-rust:" in source_line:
             raise GuideError(path, line_number, "<unknown>", "malformed guide-rust marker")
         line_index += 1

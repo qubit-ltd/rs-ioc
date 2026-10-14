@@ -81,6 +81,7 @@ class ParseGuideTests(unittest.TestCase):
             "> - example:\n>\n>     > ```rust\n>     > invalid Rust\n>     > ```\n",
             "- - example:\n\n      > ```rust\n      > invalid Rust\n      > ```\n",
             "- > - example:\n  >\n  >     ```rust\n  >     invalid Rust\n  >     ```\n",
+            "- outer\n    > - inner\n    >     ```rust\n    >     broken\n    >     ```\n",
         )
         for container in containers:
             content = guide() + container
@@ -97,6 +98,18 @@ class ParseGuideTests(unittest.TestCase):
         content = guide() + ">     ```rust\n>     invalid Rust\n>     ```\n"
         parsed = CHECKER.parse_guide(Path("guide.md"), content)
         self.assertEqual(set(parsed), set(EXPECTED))
+
+    def test_ignores_markers_and_rust_fences_inside_text_fence(self):
+        content = "````text\n" + guide() + "```rust\nfn main() {}\n```\n````\n"
+        parsed = CHECKER.parse_guide(Path("guide.md"), content)
+        self.assertEqual(parsed, {})
+        with self.assertRaisesRegex(CHECKER.GuideError, "expected snippet is missing"):
+            CHECKER.validate_pair(parsed, parsed, Path("guide.md"), Path("guide-zh.md"))
+
+    def test_ignores_rust_looking_literal_inside_non_rust_fence(self):
+        content = "```text\n```rust\nfn main() {}\n```\n```\n"
+        parsed = CHECKER.parse_guide(Path("guide.md"), content)
+        self.assertEqual(parsed, {})
 
     def test_exiting_quote_closes_its_list_context(self):
         content = (
