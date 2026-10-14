@@ -111,6 +111,19 @@ class ParseGuideTests(unittest.TestCase):
         parsed = CHECKER.parse_guide(Path("guide.md"), content)
         self.assertEqual(parsed, {})
 
+    def test_rejects_rust_fence_after_invalid_backtick_info(self):
+        content = guide() + "```text`inline`\n```rust\ninvalid Rust\n```\n"
+        with self.assertRaisesRegex(CHECKER.GuideError, "Rust fence has no adjacent"):
+            CHECKER.parse_guide(Path("guide.md"), content)
+
+    def test_ignores_rust_literal_inside_quoted_non_rust_fence(self):
+        content = (
+            guide()
+            + "> ````text\n> ```rust\n> literal Rust fence example\n> ```\n> `````\n"
+        )
+        parsed = CHECKER.parse_guide(Path("guide.md"), content)
+        self.assertEqual(set(parsed), set(EXPECTED))
+
     def test_exiting_quote_closes_its_list_context(self):
         content = (
             guide()
