@@ -55,6 +55,32 @@ class ParseGuideTests(unittest.TestCase):
         self.assertIn(":1", str(caught.exception))
         self.assertIn("id", str(caught.exception))
 
+    def test_rejects_unmarked_rust_blocks_with_long_or_extended_fences(self):
+        cases = (
+            "````rust\nfn main() {}\n````\n",
+            "```rust,ignore\nfn main() {}\n```\n",
+        )
+        for content in cases:
+            with self.subTest(content=content):
+                try:
+                    CHECKER.parse_guide(Path("guide.md"), content)
+                except CHECKER.GuideError as error:
+                    self.assertIn("guide.md:1", str(error))
+                    self.assertIn("Rust fence has no adjacent", str(error))
+                else:
+                    self.fail("unmarked Rust fence was not rejected")
+
+    def test_parses_marked_long_and_extended_rust_fences(self):
+        cases = (
+            ("````rust\nfn main() {}\n```\n````\n", "fn main() {}\n```\n"),
+            ("```rust,ignore\nfn main() {}\n```\n", "fn main() {}\n"),
+        )
+        for fence, expected_code in cases:
+            content = f"<!-- guide-rust: id=manual mode=run features=none -->\n{fence}"
+            with self.subTest(fence=fence):
+                parsed = CHECKER.parse_guide(Path("guide.md"), content)
+                self.assertEqual(parsed["manual"].code, expected_code)
+
     def test_rejects_duplicate_id(self):
         content = guide({"manual": EXPECTED["manual"]}) + guide({"manual": EXPECTED["manual"]})
         with self.assertRaisesRegex(CHECKER.GuideError, "id=manual: duplicate ID"):

@@ -16,8 +16,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 GUIDES = (Path("doc/user_guide.md"), Path("doc/user_guide.zh_CN.md"))
 TIMEOUT_SECONDS = 300
 MARKER = re.compile(r"^\s*<!--\s*guide-rust:\s*(.*?)\s*-->\s*$")
-FENCE = re.compile(r"^\s*```([A-Za-z0-9_-]*)\s*$")
-CLOSING_FENCE = re.compile(r"^\s*```\s*$")
+FENCE = re.compile(r"^( {0,3})(`{3,}|~{3,})(.*)$")
 ID_PATTERN = re.compile(r"^[a-z0-9_]+$")
 EXPECTED = {
     "manual": ("run", "none"),
@@ -45,6 +44,27 @@ class GuideError(ValueError):
 
     def __init__(self, path: Path, line: int, snippet_id: str, message: str):
         super().__init__(f"{path}:{line}: id={snippet_id}: {message}")
+
+
+def _is_rust_fence(match: re.Match[str] | None) -> bool:
+    if match is None:
+        return False
+    fence, info = match.group(2), match.group(3).strip()
+    if fence.startswith("`") and "`" in info:
+        return False
+    language = info.split(maxsplit=1)[0].split(",", 1)[0] if info else ""
+    return language.lower() == "rust"
+
+
+def _closes_fence(match: re.Match[str] | None, opening_fence: str) -> bool:
+    if match is None:
+        return False
+    closing_fence, trailing = match.group(2), match.group(3)
+    return (
+        closing_fence[0] == opening_fence[0]
+        and len(closing_fence) >= len(opening_fence)
+        and not trailing.strip()
+    )
 
 
 def _parse_marker(path: Path, line: int, raw: str) -> tuple[str, str, str | None, str | None]:
@@ -97,12 +117,16 @@ def parse_guide(path: Path, text: str) -> dict[str, Snippet]:
             snippet_id, mode, features, reason = _parse_marker(path, line_number, marker_match.group(1))
             fence_index = line_index + 1
             next_fence = FENCE.fullmatch(lines[fence_index].rstrip("\r\n")) if fence_index < len(lines) else None
-            if next_fence is None or next_fence.group(1) != "rust":
+            if not _is_rust_fence(next_fence):
                 raise GuideError(path, line_number, snippet_id, "marker must immediately precede a rust fence")
             opening = fence_index
+            opening_fence = next_fence.group(2)
             code_lines: list[str] = []
             cursor = opening + 1
-            while cursor < len(lines) and not CLOSING_FENCE.fullmatch(lines[cursor].rstrip("\r\n")):
+            while cursor < len(lines):
+                closing = FENCE.fullmatch(lines[cursor].rstrip("\r\n"))
+                if _closes_fence(closing, opening_fence):
+                    break
                 code_lines.append(lines[cursor])
                 cursor += 1
             if cursor == len(lines):
@@ -120,7 +144,7 @@ def parse_guide(path: Path, text: str) -> dict[str, Snippet]:
             )
             line_index = cursor + 1
             continue
-        if fence_match and fence_match.group(1) == "rust":
+        if _is_rust_fence(fence_match):
             raise GuideError(path, line_number, "<unmarked>", "Rust fence has no adjacent guide-rust marker")
         if "guide-rust:" in lines[line_index]:
             raise GuideError(path, line_number, "<unknown>", "malformed guide-rust marker")
