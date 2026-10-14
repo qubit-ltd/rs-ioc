@@ -78,6 +78,8 @@ class ParseGuideTests(unittest.TestCase):
             "> - ```rust\n>   fn main() {}\n>   ```\n",
             "- example:\n\n    > ```rust\n    > fn main() {}\n    > ```\n",
             "- outer\n    - ```rust\n      broken\n      ```\n",
+            "> - example:\n>\n>     > ```rust\n>     > invalid Rust\n>     > ```\n",
+            "- - example:\n\n      > ```rust\n      > invalid Rust\n      > ```\n",
         )
         for container in containers:
             content = guide() + container
@@ -89,6 +91,11 @@ class ParseGuideTests(unittest.TestCase):
                     self.assertIn("Rust fence", str(error))
                 else:
                     self.fail("container Rust fence was not rejected")
+
+    def test_preserves_indented_code_inside_blockquote(self):
+        content = guide() + ">     ```rust\n>     invalid Rust\n>     ```\n"
+        parsed = CHECKER.parse_guide(Path("guide.md"), content)
+        self.assertEqual(set(parsed), set(EXPECTED))
 
     def test_parses_marked_long_and_extended_rust_fences(self):
         cases = (

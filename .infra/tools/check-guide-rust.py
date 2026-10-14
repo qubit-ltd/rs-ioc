@@ -56,6 +56,36 @@ def _is_rust_fence(match: re.Match[str] | None) -> bool:
     return language.lower() == "rust"
 
 
+def _strip_quote_prefixes(line: str) -> tuple[str, int]:
+    """Return a line's content and the number of explicit blockquote prefixes."""
+    content = line.rstrip("\r\n")
+    depth = 0
+    while True:
+        quote_prefix = re.match(r"^ {0,3}>[ \t]?", content)
+        if quote_prefix is None:
+            break
+        depth += 1
+        content = content[quote_prefix.end():]
+    return content, depth
+
+
+def _list_prefixes(line: str) -> list[tuple[int, int]]:
+    """Return marker and continuation columns for nested list items on a line."""
+    prefixes: list[tuple[int, int]] = []
+    offset = 0
+    remaining = line
+    while True:
+        item = re.match(r"^( *)([-+*]|[0-9]+[.)])([ ]+)", remaining)
+        if item is None:
+            break
+        marker_indent = offset + len(item.group(1))
+        content_indent = offset + item.end()
+        prefixes.append((marker_indent, content_indent))
+        offset += item.end()
+        remaining = line[offset:]
+    return prefixes
+
+
 def _is_container_rust_fence(line: str) -> bool:
     """Identify Rust fences nested in blockquotes or list containers."""
     content = line.rstrip("\r\n")
@@ -73,7 +103,7 @@ def _is_container_rust_fence(line: str) -> bool:
             continue
         break
 
-    if nested and _is_rust_fence(FENCE.fullmatch(content.lstrip(" "))):
+    if nested and _is_rust_fence(FENCE.fullmatch(content)):
         return True
 
     return False
@@ -131,35 +161,38 @@ def parse_guide(path: Path, text: str) -> dict[str, Snippet]:
     """Parse marked Rust fences, rejecting unmarked and incomplete blocks."""
     lines = text.splitlines(keepends=True)
     snippets: dict[str, Snippet] = {}
-    list_contexts: list[tuple[int, int]] = []
+    list_contexts: list[tuple[int, int, int]] = []
     line_index = 0
     while line_index < len(lines):
         line_number = line_index + 1
         source_line = lines[line_index].rstrip("\r\n")
         expanded_line = source_line.expandtabs(4)
+        logical_line, quote_depth = _strip_quote_prefixes(expanded_line)
         nested_rust_fence = _is_container_rust_fence(source_line)
-        list_item = re.match(r"^( *)([-+*]|[0-9]+[.)])([ ]+)(.*)$", expanded_line)
+        indent = len(logical_line) - len(logical_line.lstrip(" "))
+        matching_contexts = [context for context in list_contexts if context[0] == quote_depth]
 
-        if list_item is not None:
-            indent = len(list_item.group(1))
-            while list_contexts and (
-                indent <= list_contexts[-1][0] or indent < list_contexts[-1][1]
-            ):
-                list_contexts.pop()
-            if list_contexts and indent >= list_contexts[-1][1]:
-                candidate = expanded_line[list_contexts[-1][1]:]
-                nested_rust_fence = nested_rust_fence or _is_container_rust_fence(candidate)
-            content_indent = indent + len(list_item.group(2)) + len(list_item.group(3))
-            if indent <= 3 or list_contexts:
-                list_contexts.append((indent, content_indent))
-        elif expanded_line.strip():
-            indent = len(expanded_line) - len(expanded_line.lstrip(" "))
-            while list_contexts and indent < list_contexts[-1][1]:
-                list_contexts.pop()
-            if list_contexts and indent >= list_contexts[-1][1]:
-                candidate = expanded_line[list_contexts[-1][1]:]
+        if logical_line.strip():
+            while matching_contexts and indent < matching_contexts[-1][2]:
+                obsolete = matching_contexts.pop()
+                list_contexts.remove(obsolete)
+            if matching_contexts and indent >= matching_contexts[-1][2]:
+                candidate = logical_line[matching_contexts[-1][2]:]
                 nested_rust_fence = nested_rust_fence or _is_rust_fence(FENCE.fullmatch(candidate))
                 nested_rust_fence = nested_rust_fence or _is_container_rust_fence(candidate)
+
+        list_prefixes = _list_prefixes(logical_line)
+        for marker_indent, content_indent in list_prefixes:
+            while matching_contexts and (
+                marker_indent <= matching_contexts[-1][1]
+                or marker_indent < matching_contexts[-1][2]
+            ):
+                obsolete = matching_contexts.pop()
+                list_contexts.remove(obsolete)
+            if marker_indent <= 3 or matching_contexts:
+                context = (quote_depth, marker_indent, content_indent)
+                matching_contexts.append(context)
+                list_contexts.append(context)
 
         if nested_rust_fence:
             raise GuideError(
