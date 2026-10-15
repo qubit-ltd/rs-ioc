@@ -19,7 +19,7 @@ EXPECTED = {
     "scope": ("run", "none"),
     "replacement": ("check", "none"),
     "rollback": ("check", "none"),
-    "cancellation": ("skip", None),
+    "cancellation": ("check", "none"),
 }
 
 
@@ -45,7 +45,7 @@ class ParseGuideTests(unittest.TestCase):
         self.assertEqual(set(parsed), set(EXPECTED))
         self.assertEqual((parsed["manual"].mode, parsed["manual"].features), ("run", "none"))
         self.assertEqual((parsed["typed_async"].mode, parsed["typed_async"].features), ("check", "none"))
-        self.assertEqual(parsed["cancellation"].reason, "application-provided-builder-and-signal")
+        self.assertEqual((parsed["cancellation"].mode, parsed["cancellation"].features), ("check", "none"))
         self.assertEqual(parsed["manual"].code, "fn main() {}\n")
 
     def test_rejects_unmarked_rust_block_with_location(self):
@@ -290,14 +290,17 @@ class CargoCommandTests(unittest.TestCase):
         manifest = Path("/tmp/example/Cargo.toml")
         run = CHECKER.cargo_command(snippets["manual"], manifest)
         check = CHECKER.cargo_command(snippets["typed_async"], manifest)
+        cancellation = CHECKER.cargo_command(snippets["cancellation"], manifest)
         self.assertEqual(run, ["cargo", "+1.94.0", "run", "--quiet", "--manifest-path", str(manifest)])
         self.assertEqual(check, ["cargo", "+1.94.0", "check", "--lib", "--manifest-path", str(manifest)])
+        self.assertEqual(cancellation, check)
         self.assertIn('path = "' + str(CHECKER.REPOSITORY_ROOT) + '"', CHECKER._manifest(snippets["manual"]))
         self.assertIn('default-features = false', CHECKER._manifest(snippets["manual"]))
         self.assertNotIn('features = ["macros"]', CHECKER._manifest(snippets["manual"]))
         self.assertIn('features = ["macros"]', CHECKER._manifest(snippets["beans"]))
-        with self.assertRaisesRegex(ValueError, "skip"):
-            CHECKER.cargo_command(snippets["cancellation"], manifest)
+        self.assertIn('tokio = { version = "1.53", features = ["macros", "rt"] }', CHECKER._manifest(snippets["cancellation"]))
+        self.assertNotIn("tokio", CHECKER._manifest(snippets["manual"]))
+        self.assertNotIn("tokio", CHECKER._manifest(snippets["typed_async"]))
 
     def test_command_start_failure_has_location_and_command(self):
         snippet = CHECKER.Snippet("manual", "run", "none", None, "fn main() {}\n", 12, Path("guide.md"))
@@ -311,7 +314,7 @@ class CargoCommandTests(unittest.TestCase):
         self.assertIn("could not start command", diagnostic)
 
     def test_skip_snippet_does_not_start_subprocess(self):
-        snippet = CHECKER.Snippet("cancellation", "skip", None, "application-context", "builder", 8, Path("guide.md"))
+        snippet = CHECKER.Snippet("manual", "skip", None, "application-context", "builder", 8, Path("guide.md"))
         with patch.object(CHECKER.subprocess, "run") as run:
             CHECKER.check_snippet(snippet)
         run.assert_not_called()

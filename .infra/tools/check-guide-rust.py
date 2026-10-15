@@ -25,7 +25,7 @@ EXPECTED = {
     "scope": ("run", "none"),
     "replacement": ("check", "none"),
     "rollback": ("check", "none"),
-    "cancellation": ("skip", None),
+    "cancellation": ("check", "none"),
 }
 
 
@@ -418,10 +418,11 @@ def cargo_command(snippet: Snippet, manifest_path: Path) -> list[str]:
 
 def _manifest(snippet: Snippet) -> str:
     features = ', features = ["macros"]' if snippet.features == "macros" else ""
+    tokio = '\ntokio = { version = "1.53", features = ["macros", "rt"] }' if snippet.id == "cancellation" else ""
     return (
         "[package]\nname = \"guide-example\"\nversion = \"0.0.0\"\n"
         "edition = \"2024\"\n\n[dependencies]\n"
-        f"qubit-ioc = {{ path = \"{REPOSITORY_ROOT}\", default-features = false{features} }}\n"
+        f"qubit-ioc = {{ path = \"{REPOSITORY_ROOT}\", default-features = false{features} }}{tokio}\n"
     )
 
 

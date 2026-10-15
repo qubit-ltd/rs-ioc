@@ -434,36 +434,45 @@ example, `builder` is the configured `ContainerBuilder`, and
 `shutdown_signal` is an application-provided future that resolves to `()`.
 `tokio::select!` is Tokio's application-level way to race those futures;
 `qubit-ioc` does not create or require Tokio, or bind itself to an executor.
+The application prepares the builder and shutdown signal and provides the
+Tokio executor. This complete function is compiled by the guide checker; the
+existing `BuildSession` tests cover its runtime behavior.
 
-<!-- guide-rust: id=cancellation mode=skip reason=application-provided-builder-and-signal -->
+<!-- guide-rust: id=cancellation mode=check features=none -->
 ```rust
-use qubit_ioc::{BuildSessionError, ShutdownMode};
+use std::future::Future;
+use qubit_ioc::{BuildSessionError, ContainerBuilder, ShutdownMode};
 
-let mut session = builder.build_async_session();
-let outcome = tokio::select! {
-    result = session.run() => Some(result),
-    () = shutdown_signal => None,
-};
-let application = match outcome {
-    Some(Ok(application)) => Some(application),
-    Some(Err(BuildSessionError::Build(mut failure))) => {
-        let report = failure.wait_cleanup().await;
-        eprintln!("build failed: {}; cleanup: {report:?}", failure.cause());
-        None
+pub async fn build_until_shutdown<F>(builder: ContainerBuilder, shutdown_signal: F)
+where
+    F: Future<Output = ()>,
+{
+    let mut session = builder.build_async_session();
+    let outcome = tokio::select! {
+        result = session.run() => Some(result),
+        () = shutdown_signal => None,
+    };
+    let application = match outcome {
+        Some(Ok(application)) => Some(application),
+        Some(Err(BuildSessionError::Build(mut failure))) => {
+            let report = failure.wait_cleanup().await;
+            eprintln!("build failed: {}; cleanup: {report:?}", failure.cause());
+            None
+        }
+        Some(Err(other)) => {
+            eprintln!("build session state: {other}");
+            None
+        }
+        None => {
+            let report = session.wait_cancelled_cleanup().await;
+            eprintln!("startup cancelled; cleanup: {report:?}");
+            None
+        }
+    };
+    if let Some(application) = application {
+        let mut shutdown = application.begin_shutdown(ShutdownMode::Graceful);
+        eprintln!("shutdown: {:?}", shutdown.wait().await);
     }
-    Some(Err(other)) => {
-        eprintln!("build session state: {other}");
-        None
-    }
-    None => {
-        let report = session.wait_cancelled_cleanup().await;
-        eprintln!("startup cancelled; cleanup: {report:?}");
-        None
-    }
-};
-if let Some(application) = application {
-    let mut shutdown = application.begin_shutdown(ShutdownMode::Graceful);
-    eprintln!("shutdown: {:?}", shutdown.wait().await);
 }
 ```
 
