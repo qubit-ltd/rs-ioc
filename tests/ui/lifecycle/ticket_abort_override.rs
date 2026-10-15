@@ -7,12 +7,13 @@
 // =============================================================================
 use std::sync::Arc;
 
+use qubit_ioc::CleanupError;
 use qubit_ioc::Managed;
 
 fn main() {
     let _managed = Managed::asynchronous_with_ticket(
         Arc::new(1_u8),
-        |_| Ok::<(), qubit_ioc::CleanupError>(()),
+        |_| Ok::<(), CleanupError>(()),
         |_, ()| Box::pin(async { Ok(()) }),
     )
     .with_graceful_stop(|_| Ok(()));
