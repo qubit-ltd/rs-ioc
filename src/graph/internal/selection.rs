@@ -455,9 +455,9 @@ fn candidates_for<'index>(request: &Dependency, index: &'index BindingIndex) -> 
 
 /// Applies cardinality, primary, and collection ordering to candidates.
 ///
-/// Returns node positions in registration order for `All` cardinality, and a
-/// single position or an empty vector otherwise; the sort key is the binding
-/// order, then the binding id, then the definition source, then the position.
+/// Returns node positions sorted by binding order, binding ID, definition
+/// source, and registration position for `All` cardinality; returns a single
+/// position or an empty vector otherwise.
 ///
 /// # Errors
 ///
