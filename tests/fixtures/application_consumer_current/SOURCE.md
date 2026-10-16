@@ -12,12 +12,12 @@ empty, including after Cargo feature unification.
 | Sibling checkout | Source selection |
 | --- | --- |
 | rs-ioc | Revision under test, local path qubit-ioc and its macros |
-| rs-execution-services | Current-lane CI checkout ref is defined in `downstream-contracts.yml` |
-| rs-event-bus | Both CI lanes pin 563552b58fe5cfa93f0f4f4295e7ca4e70911be1, EventBus 0.20.0 |
-| rs-config | 80d80b0d3c282bcc441b2c1cff1539941f501594 checkout recorded; IoC uses locked registry qubit-config |
-| rs-fs-registry | 8e8940cc295b0e277241c397bea559214a272fb5, direct path and crates.io patch |
-| rs-fs-local | 7f0959f15355d3be97c681f588f0ab23ce8d40d1, path with registry feature |
-| rs-fs | 4bc4d9e430719d56429f65224a112d640af51478, direct path and crates.io patch |
+| rs-execution-services | Current-lane checkout ref is defined in [`downstream-contracts.yml`](../../../.github/workflows/downstream-contracts.yml) |
+| rs-event-bus | Current-lane checkout ref is defined in [`downstream-contracts.yml`](../../../.github/workflows/downstream-contracts.yml); the historical lane has its own pin |
+| rs-config | Current-lane checkout ref is defined in [`downstream-contracts.yml`](../../../.github/workflows/downstream-contracts.yml); IoC uses locked registry qubit-config |
+| rs-fs-registry | Current-lane checkout ref is defined in [`downstream-contracts.yml`](../../../.github/workflows/downstream-contracts.yml); direct path and crates.io patch |
+| rs-fs-local | Current-lane checkout ref is defined in [`downstream-contracts.yml`](../../../.github/workflows/downstream-contracts.yml); path with registry feature |
+| rs-fs | Current-lane checkout ref is defined in [`downstream-contracts.yml`](../../../.github/workflows/downstream-contracts.yml); direct path and crates.io patch |
 
 All sibling checkouts share one parent directory. Path/patch routing keeps Fs and
 FsRegistry identities uniform even for transitive fs-local dependencies. The
@@ -37,8 +37,12 @@ its cause, uses Graceful shutdown after successful business work, and waits for
 Immediate shutdown before returning a business error. Its successful run checks
 the actual `spawn_io` results 43 and 22 and handler message `final-report:22`.
 The rooted provider resolves `file:///report.csv` with `stat` length 22.
-Current path dependencies require qubit-ioc 0.3.0 and qubit-event-bus 0.20.0;
-Fs and FsRegistry use matching direct paths and crates.io patches.
+The current direct dependency constraints are defined by this overlay's
+[`Cargo.toml`](Cargo.toml) and the native consumer manifest at
+`rs-execution-services/tests/fixtures/ioc_application_consumer/Cargo.toml`.
+Fs and FsRegistry use matching direct paths and crates.io patches. The current
+lane's checkout refs come from [`downstream-contracts.yml`](../../../.github/workflows/downstream-contracts.yml);
+the historical lane has its own pin and manifest.
 
 The wrapper registers application_lifecycle_tests (5 tests),
 managed_event_bus_tests (2), resource_integration_tests (2), and
