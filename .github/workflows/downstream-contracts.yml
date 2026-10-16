@@ -101,6 +101,12 @@ jobs:
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
         with:
           toolchain: 1.94.0
+      - name: Test downstream contract documentation checker
+        working-directory: rs-ioc
+        run: python3 -m unittest discover -s .infra/tools/tests -p 'test_check_downstream_contract_docs.py' -v
+      - name: Check downstream contract documentation
+        working-directory: rs-ioc
+        run: python3 .infra/tools/check-downstream-contract-docs.py
       - name: Record exact source revisions
         run: |
           git -C rs-ioc rev-parse HEAD
