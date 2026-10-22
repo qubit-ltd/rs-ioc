@@ -21,7 +21,7 @@ workspace 使用 Rust 2024，要求 Rust 1.94 或更新版本。应用应从 cra
 
 ```toml
 [dependencies]
-qubit-ioc = { version = "0.3", default-features = false, features = ["macros"] }
+qubit-ioc = { version = "0.4", default-features = false, features = ["macros"] }
 ```
 
 `macros` 支持组件声明和配置组。通过 `#[value]` 或 `#[ConfigurationProperties]`

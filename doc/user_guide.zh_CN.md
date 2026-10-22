@@ -32,7 +32,7 @@
 
 ```toml
 [dependencies]
-qubit-ioc = { version = "0.3", default-features = false }
+qubit-ioc = { version = "0.4", default-features = false }
 ```
 
 将下面的代码放到该应用的 `src/main.rs`，然后在应用目录运行 `cargo run`：
@@ -84,7 +84,7 @@ provider 通过自由函数创建值时，可以用 `#[bean]` 为函数生成可
 它使用 Rust 2024、Rust 1.94，只需启用 `macros`：
 
 ```toml
-qubit-ioc = { version = "0.3", default-features = false, features = ["macros"] }
+qubit-ioc = { version = "0.4", default-features = false, features = ["macros"] }
 ```
 
 <!-- guide-rust: id=beans mode=run features=macros -->

@@ -15,7 +15,7 @@
 
 ```toml
 [dependencies]
-qubit-ioc = "0.3"
+qubit-ioc = "0.4"
 ```
 
 默认启用 `macros` 和 `config`。只使用手动运行时时，可在依赖声明中设置 `default-features = false`。Cargo 会合并各依赖路径启用的 feature；只要其他依赖仍启用默认 feature，它们最终就会生效。

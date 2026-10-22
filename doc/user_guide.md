@@ -36,7 +36,7 @@ Add `qubit-ioc` to the application dependencies:
 
 ```toml
 [dependencies]
-qubit-ioc = { version = "0.3", default-features = false }
+qubit-ioc = { version = "0.4", default-features = false }
 ```
 
 Place the following code in `src/main.rs`, then run `cargo run` in that
@@ -91,7 +91,7 @@ example verifies a default marker, a custom marker, and a module containing
 related beans. It uses Rust 2024, Rust 1.94, and only the `macros` feature:
 
 ```toml
-qubit-ioc = { version = "0.3", default-features = false, features = ["macros"] }
+qubit-ioc = { version = "0.4", default-features = false, features = ["macros"] }
 ```
 
 <!-- guide-rust: id=beans mode=run features=macros -->

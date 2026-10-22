@@ -25,7 +25,7 @@ should depend on the runtime facade from crates.io:
 
 ```toml
 [dependencies]
-qubit-ioc = { version = "0.3", default-features = false, features = ["macros"] }
+qubit-ioc = { version = "0.4", default-features = false, features = ["macros"] }
 ```
 
 `macros` enables declarations and configuration groups. Reading configuration

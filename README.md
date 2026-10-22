@@ -20,7 +20,7 @@ Add `qubit-ioc` to your dependencies:
 
 ```toml
 [dependencies]
-qubit-ioc = "0.3"
+qubit-ioc = "0.4"
 ```
 
 The default features are `macros` and `config`. To use only the manual runtime,
@@ -108,7 +108,7 @@ selected service's dependency graph before constructing either component.
 Disable default features to use the manual runtime; see the [`readme_manual` example](examples/readme_manual.rs) for a complete runnable registration path:
 
 ```toml
-qubit-ioc = { version = "0.3", default-features = false }
+qubit-ioc = { version = "0.4", default-features = false }
 ```
 
 The [user guide](doc/user_guide.md) covers roots, profiles, selection rules, errors, and shutdown responsibilities. An independent downstream assembly example is maintained in the [`rs-execution-services` consumer fixture](https://github.com/qubit-ltd/rs-execution-services/blob/main/tests/fixtures/ioc_application_consumer/README.md). From that checkout, run `cargo run --manifest-path tests/fixtures/ioc_application_consumer/Cargo.toml`. This fixture verifies the cross-crate contract; it is not evidence of production adoption.
