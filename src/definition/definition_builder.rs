@@ -86,6 +86,7 @@ impl<T: ?Sized + Send + Sync + 'static> DefinitionBuilder<T> {
     ///
     /// A builder with default options, no declared requests, no construction
     /// source, and no aliases.
+    #[must_use]
     #[inline]
     pub(super) fn new(source: DefinitionSource) -> Self {
         Self {

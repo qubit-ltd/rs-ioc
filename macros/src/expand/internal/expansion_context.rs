@@ -38,9 +38,9 @@ impl ExpansionContext {
     ///
     /// # Errors
     ///
-    /// This constructor is currently infallible and always yields `Ok`; the
-    /// `Result` signature is kept so that a future manifest-derived lookup can
-    /// report a [`syn::Error`] without changing every caller.
+    /// This constructor is currently infallible and always yields `Ok`. Its
+    /// `Result` return type preserves the expansion pipeline's existing error
+    /// propagation interface.
     pub(crate) fn for_runtime(runtime_path: &RuntimePath) -> Result<Self> {
         let runtime = runtime_path.tokens();
         Ok(Self { runtime })

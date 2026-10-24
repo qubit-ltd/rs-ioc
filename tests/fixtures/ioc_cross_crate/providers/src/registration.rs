@@ -20,6 +20,19 @@ use crate::greeting::register_ioc as register_greeting_ioc;
 ///
 /// The list is explicit so the application does not depend on linker retention
 /// of registration-only items.
+///
+/// # Parameters
+///
+/// - `builder`: the application builder that receives each provider registration.
+///
+/// # Returns
+///
+/// Returns `Ok(())` after every provider has been installed.
+///
+/// # Errors
+///
+/// Returns the first `RegistrationError` from a provider installation. Later
+/// providers are not installed after an error.
 pub fn register_ioc(builder: &mut ContainerBuilder) -> Result<(), RegistrationError> {
     builder.install::<MemoryRepository>()?;
     builder.install::<DiskRepository>()?;

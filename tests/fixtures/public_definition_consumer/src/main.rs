@@ -7,6 +7,9 @@
 // =============================================================================
 //! Manual concrete and interface registration without macro or config features.
 
+mod api;
+mod service;
+
 use std::sync::Arc;
 
 use qubit_ioc::BindingOptions;
@@ -14,18 +17,8 @@ use qubit_ioc::ContainerBuilder;
 use qubit_ioc::Definition;
 use qubit_ioc::DefinitionSource;
 
-trait Api: Send + Sync {
-    /// Returns the shared service's value.
-    fn value(&self) -> u32;
-}
-
-struct Service(u32);
-
-impl Api for Service {
-    fn value(&self) -> u32 {
-        self.0
-    }
-}
+use crate::api::Api;
+use crate::service::Service;
 
 /// Builds one public definition and checks both bindings share its allocation.
 fn verify_public_definition() {
@@ -63,12 +56,3 @@ fn main() {
     verify_public_definition();
 }
 
-#[cfg(test)]
-mod tests {
-    use super::verify_public_definition;
-
-    #[test]
-    fn test_public_definition_alias_without_default_features() {
-        verify_public_definition();
-    }
-}

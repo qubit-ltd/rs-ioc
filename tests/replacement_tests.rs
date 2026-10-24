@@ -25,7 +25,9 @@ trait Api: Send + Sync {
     fn value(&self) -> u32;
 }
 
-trait LegacyApi: Send + Sync {}
+trait LegacyApi: Send + Sync {
+    // empty
+}
 
 impl LegacyApi for Service {}
 

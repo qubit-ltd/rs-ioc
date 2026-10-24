@@ -18,9 +18,12 @@ use qubit_ioc::config::deserialize_properties;
 use qubit_ioc::config::get_value;
 use serde::Deserialize;
 
+/// Properties deserialized from the `service` configuration section.
 #[derive(Debug, Deserialize, PartialEq)]
 struct EndpointProperties {
+    /// Host name used by the service endpoint.
     host: String,
+    /// Endpoint value before explicit configuration interpolation.
     endpoint: String,
 }
 

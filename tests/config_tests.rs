@@ -48,7 +48,10 @@ fn test_with_config_shares_one_snapshot_with_factories() {
     let context = application.context();
     let configured = context.get::<Config>().expect("published config");
     let injected = context.get::<Arc<Config>>().expect("injected config");
-    assert!(Arc::ptr_eq(&configured, injected.as_ref()));
+    assert!(
+        Arc::ptr_eq(&configured, injected.as_ref()),
+        "published and injected config should share one snapshot"
+    );
     assert_eq!(get_value::<i32>(&configured, "service.port").expect("read port"), 8080);
 }
 
@@ -62,7 +65,11 @@ fn test_with_config_conflicts_with_explicit_config_registration() {
         .expect("stage duplicate config");
 
     assert!(
-        matches!(builder.build_all(), Err(failure) if matches!(failure.cause(), BuildError::DuplicateBinding { .. }))
+        matches!(
+            builder.build_all(),
+            Err(failure) if matches!(failure.cause(), BuildError::DuplicateBinding { .. })
+        ),
+        "explicit config registration should conflict with staged config"
     );
 }
 
@@ -112,8 +119,13 @@ fn test_get_value_preserves_config_error_and_path() {
     let config = Config::new();
     let error = get_value::<u16>(&config, "service.port").expect_err("missing port");
     let source = error.source().expect("configuration source");
-    assert!(matches!(source.downcast_ref::<ConfigError>(),
-        Some(ConfigError::PropertyNotFound(path)) if path == "service.port"));
+    assert!(
+        matches!(
+            source.downcast_ref::<ConfigError>(),
+            Some(ConfigError::PropertyNotFound(path)) if path == "service.port"
+        ),
+        "missing property should remain the underlying config error"
+    );
 }
 
 #[test]
@@ -125,9 +137,14 @@ fn test_deserialize_properties_rejects_unknown_fields_and_keeps_paths() {
     let error =
         deserialize_properties::<ServiceProperties>(&config, "service").expect_err("unknown field must be rejected");
     let source = error.source().expect("configuration source");
-    assert!(matches!(source.downcast_ref::<ConfigError>(),
-        Some(ConfigError::UnknownProperties { paths })
-            if paths == &["service.extra".to_owned()]));
+    assert!(
+        matches!(
+            source.downcast_ref::<ConfigError>(),
+            Some(ConfigError::UnknownProperties { paths })
+                if paths == &["service.extra".to_owned()]
+        ),
+        "unknown property error should retain its path"
+    );
 }
 
 #[test]
@@ -158,7 +175,13 @@ fn test_missing_config_is_reported_before_factory_runs() {
         Ok(_) => panic!("missing config must fail graph validation"),
         Err(error) => error,
     };
-    assert!(matches!(error.cause(), BuildError::MissingDependency { dependency, .. }
-        if dependency == &Dependency::of::<Config>()));
+    assert!(
+        matches!(
+            error.cause(),
+            BuildError::MissingDependency { dependency, .. }
+                if dependency == &Dependency::of::<Config>()
+        ),
+        "config dependency should fail graph validation before factories run"
+    );
     assert_eq!(runs.load(Ordering::SeqCst), 0);
 }

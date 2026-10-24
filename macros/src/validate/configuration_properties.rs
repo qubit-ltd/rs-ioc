@@ -39,6 +39,11 @@ use crate::parse::missing_option;
 /// * `options` – already validated macro options; the `prefix` entry is
 ///   consumed from it.
 ///
+/// # Returns
+///
+/// The original struct, required prefix, normalized binding options, and
+/// source identity for the expansion stage.
+///
 /// # Errors
 ///
 /// Returns an error when the struct has generic parameters, a `where` clause,

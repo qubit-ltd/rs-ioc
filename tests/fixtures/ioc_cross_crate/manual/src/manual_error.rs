@@ -11,6 +11,21 @@ use qubit_ioc::BuildFailure;
 use qubit_ioc::RegistrationError;
 
 /// Failure during explicit registration or construction.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_ioc_fixture_manual::build_manual;
+/// use qubit_ioc_fixture_manual::ManualError;
+///
+/// if let Err(error) = build_manual() {
+///     match error {
+///         ManualError::Registration(_) => eprintln!("registration failed"),
+///         ManualError::Build(_) => eprintln!("construction failed"),
+///     }
+/// }
+/// ```
+#[must_use]
 #[derive(Debug, thiserror::Error)]
 pub enum ManualError {
     /// The binding declaration is invalid.

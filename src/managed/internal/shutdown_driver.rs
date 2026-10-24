@@ -7,6 +7,9 @@
 // =============================================================================
 //! Persistent, sequential shutdown state machine.
 
+use std::io::Error;
+use std::io::ErrorKind;
+use std::mem;
 use std::panic::AssertUnwindSafe;
 use std::panic::catch_unwind;
 use std::sync::Arc;
@@ -65,6 +68,17 @@ pub(crate) struct ShutdownDriver {
 impl ShutdownDriver {
     /// Takes the journal and publishes shutdown before optionally aborting all.
     /// Immediate mode sends every request before this constructor returns.
+    ///
+    /// # Parameters
+    ///
+    /// * `context` - shared application state retained through shutdown.
+    /// * `cleanup` - journal owning entries in successful construction order.
+    /// * `policy` - per-entry and overall wait budgets.
+    /// * `mode` - originally requested shutdown mode.
+    ///
+    /// # Returns
+    ///
+    /// A driver that owns the entries and any immediate abort observations.
     pub(crate) fn new(
         context: ApplicationContext,
         mut cleanup: CleanupJournal,
@@ -127,6 +141,11 @@ impl ShutdownDriver {
     }
 
     /// Aborts and finalizes without starting or polling any pending wait.
+    ///
+    /// # Returns
+    ///
+    /// The final report, including entries whose termination was not confirmed.
+    #[must_use]
     pub(crate) fn abandon(&mut self) -> ShutdownReport {
         if let Some(report) = &self.report {
             return report.clone();
@@ -148,6 +167,15 @@ impl ShutdownDriver {
     /// Panics from user callbacks and future polls are retained as failures.
     /// The loop only takes an observation it installed itself in the same
     /// iteration, so its internal invariant never fails.
+    ///
+    /// # Parameters
+    ///
+    /// * `context` - task context used to poll waits and deadline futures.
+    ///
+    /// # Returns
+    ///
+    /// `Pending` while shutdown needs more polling, or `Ready` with the final
+    /// report once all entries are finalized.
     pub(crate) fn poll(&mut self, context: &mut Context<'_>) -> Poll<ShutdownReport> {
         if let Some(report) = &self.report {
             return Poll::Ready(report.clone());
@@ -230,8 +258,8 @@ impl ShutdownDriver {
         match catch_unwind(AssertUnwindSafe(|| deadline.as_mut().poll(context))) {
             Ok(Poll::Pending) => Poll::Pending,
             Ok(Poll::Ready(())) => {
-                self.overall_failure = Some(Arc::new(CleanupError::new(std::io::Error::new(
-                    std::io::ErrorKind::TimedOut,
+                self.overall_failure = Some(Arc::new(CleanupError::new(Error::new(
+                    ErrorKind::TimedOut,
                     "overall shutdown deadline expired",
                 ))));
                 Poll::Ready(())
@@ -246,8 +274,8 @@ impl ShutdownDriver {
     /// Aborts all unfinished entries without creating any further wait timer.
     fn expire_overall(&mut self) -> ShutdownReport {
         if self.overall_failure.is_none() {
-            self.overall_failure = Some(Arc::new(CleanupError::new(std::io::Error::new(
-                std::io::ErrorKind::TimedOut,
+            self.overall_failure = Some(Arc::new(CleanupError::new(Error::new(
+                ErrorKind::TimedOut,
                 "overall shutdown deadline expired",
             ))));
         }
@@ -350,10 +378,7 @@ impl ShutdownDriver {
         self.fail(
             index,
             phase,
-            CleanupError::new(std::io::Error::new(
-                std::io::ErrorKind::TimedOut,
-                "component shutdown deadline expired",
-            )),
+            CleanupError::new(Error::new(ErrorKind::TimedOut, "component shutdown deadline expired")),
         );
         self.abort_entry(index);
         if phase == ShutdownPhase::GracefulWait {
@@ -486,9 +511,9 @@ impl ShutdownDriver {
     fn finish(&mut self) -> ShutdownReport {
         let report = ShutdownReport::new(
             self.requested,
-            std::mem::take(&mut self.failures),
+            mem::take(&mut self.failures),
             self.pending(),
-            std::mem::take(&mut self.fallbacks),
+            mem::take(&mut self.fallbacks),
             self.overall_failure.clone(),
         );
         self.context.publish_state(if report.is_complete() {

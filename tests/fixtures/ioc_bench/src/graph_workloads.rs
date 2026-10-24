@@ -58,20 +58,30 @@ fn options(id: String) -> BindingOptions {
 /// Registers `n` distinct u32 bindings and selects the first root.
 /// The forward chain visits `length` nodes; `missing` requests absent node.nN.
 /// Factories only access declared dependencies and return a small Arc value.
-fn chain(n: usize, length: usize, missing: bool, counter: Option<Arc<AtomicUsize>>) -> ContainerBuilder {
+fn chain(
+    n: usize,
+    length: usize,
+    missing: bool,
+    counter: Option<Arc<AtomicUsize>>,
+) -> ContainerBuilder {
     let mut builder = ContainerBuilder::new();
     for index in 0..n {
-        let next = (index + 1 < length || (missing && index + 1 == length)).then(|| format!("node.n{}", index + 1));
+        let next = (index + 1 < length || (missing && index + 1 == length))
+            .then(|| format!("node.n{}", index + 1));
         let dependencies: Vec<_> = next.iter().map(|id| Dependency::with_id::<u32>(id)).collect();
         let calls = counter.clone();
         builder
-            .register_factory_with::<u32, _>(&dependencies, options(format!("node.n{index}")), move |context| {
-                let value = next
-                    .as_deref()
-                    .map_or(1, |id| *context.get_by_id::<u32>(id).expect("declared next node") + 1);
-                constructed(&calls);
-                Ok(Arc::new(value))
-            })
+            .register_factory_with::<u32, _>(
+                &dependencies,
+                options(format!("node.n{index}")),
+                move |context| {
+                    let value = next.as_deref().map_or(1, |id| {
+                        *context.get_by_id::<u32>(id).expect("declared next node") + 1
+                    });
+                    constructed(&calls);
+                    Ok(Arc::new(value))
+                },
+            )
             .expect("register named chain node");
     }
     builder.root_by_id::<u32>("node.n0").expect("valid chain root");
@@ -232,7 +242,10 @@ pub(super) fn run() {
                 construction.push(started.elapsed());
                 drop(result);
             }
-            print_samples(&format!("graph={workload} n={n} phase=registration"), &registration);
+            print_samples(
+                &format!("graph={workload} n={n} phase=registration"),
+                &registration,
+            );
             print_samples(
                 &format!("graph={workload} n={n} phase=validation_construction"),
                 &construction,

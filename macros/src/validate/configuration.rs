@@ -32,6 +32,12 @@ use crate::ir::SourceIr;
 /// * `options` – already validated macro options; only the profile is read, and
 ///   its value was validated upstream by `ValidatedOptions`.
 ///
+/// # Returns
+///
+/// Returns a [`ConfigurationIr`] containing the unchanged module, its default
+/// profile, and the module's source identity for later expansion and
+/// diagnostics.
+///
 /// # Errors
 ///
 /// Returns an error when `item` has no inline body, or when it already declares

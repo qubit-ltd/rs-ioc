@@ -78,9 +78,17 @@ fn test_linked_properties_keep_original_config_error() {
         .build_all()
         .err()
         .expect("missing settings must fail");
-    assert!(matches!(error.cause(), BuildError::ConfigReadFailed { path_key, target, .. }
-        if path_key == "fixture" && target == "Settings"));
-    let source = error.cause().source().expect("factory error").source().expect("config error");
+    assert!(matches!(
+        error.cause(),
+        BuildError::ConfigReadFailed { path_key, target, .. }
+            if path_key == "fixture" && target == "Settings"
+    ));
+    let source = error
+        .cause()
+        .source()
+        .expect("factory error")
+        .source()
+        .expect("config error");
     assert!(source.is::<ConfigError>());
 }
 
@@ -88,5 +96,8 @@ fn test_linked_properties_keep_original_config_error() {
 fn test_uninstalled_cross_crate_root_is_reported() {
     let mut builder = ContainerBuilder::new();
     builder.root::<AppService>();
-    assert!(matches!(builder.build(), Err(failure) if matches!(failure.cause(), BuildError::MissingRoot { .. })));
+    assert!(matches!(
+        builder.build(),
+        Err(failure) if matches!(failure.cause(), BuildError::MissingRoot { .. })
+    ));
 }

@@ -65,9 +65,11 @@ fn selected_key(graph: &ValidatedGraph) -> Option<&BindingKey> {
 fn test_graph_required_zero_one_and_many_candidates() {
     let consumer = || instance("A", A, vec![Dependency::of::<B>()], None, false, 0, None);
     let missing = ValidatedGraph::validate(vec![consumer()], &[]);
-    assert!(
-        matches!(missing, Err(BuildError::MissingDependency { path, .. }) if path == vec![BindingKey::of::<A>(None)])
-    );
+    assert!(matches!(
+        missing,
+        Err(BuildError::MissingDependency { path, .. })
+            if path == vec![BindingKey::of::<A>(None)]
+    ));
 
     let one = ValidatedGraph::validate(vec![consumer(), instance("B", B, vec![], None, false, 0, None)], &[])
         .expect("one candidate resolves");
@@ -81,7 +83,10 @@ fn test_graph_required_zero_one_and_many_candidates() {
         ],
         &[],
     );
-    assert!(matches!(many, Err(BuildError::AmbiguousBinding { candidates, .. }) if candidates.len() == 2));
+    assert!(matches!(
+        many,
+        Err(BuildError::AmbiguousBinding { candidates, .. }) if candidates.len() == 2
+    ));
 }
 
 #[test]
@@ -109,7 +114,10 @@ fn test_graph_primary_selects_unique_and_rejects_multiple_without_request() {
         ],
         &[],
     );
-    assert!(matches!(duplicated, Err(BuildError::MultiplePrimaryBindings { candidates }) if candidates.len() == 2));
+    assert!(matches!(
+        duplicated,
+        Err(BuildError::MultiplePrimaryBindings { candidates }) if candidates.len() == 2
+    ));
 }
 
 #[test]
@@ -281,7 +289,10 @@ fn test_graph_reports_full_missing_path_for_deep_chain() {
         Ok(_) => panic!("missing dependency must fail"),
         Err(error) => error,
     };
-    assert!(matches!(error, BuildError::MissingDependency { path, .. } if path.len() == NODE_COUNT));
+    assert!(matches!(
+        error,
+        BuildError::MissingDependency { path, .. } if path.len() == NODE_COUNT
+    ));
 }
 
 #[test]
@@ -333,7 +344,12 @@ fn test_graph_cycle_and_dependency_first_stable_topology() {
     assert!(matches!(
         cycle,
         Err(BuildError::DependencyCycle { path })
-            if path == vec![BindingKey::of::<A>(None), BindingKey::of::<B>(None), BindingKey::of::<A>(None)]
+            if path
+                == vec![
+                    BindingKey::of::<A>(None),
+                    BindingKey::of::<B>(None),
+                    BindingKey::of::<A>(None),
+                ]
     ));
 }
 
@@ -478,7 +494,10 @@ fn test_graph_missing_alias_target_is_structured() {
     let result = ValidatedGraph::validate(vec![definition], &[]);
     assert!(matches!(result, Err(BuildError::MissingAliasTarget {
         alias: actual_alias, target: actual_target, definition, path,
-    }) if actual_alias == alias && actual_target == target && definition.item == "A" && path == vec![alias]));
+    }) if actual_alias == alias
+        && actual_target == target
+        && definition.item == "A"
+        && path == vec![alias]));
 }
 
 #[test]
@@ -498,7 +517,10 @@ fn test_all_active_reports_missing_alias_outside_root_closure() {
         Some(&root),
         ValidationScope::AllActive,
     );
-    assert!(matches!(result, Err(BuildError::MissingAliasTarget { definition, .. }) if definition.item == "unused"));
+    assert!(matches!(
+        result,
+        Err(BuildError::MissingAliasTarget { definition, .. }) if definition.item == "unused"
+    ));
 }
 
 #[test]
@@ -536,9 +558,11 @@ fn test_graph_root_exact_duplicates_are_ambiguous_in_registration_order() {
     ];
     let key = BindingKey::of::<B>(Some(BindingId::parse("exact").expect("valid ID")));
     let result = ValidatedGraph::validate_roots(definitions, &[], Some(&[Dependency::with_id::<B>("exact")]));
-    assert!(
-        matches!(result, Err(BuildError::AmbiguousRoot { candidates, .. }) if candidates == vec![key.clone(), key])
-    );
+    assert!(matches!(
+        result,
+        Err(BuildError::AmbiguousRoot { candidates, .. })
+            if candidates == vec![key.clone(), key]
+    ));
 }
 
 #[test]
@@ -591,7 +615,10 @@ fn test_graph_missing_root_candidates_keep_registration_order() {
         &[],
         Some(&[Dependency::with_id::<B>("missing")]),
     );
-    assert!(matches!(result, Err(BuildError::MissingRoot { available, .. }) if available == vec![z, unnamed, a]));
+    assert!(matches!(
+        result,
+        Err(BuildError::MissingRoot { available, .. }) if available == vec![z, unnamed, a]
+    ));
 }
 
 #[test]

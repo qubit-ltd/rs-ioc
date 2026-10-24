@@ -186,7 +186,9 @@ impl DiagnosticPaths {
                 .expect("selected binding must have a diagnostic origin")
             {
                 PathOrigin::Root => break,
-                PathOrigin::Dependency(parent) | PathOrigin::DefinitionMember(parent) => current = parent,
+                PathOrigin::Dependency(parent) | PathOrigin::DefinitionMember(parent) => {
+                    current = parent;
+                }
             }
         }
         path.reverse();

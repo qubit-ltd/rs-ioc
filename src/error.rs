@@ -17,6 +17,8 @@ mod build_error;
 // Owns `BuildFailure`, the immediate construction failure that also owns the
 // deferred rollback handle.
 mod build_failure;
+// Owns the single-use build-session error returned after a build attempt.
+mod build_session_error;
 // Owns `FactoryError`, wrapping a user factory failure or a configuration read
 // failure.
 mod factory_error;
@@ -35,11 +37,9 @@ mod settled_build_failure;
 pub use build_access_error::BuildAccessError;
 pub use build_error::BuildError;
 pub use build_failure::BuildFailure;
+pub use build_session_error::BuildSessionError;
 pub use factory_error::FactoryError;
 pub use invalid_binding_id::InvalidBindingId;
 pub use registration_error::RegistrationError;
 pub use resolve_error::ResolveError;
 pub use settled_build_failure::SettledBuildFailure;
-
-mod build_session_error;
-pub use build_session_error::BuildSessionError;

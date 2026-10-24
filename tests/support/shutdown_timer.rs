@@ -20,6 +20,7 @@ use std::time::Duration;
 
 use qubit_ioc::WaitPolicy;
 
+/// A manually triggered future used to control shutdown timing in tests.
 #[derive(Clone, Default)]
 pub struct Gate {
     state: Arc<GateState>,
@@ -59,6 +60,7 @@ impl Future for Gate {
     }
 }
 
+/// Records shutdown timer requests and lets tests trigger each deadline.
 #[derive(Clone, Default)]
 pub struct Timers {
     calls: Arc<Mutex<Vec<TimerCall>>>,

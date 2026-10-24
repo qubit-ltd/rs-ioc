@@ -289,7 +289,6 @@ fn classify_dependency(ty: &Type) -> Result<(DependencyKind, Type)> {
 /// `<T as Trait>::Output`, when the path is not an accepted spelling, when the
 /// last segment is not generic, when there is not exactly one argument, or when
 /// that argument is not a type.
-#[must_use]
 #[inline]
 pub(super) fn single_generic<'a>(ty: &'a Type, name: &str) -> Option<&'a Type> {
     let Type::Path(path) = ty else { return None };

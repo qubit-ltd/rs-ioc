@@ -77,11 +77,17 @@ impl BuildSession {
     /// # Errors
     /// Returns [`BuildSessionError::Build`] for validation or factory failures,
     /// `Cancelled` after cancellation, and `AlreadyFinished` after any result.
+    ///
+    /// # Returns
+    /// Returns the constructed application on success, or the failure that
+    /// stopped construction.
     pub async fn run(&mut self) -> Result<Application, BuildSessionError> {
         match self.state {
             SessionState::Ready => {}
             SessionState::Cancelled => return Err(BuildSessionError::Cancelled),
-            SessionState::Running | SessionState::Finished => return Err(BuildSessionError::AlreadyFinished),
+            SessionState::Running | SessionState::Finished => {
+                return Err(BuildSessionError::AlreadyFinished);
+            }
         }
         self.state = SessionState::Running;
         let mut guard = RunGuard {
@@ -114,6 +120,10 @@ impl BuildSession {
     /// failure report. Returns `None` unless this session still owns cleanup.
     /// Cancelling this wait preserves its future and deadline for the next
     /// call; completed calls return the same final report.
+    ///
+    /// # Returns
+    /// Returns `Some` with the final cleanup report while this session owns
+    /// the cleanup handle, or `None` when it does not.
     pub async fn wait_cancelled_cleanup(&mut self) -> Option<ShutdownReport> {
         let handle = self.cleanup.as_mut()?;
         Some(match handle.wait().await {
@@ -124,6 +134,10 @@ impl BuildSession {
 
     /// Transfers cancelled cleanup ownership at most once. Returns `None`
     /// before cancellation, without managed resources, or after transfer.
+    ///
+    /// # Returns
+    /// Returns the cleanup handle when this call takes ownership, or `None`
+    /// when no transferable handle remains.
     #[inline]
     pub fn take_cancelled_cleanup(&mut self) -> Option<ShutdownHandle> {
         self.cleanup.take()

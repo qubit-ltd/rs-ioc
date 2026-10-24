@@ -163,6 +163,11 @@ pub(in crate::builder) fn valid_profile(profile: &str) -> bool {
 /// [`RegistrationError::DuplicateDependency`] for the first request that
 /// repeats an earlier one; both carry the clone of the offending request plus
 /// `definition`.
+///
+/// # Returns
+///
+/// Returns `Ok(())` when every dependency has a valid ID and no dependency is
+/// repeated.
 // Keep the public RegistrationError's source and request fields intact.
 #[allow(clippy::result_large_err)]
 pub(crate) fn validate_dependencies(

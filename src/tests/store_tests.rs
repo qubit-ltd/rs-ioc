@@ -46,7 +46,6 @@ const SOURCE: DefinitionSource = DefinitionSource::new("qubit-ioc", "store_tests
 
 /// Projects `value` through an alias binding, returning `None` for a binding
 /// that is not an alias.
-#[must_use]
 fn project_alias(binding: &PendingBinding, value: &ErasedInstance) -> Option<ErasedInstance> {
     match &binding.kind {
         PendingBindingKind::Alias { project, .. } => project(value),
@@ -208,7 +207,10 @@ fn test_definition_empty_binding_list_rejected() {
     let error = definition
         .stage_into(&mut staged)
         .expect_err("empty definition must be rejected");
-    assert!(matches!(error, RegistrationError::EmptyDefinition { definition } if definition == SOURCE));
+    assert!(matches!(
+        error,
+        RegistrationError::EmptyDefinition { definition } if definition == SOURCE
+    ));
     assert!(staged.is_empty(), "an empty definition must not enter the staging area");
 }
 
@@ -267,12 +269,18 @@ fn test_definition_alias_target_must_match_concrete_key() {
     let error = definition
         .stage_into(&mut staged)
         .expect_err("alias target must be concrete key");
-    assert!(matches!(error, RegistrationError::InvalidAliasTarget {
-        alias,
-        target,
-        expected,
-        definition,
-    } if alias == alias_key && target == foreign_key && expected == concrete_key && definition == SOURCE));
+    assert!(matches!(
+        error,
+        RegistrationError::InvalidAliasTarget {
+            alias,
+            target,
+            expected,
+            definition,
+        } if alias == alias_key
+            && target == foreign_key
+            && expected == concrete_key
+            && definition == SOURCE
+    ));
     assert!(
         staged.is_empty(),
         "an alias targeting a foreign key must not enter the staging area"

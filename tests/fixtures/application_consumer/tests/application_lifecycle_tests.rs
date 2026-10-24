@@ -80,26 +80,35 @@ fn test_async_build_failure_stops_managed_execution_services_once() {
             .register_managed_factory::<ExecutionServices, _>(&[], move |_| {
                 let stop_count = Arc::clone(&stop_count);
                 let wait_count = Arc::clone(&wait_count);
-                Ok(Managed::asynchronous(Arc::clone(&managed_services), move |services| {
-                    stop_count.fetch_add(1, Ordering::SeqCst);
-                    let _stop_report = services.stop();
-                    Ok(())
-                }, move |services| {
-                    wait_count.fetch_add(1, Ordering::SeqCst);
-                    Box::pin(async move {
-                        services.await_termination().await;
+                Ok(Managed::asynchronous(
+                    Arc::clone(&managed_services),
+                    move |services| {
+                        stop_count.fetch_add(1, Ordering::SeqCst);
+                        let _stop_report = services.stop();
                         Ok(())
-                    })
-                }))
+                    },
+                    move |services| {
+                        wait_count.fetch_add(1, Ordering::SeqCst);
+                        Box::pin(async move {
+                            services.await_termination().await;
+                            Ok(())
+                        })
+                    },
+                ))
             })
             .expect("register managed execution services");
         let expected_services = Arc::clone(&services);
         builder
-            .register_factory::<u8, _>(&[Dependency::of::<ExecutionServices>()], move |context| {
-                let resolved = context.get::<ExecutionServices>().map_err(FactoryError::new)?;
-                assert!(Arc::ptr_eq(&resolved, &expected_services));
-                Err(FactoryError::new(io::Error::other("expected downstream failure")))
-            })
+            .register_factory::<u8, _>(
+                &[Dependency::of::<ExecutionServices>()],
+                move |context| {
+                    let resolved = context
+                        .get::<ExecutionServices>()
+                        .map_err(FactoryError::new)?;
+                    assert!(Arc::ptr_eq(&resolved, &expected_services));
+                    Err(FactoryError::new(io::Error::other("expected downstream failure")))
+                },
+            )
             .expect("register dependent failing factory");
         builder.root::<u8>();
 
@@ -144,29 +153,38 @@ fn test_cancelling_async_build_stops_managed_execution_services_once() {
             .register_managed_factory::<ExecutionServices, _>(&[], move |_| {
                 let stop_count = Arc::clone(&stop_count);
                 let wait_count = Arc::clone(&wait_count);
-                Ok(Managed::asynchronous(Arc::clone(&managed_services), move |services| {
-                    stop_count.fetch_add(1, Ordering::SeqCst);
-                    let _stop_report = services.stop();
-                    Ok(())
-                }, move |services| {
-                    wait_count.fetch_add(1, Ordering::SeqCst);
-                    Box::pin(async move {
-                        services.await_termination().await;
+                Ok(Managed::asynchronous(
+                    Arc::clone(&managed_services),
+                    move |services| {
+                        stop_count.fetch_add(1, Ordering::SeqCst);
+                        let _stop_report = services.stop();
                         Ok(())
-                    })
-                }))
+                    },
+                    move |services| {
+                        wait_count.fetch_add(1, Ordering::SeqCst);
+                        Box::pin(async move {
+                            services.await_termination().await;
+                            Ok(())
+                        })
+                    },
+                ))
             })
             .expect("register managed execution services");
         builder
-            .register_async_factory::<u8, _>(&[Dependency::of::<ExecutionServices>()], move |context| {
-                let dependency = context.get::<ExecutionServices>();
-                Box::pin(async move {
-                    let _services = dependency.map_err(FactoryError::new)?;
-                    factory_started_tx.send(()).expect("test receiver should be alive");
-                    pending::<()>().await;
-                    Ok(Arc::new(1))
-                })
-            })
+            .register_async_factory::<u8, _>(
+                &[Dependency::of::<ExecutionServices>()],
+                move |context| {
+                    let dependency = context.get::<ExecutionServices>();
+                    Box::pin(async move {
+                        let _services = dependency.map_err(FactoryError::new)?;
+                        factory_started_tx
+                            .send(())
+                            .expect("test receiver should be alive");
+                        pending::<()>().await;
+                        Ok(Arc::new(1))
+                    })
+                },
+            )
             .expect("register pending async factory");
         builder.root::<u8>();
 
@@ -205,7 +223,9 @@ fn test_build_failure_stops_an_already_created_managed_resource() {
         })
         .expect("register managed resource");
     builder
-        .register_factory::<u16, _>(&[], |_| Err(FactoryError::new(io::Error::other("expected failure"))))
+        .register_factory::<u16, _>(&[], |_| {
+            Err(FactoryError::new(io::Error::other("expected failure")))
+        })
         .expect("register failing factory");
     builder.root::<u16>();
     builder.root::<u8>();

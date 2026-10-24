@@ -44,6 +44,7 @@ use crate::validate;
 /// `compile_error!` token stream carrying the message of the first failing
 /// stage, which the compiler surfaces as one error instead of aborting the
 /// compilation of unrelated crates.
+#[must_use]
 pub(crate) fn expand_entry(kind: MacroKind, attribute: TokenStream, item: TokenStream) -> TokenStream {
     let result = parse::parse(kind, attribute.into(), item.into()).and_then(|raw| {
         let runtime = RuntimePath::resolve()?;

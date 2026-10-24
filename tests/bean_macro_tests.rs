@@ -142,7 +142,10 @@ fn test_bean_keeps_plain_functions_callable_and_supports_all_output_shapes() {
     builder
         .install::<AsyncFallibleSharedValueBean>()
         .expect("install async fallible shared factory");
-    assert!(matches!(builder.build_all(), Err(failure) if matches!(failure.cause(), BuildError::AsyncRequired { .. })));
+    assert!(matches!(
+        builder.build_all(),
+        Err(failure) if matches!(failure.cause(), BuildError::AsyncRequired { .. })
+    ));
 
     let mut builder = ContainerBuilder::new();
     builder.install::<BareValueBean>().expect("install bare factory");

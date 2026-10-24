@@ -132,9 +132,8 @@ impl ShutdownReport {
         &self.fallbacks
     }
 
-    /// Returns an overall deadline failure, if the total shutdown budget
-    /// expired or its timer failed.
-    #[must_use]
+    /// Returns a failure from creating, polling, or expiring the overall
+    /// deadline timer.
     #[inline]
     pub fn overall_failure(&self) -> Option<&CleanupError> {
         self.overall_failure.as_deref()

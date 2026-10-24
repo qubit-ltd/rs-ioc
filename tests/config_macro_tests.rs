@@ -129,9 +129,11 @@ fn test_configuration_properties_rejects_unknown_field_with_config_source() {
         .expect("factory wrapper")
         .source()
         .expect("config source");
-    assert!(matches!(source.downcast_ref::<ConfigError>(),
+    assert!(matches!(
+        source.downcast_ref::<ConfigError>(),
         Some(ConfigError::UnknownProperties { paths })
-            if paths == &["service.extra".to_owned()]));
+            if paths == &["service.extra".to_owned()]
+    ));
 }
 
 #[test]
@@ -152,8 +154,11 @@ fn test_configuration_properties_missing_config_prevents_all_factories() {
         .build_all()
         .err()
         .expect("missing config must fail graph validation");
-    assert!(matches!(error.cause(), BuildError::MissingDependency { dependency, .. }
-        if dependency == &Dependency::of::<Config>()));
+    assert!(matches!(
+        error.cause(),
+        BuildError::MissingDependency { dependency, .. }
+            if dependency == &Dependency::of::<Config>()
+    ));
     assert_eq!(RUNS.load(Ordering::SeqCst), 0);
 }
 
@@ -201,8 +206,10 @@ fn test_value_missing_path_reports_target_and_original_config_error() {
         .expect("factory wrapper")
         .source()
         .expect("config source");
-    assert!(matches!(source.downcast_ref::<ConfigError>(),
-        Some(ConfigError::PropertyNotFound(path)) if path == "service.port"));
+    assert!(matches!(
+        source.downcast_ref::<ConfigError>(),
+        Some(ConfigError::PropertyNotFound(path)) if path == "service.port"
+    ));
 }
 
 #[test]
@@ -214,10 +221,11 @@ fn test_bean_value_missing_path_reports_parameter_name() {
         .expect("register empty snapshot");
     builder.install::<ValueBeanBean>().expect("install bean");
     let error = builder.build_all().err().expect("missing parameter must fail");
-    assert!(
-        matches!(error.cause(), BuildError::ConfigReadFailed { path_key, target, .. }
-        if path_key == "service.port" && target == "port")
-    );
+    assert!(matches!(
+        error.cause(),
+        BuildError::ConfigReadFailed { path_key, target, .. }
+            if path_key == "service.port" && target == "port"
+    ));
 }
 
 #[test]

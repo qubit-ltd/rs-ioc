@@ -67,7 +67,6 @@ impl SettledBuildFailure {
 
     /// Returns `Some` for an awaited rollback and `None` when no managed
     /// cleanup was owned by the failed build.
-    #[must_use]
     #[inline]
     pub fn cleanup_report(&self) -> Option<&ShutdownReport> {
         self.cleanup_report.as_ref()

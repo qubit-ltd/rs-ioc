@@ -67,6 +67,19 @@ impl ApplicationContext {
         }
     }
 
+    /// Publishes a lifecycle transition to all query clones.
+    ///
+    /// Only the application owner calls this after construction, so query
+    /// clones observe the transition without any locking.
+    ///
+    /// # Parameters
+    ///
+    /// `state` is the lifecycle transition to publish to every clone sharing
+    /// this context; it is stored with release ordering.
+    pub(crate) fn publish_state(&self, state: ApplicationState) {
+        self.inner.state.store(state as u8, Ordering::Release);
+    }
+
     /// Returns the latest lifecycle state published by the unique owner.
     ///
     /// The value is loaded with acquire ordering, so a clone that observes a
@@ -221,19 +234,6 @@ impl ApplicationContext {
             .iter()
             .map(|&index| self.read::<T>(&self.inner.bindings[index].key))
             .collect()
-    }
-
-    /// Publishes a lifecycle transition to all query clones.
-    ///
-    /// Only the application owner calls this after construction, so query
-    /// clones observe the transition without any locking.
-    ///
-    /// # Parameters
-    ///
-    /// `state` is the lifecycle transition to publish to every clone sharing
-    /// this context; it is stored with release ordering.
-    pub(crate) fn publish_state(&self, state: ApplicationState) {
-        self.inner.state.store(state as u8, Ordering::Release);
     }
 
     /// Resolves one named or unnamed query from candidates already in this

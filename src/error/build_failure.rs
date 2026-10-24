@@ -71,6 +71,7 @@ impl BuildFailure {
     /// # Returns
     ///
     /// Returns a shared reference to the boxed [`BuildError`].
+    #[must_use = "inspect the original build error"]
     #[inline]
     pub fn cause(&self) -> &BuildError {
         &self.cause
@@ -116,6 +117,11 @@ impl BuildFailure {
     /// this failure owns no cleanup handle. Cancelling the returned future
     /// leaves the handle and its active wait in this failure for a later call.
     /// Repeated calls after completion return the same final observations.
+    ///
+    /// # Returns
+    ///
+    /// Returns the final cleanup report when this failure owns a cleanup
+    /// handle, or `None` otherwise.
     pub async fn wait_cleanup(&mut self) -> Option<ShutdownReport> {
         let handle = self
             .cleanup
@@ -136,7 +142,10 @@ impl BuildFailure {
     /// waiting, already requested aborts remain in effect, but rollback wait
     /// completion is not guaranteed. Use [`Self::wait_cleanup`] when the caller
     /// needs to retain the failure and resume a cancelled wait.
-    #[must_use = "inspect the build cause and optional cleanup report"]
+    ///
+    /// # Returns
+    ///
+    /// Returns the original build cause and the final cleanup report, if any.
     pub async fn settle(mut self) -> SettledBuildFailure {
         let cleanup_report = self.wait_cleanup().await;
         let (cause, _completed_cleanup) = self.into_parts();

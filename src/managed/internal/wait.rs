@@ -57,8 +57,20 @@ pub(in crate::managed) fn start_wait(wait: ErasedWait) -> Result<CleanupFuture, 
 }
 
 /// Polls one retained component future behind the shared unwind boundary.
-/// Returns its Pending/Ready state, translating polling panics into Wait
-/// errors.
+///
+/// # Parameters
+///
+/// * `future` - Retained wait future whose state is being advanced.
+/// * `context` - Task context used by the future to register wakeups.
+///
+/// # Returns
+///
+/// `Pending` while the wait is incomplete, or `Ready(Ok(()))` when it finishes.
+/// A panic during polling becomes `Ready(Err(_))`.
+///
+/// # Errors
+///
+/// Returns a cleanup error containing the panic payload when polling unwinds.
 pub(in crate::managed) fn poll_wait_once(
     future: &mut CleanupFuture,
     context: &mut Context<'_>,

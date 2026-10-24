@@ -37,24 +37,33 @@ fn test_context_is_send_sync_and_shared_queries_keep_one_instance() {
     assert_send_sync::<ApplicationContext>();
 
     let mut builder = ContainerBuilder::new();
-    builder.register_instance(Arc::new(String::from("shared"))).unwrap();
-    let application = builder.build_all().unwrap();
+    builder
+        .register_instance(Arc::new(String::from("shared")))
+        .expect("shared service registration succeeds");
+    let application = builder.build_all().expect("application builds with the shared service");
     let context = application.context().clone();
-    let expected = context.get::<String>().unwrap();
+    let expected = context
+        .get::<String>()
+        .expect("shared service is available in the application context");
 
     std::thread::scope(|scope| {
         for _ in 0..4 {
             let context = context.clone();
             let expected = Arc::clone(&expected);
             scope.spawn(move || {
-                let actual = context.get::<String>().unwrap();
-                assert!(Arc::ptr_eq(&actual, &expected));
+                let actual = context
+                    .get::<String>()
+                    .expect("shared service remains available on each thread");
+                assert!(
+                    Arc::ptr_eq(&actual, &expected),
+                    "all context queries return the same shared service instance"
+                );
             });
         }
     });
 
     drop(expected);
-    run_ready(application.begin_shutdown(ShutdownMode::Immediate).wait()).unwrap();
+    run_ready(application.begin_shutdown(ShutdownMode::Immediate).wait()).expect("application shuts down successfully");
 }
 
 /// Confirms stop callbacks need to be `Send` but do not need to be `Sync`.
@@ -70,14 +79,25 @@ fn test_managed_send_callback_can_capture_non_sync_state() {
                 Ok(())
             }))
         })
-        .unwrap();
+        .expect("managed service registration succeeds");
 
-    let application = builder.build_all().unwrap();
+    let application = builder
+        .build_all()
+        .expect("application builds with the managed service");
 
     let context = application.context().clone();
     let shared = context.clone();
     std::thread::scope(|scope| {
-        scope.spawn(move || assert_eq!(shared.get::<String>().unwrap().as_str(), "managed"));
+        scope.spawn(move || {
+            assert_eq!(
+                shared
+                    .get::<String>()
+                    .expect("managed service remains available on another thread")
+                    .as_str(),
+                "managed",
+                "the shared context returns the managed service"
+            );
+        });
     });
-    run_ready(application.begin_shutdown(ShutdownMode::Immediate).wait()).unwrap();
+    run_ready(application.begin_shutdown(ShutdownMode::Immediate).wait()).expect("application shuts down successfully");
 }

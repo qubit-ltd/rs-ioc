@@ -29,6 +29,7 @@ use crate::ir::DependencyKind;
 /// `Dependency::of`. Every `Value` dependency of a component field or a bean
 /// parameter collapses onto this single request; the generated `register` body
 /// removes duplicates before building the definition.
+#[must_use]
 pub(super) fn config_request(runtime: &TokenStream) -> TokenStream {
     quote!(#runtime::Dependency::of::<#runtime::__private::codegen_v1::Config>())
 }
@@ -65,6 +66,7 @@ pub(super) fn config_request(runtime: &TokenStream) -> TokenStream {
 /// (`macros/src/expand/bean.rs` and `macros/src/expand/component.rs`) invokes
 /// this function from inside a `DependencyKind::Value` branch, so the panic can
 /// only be reached by a future caller that skips that guard.
+#[must_use]
 pub(super) fn read_value(
     dependency: &DependencyIr,
     target: &Ident,

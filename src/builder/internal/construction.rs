@@ -254,6 +254,59 @@ impl Construction {
         Ok(())
     }
 
+    /// Transfers partial storage and the journal into an Immediate rollback
+    /// owner, requesting every abort before returning without starting waits.
+    ///
+    /// A build that failed before any managed component was constructed owns
+    /// nothing to roll back, so the failure is returned without a handle.
+    ///
+    /// # Parameters
+    ///
+    /// `cause` is the failure that stopped construction; it is preserved as the
+    /// cause of the returned failure.
+    ///
+    /// # Returns
+    ///
+    /// A [`BuildFailure`] that owns an immediate [`ShutdownHandle`] aborting
+    /// the already constructed managed components, or a handle-free failure
+    /// when the cleanup journal is empty.
+    pub(crate) fn cleanup_and_wrap(self, cause: BuildError) -> BuildFailure {
+        BuildFailure::new(cause, self.into_cleanup())
+    }
+
+    /// Transfers completed managed resources into an Immediate handle and
+    /// requests abort synchronously. Returns `None` when no resource completed.
+    pub(crate) fn into_cleanup(self) -> Option<ShutdownHandle> {
+        if self.cleanup.is_empty() {
+            return None;
+        }
+        Some(ShutdownHandle::new(
+            ApplicationContext::new(self.store, self.bindings),
+            self.cleanup,
+            self.policy,
+            ShutdownMode::Immediate,
+        ))
+    }
+
+    /// Hands the completed store, lookup metadata, and journal to the new
+    /// owner, leaving this constructor empty.
+    ///
+    /// The journal is moved out rather than copied, so the new owner is the
+    /// only holder of the cleanup actions and this constructor can be dropped
+    /// without running anything.
+    ///
+    /// # Returns
+    ///
+    /// The [`Application`] that owns the private store, the lookup metadata,
+    /// the cleanup journal, and the validated lifecycle policy.
+    pub(crate) fn finish(mut self) -> Application {
+        Application::new(
+            ApplicationContext::new(self.store, self.bindings),
+            std::mem::take(&mut self.cleanup),
+            self.policy,
+        )
+    }
+
     /// Builds one product for every binding kind that needs no `await`.
     ///
     /// Both execution paths share this dispatch so the ordering, insertion, and
@@ -294,40 +347,6 @@ impl Construction {
                 Err(Self::async_required(key, source))
             }
         }
-    }
-
-    /// Transfers partial storage and the journal into an Immediate rollback
-    /// owner, requesting every abort before returning without starting waits.
-    ///
-    /// A build that failed before any managed component was constructed owns
-    /// nothing to roll back, so the failure is returned without a handle.
-    ///
-    /// # Parameters
-    ///
-    /// `cause` is the failure that stopped construction; it is preserved as the
-    /// cause of the returned failure.
-    ///
-    /// # Returns
-    ///
-    /// A [`BuildFailure`] that owns an immediate [`ShutdownHandle`] aborting
-    /// the already constructed managed components, or a handle-free failure
-    /// when the cleanup journal is empty.
-    pub(crate) fn cleanup_and_wrap(self, cause: BuildError) -> BuildFailure {
-        BuildFailure::new(cause, self.into_cleanup())
-    }
-
-    /// Transfers completed managed resources into an Immediate handle and
-    /// requests abort synchronously. Returns `None` when no resource completed.
-    pub(crate) fn into_cleanup(self) -> Option<ShutdownHandle> {
-        if self.cleanup.is_empty() {
-            return None;
-        }
-        Some(ShutdownHandle::new(
-            ApplicationContext::new(self.store, self.bindings),
-            self.cleanup,
-            self.policy,
-            ShutdownMode::Immediate,
-        ))
     }
 
     /// Takes the one-shot action for a graph location without changing its
@@ -580,24 +599,5 @@ impl Construction {
             path,
             error,
         }
-    }
-
-    /// Hands the completed store, lookup metadata, and journal to the new
-    /// owner, leaving this constructor empty.
-    ///
-    /// The journal is moved out rather than copied, so the new owner is the
-    /// only holder of the cleanup actions and this constructor can be dropped
-    /// without running anything.
-    ///
-    /// # Returns
-    ///
-    /// The [`Application`] that owns the private store, the lookup metadata,
-    /// the cleanup journal, and the validated lifecycle policy.
-    pub(crate) fn finish(mut self) -> Application {
-        Application::new(
-            ApplicationContext::new(self.store, self.bindings),
-            std::mem::take(&mut self.cleanup),
-            self.policy,
-        )
     }
 }

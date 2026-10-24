@@ -9,7 +9,25 @@
 
 use crate::error::BuildFailure;
 
-/// A construction failure or an attempt to reuse a consumed session.
+/// Reports a failed asynchronous build session while preserving its outcome.
+///
+/// A session can produce the original construction failure, be cancelled
+/// before completion, or reject a later attempt to poll it after it has
+/// finished. The error does not restart the build or take ownership away from
+/// the original failure.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_ioc::BuildError;
+/// use qubit_ioc::BuildFailure;
+/// use qubit_ioc::BuildSessionError;
+///
+/// let error = BuildSessionError::from(BuildFailure::from(
+///     BuildError::NoRootsSelected,
+/// ));
+/// assert!(matches!(error, BuildSessionError::Build(_)));
+/// ```
 // The public variant preserves BuildFailure and its unique cleanup owner by value.
 #[allow(clippy::large_enum_variant)]
 #[must_use]

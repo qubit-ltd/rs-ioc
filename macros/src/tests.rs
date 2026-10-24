@@ -8,7 +8,6 @@
 //! Proc-macro parsing and validation unit tests.
 
 mod condition_tests;
+mod internal;
 mod parse_tests;
 mod public_definition_tests;
-// Verifies how the runtime dependency path resolves `Managed<T>` fields.
-mod runtime_path_tests;

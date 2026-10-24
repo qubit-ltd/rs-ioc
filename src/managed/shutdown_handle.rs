@@ -135,6 +135,7 @@ impl ShutdownHandle {
     /// Entries still unconfirmed in a final failed report remain in this
     /// snapshot.
     #[must_use]
+    #[inline]
     pub fn pending(&self) -> Vec<BindingKey> {
         self.driver.pending()
     }

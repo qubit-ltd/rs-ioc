@@ -12,7 +12,11 @@ use crate::key::BindingKey;
 use crate::managed::CleanupAction;
 use crate::options::DefinitionSource;
 
-/// Lifecycle action paired with the public binding metadata used in errors.
+/// Stores one binding's cleanup actions and shutdown progress.
+///
+/// The journal creates an entry after its component is constructed, then
+/// transfers ownership to the shutdown driver. The binding key and definition
+/// source identify the component in diagnostics while its actions are consumed.
 pub(crate) struct CleanupEntry {
     /// Exact binding key used to identify this component in errors.
     pub(crate) key: BindingKey,
@@ -20,6 +24,6 @@ pub(crate) struct CleanupEntry {
     pub(crate) definition: DefinitionSource,
     /// One-shot cleanup callbacks associated with the binding.
     pub(crate) action: CleanupAction,
-    /// Progress retained by the unique lifecycle owner.
+    /// Shutdown progress retained across cancellation of wait operations.
     pub(super) state: EntryState,
 }

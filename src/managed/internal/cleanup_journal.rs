@@ -16,7 +16,12 @@ use crate::managed::CleanupAction;
 use crate::managed::CleanupEntry;
 use crate::options::DefinitionSource;
 
-/// Tracks successfully constructed managed components until publication.
+/// Owns cleanup callbacks for managed components until shutdown ownership is
+/// published.
+///
+/// Entries retain construction order so cancellation can invoke stop callbacks
+/// in reverse order. Dropping an armed journal runs remaining stop callbacks
+/// without awaiting; transferring entries disarms this fallback cleanup.
 pub(crate) struct CleanupJournal {
     /// Successfully constructed managed values in construction order.
     pub(in crate::managed) entries: Vec<CleanupEntry>,
@@ -37,17 +42,17 @@ impl Default for CleanupJournal {
 }
 
 impl CleanupJournal {
+    /// Returns whether construction has produced no managed cleanup entries.
+    #[must_use]
+    #[inline]
+    pub(crate) fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
     /// Disables build-cancellation cleanup after ownership moves to a context.
     #[inline]
     pub(crate) fn disarm_abort(&mut self) {
         self.abort_on_drop = false;
-    }
-
-    /// Transfers all entries to the unique shutdown driver and disarms Drop.
-    #[must_use]
-    pub(crate) fn take_entries(&mut self) -> Vec<CleanupEntry> {
-        self.disarm_abort();
-        std::mem::take(&mut self.entries)
     }
 
     /// Adds one constructed component's cleanup actions in construction order.
@@ -60,14 +65,19 @@ impl CleanupJournal {
         });
     }
 
-    /// Returns whether construction has produced no managed cleanup entries.
+    /// Transfers all entries to the unique shutdown driver and disarms Drop.
     #[must_use]
-    #[inline]
-    pub(crate) fn is_empty(&self) -> bool {
-        self.entries.is_empty()
+    pub(crate) fn take_entries(&mut self) -> Vec<CleanupEntry> {
+        self.disarm_abort();
+        std::mem::take(&mut self.entries)
     }
 
-    /// Runs stop actions during cancellation without blocking or awaiting.
+    /// Runs each remaining stop action in reverse construction order.
+    ///
+    /// Callback errors and panics are discarded so cancellation cleanup
+    /// continues for later entries. This synchronous fallback never creates
+    /// or polls a wait future, and clears all entries after attempting
+    /// their callbacks.
     fn abort(&mut self) {
         for entry in self.entries.iter_mut().rev() {
             if let Some(stop) = entry.action.stop.take() {

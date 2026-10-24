@@ -7,8 +7,10 @@
 // =============================================================================
 //! Checks that active injection errors point to the unsupported field type.
 
+use trybuild::TestCases;
+
 /// Runs the compile-fail contract for an active invalid injection.
 #[test]
-fn active_invalid_injection_has_a_precise_compile_error() {
-    trybuild::TestCases::new().compile_fail("tests/ui/active_invalid_injection.rs");
+fn test_active_invalid_injection_has_a_precise_compile_error() {
+    TestCases::new().compile_fail("tests/ui/active_invalid_injection.rs");
 }

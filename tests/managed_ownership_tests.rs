@@ -265,9 +265,9 @@ fn test_send_only_callbacks_allow_sending_application_and_handle() {
 
 #[test]
 fn test_query_context_is_clone_send_sync_and_lifecycle_owners_are_send() {
-    /// Verifies the public query handle's cross-thread trait contract.
+    // Verifies the public query handle's cross-thread trait contract.
     fn assert_query_traits<T: Clone + Send + Sync>() {}
-    /// Verifies unique lifecycle owners can move between executor threads.
+    // Verifies unique lifecycle owners can move between executor threads.
     fn assert_send<T: Send>() {}
 
     assert_query_traits::<ApplicationContext>();

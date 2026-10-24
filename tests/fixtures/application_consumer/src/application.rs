@@ -23,6 +23,7 @@ use qubit_ioc::WaitPolicy;
 use qubit_ioc::bean;
 use tokio::runtime::Handle;
 
+/// Creates execution services and transfers shutdown ownership to the container.
 #[bean(marker = ExecutionServicesBean)]
 fn execution_services(runtime: Arc<Handle>) -> Result<Managed<ExecutionServices>, FactoryError> {
     let services = ExecutionServices::builder()
@@ -30,21 +31,28 @@ fn execution_services(runtime: Arc<Handle>) -> Result<Managed<ExecutionServices>
         .runtime((*runtime).clone())
         .build()
         .map_err(FactoryError::new)?;
-    Ok(Managed::asynchronous(Arc::new(services), |services| {
-        let _stop_report = services.stop();
-        Ok(())
-    }, |services| {
-        Box::pin(async move {
-            services.await_termination().await;
+    Ok(Managed::asynchronous(
+        Arc::new(services),
+        |services| {
+            let _stop_report = services.stop();
             Ok(())
-        })
-    }))
+        },
+        |services| {
+            Box::pin(async move {
+                services.await_termination().await;
+                Ok(())
+            })
+        },
+    ))
 }
 
+/// Creates the historical event bus from the application-local registry.
 #[bean(marker = EventBusBean)]
 fn event_bus(registry: Arc<EventBusRegistry>) -> Result<Arc<EventBus>, FactoryError> {
     // Historical EventBus has no nonblocking request/ticket protocol.
-    let bus = registry.create(&EventBusConfig::default()).map_err(FactoryError::new)?;
+    let bus = registry
+        .create(&EventBusConfig::default())
+        .map_err(FactoryError::new)?;
     Ok(Arc::new(bus))
 }
 
@@ -52,6 +60,21 @@ fn event_bus(registry: Arc<EventBusRegistry>) -> Result<Arc<EventBus>, FactoryEr
 ///
 /// The returned application owns ExecutionServices cleanup. Construction errors
 /// retain their rollback handle for callers to inspect and explicitly wait.
+///
+/// # Parameters
+///
+/// - `runtime`: Tokio runtime handle used to construct execution services.
+///
+/// # Returns
+///
+/// The assembled application, with cleanup ownership attached to its managed
+/// execution services.
+///
+/// # Errors
+///
+/// Returns an error if a component cannot be registered or asynchronous
+/// application construction fails. Build failures retain their cleanup handle
+/// in the returned error for explicit inspection and waiting.
 pub async fn build_application(runtime: Handle) -> Result<Application, Box<dyn Error>> {
     let mut builder = ContainerBuilder::new().wait_policy(WaitPolicy::unbounded());
     builder.register_instance(Arc::new(runtime))?;

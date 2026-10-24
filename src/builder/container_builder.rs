@@ -738,6 +738,14 @@ impl ContainerBuilder {
     ///
     /// Returns a structured registration error if the definition's internal
     /// keys are invalid. Factories and projectors are deferred until build.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` after the definition is staged.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RegistrationError`] if the definition cannot be staged.
     pub fn register_definition<T>(&mut self, value: Definition<T>) -> Result<(), RegistrationError>
     where
         T: ?Sized + Send + Sync + 'static,
@@ -967,6 +975,11 @@ impl ContainerBuilder {
     /// Creates a lazy, single-use asynchronous session for the selected roots.
     /// Validation starts on the first poll of [`BuildSession::run`]. Keep the
     /// session to observe cleanup if that borrowing future is cancelled.
+    ///
+    /// # Returns
+    ///
+    /// A session that validates and constructs the selected root graph when
+    /// run.
     #[inline]
     pub fn build_async_session(self) -> BuildSession {
         BuildSession::new(self, false)
@@ -974,6 +987,11 @@ impl ContainerBuilder {
 
     /// Creates a lazy asynchronous session that constructs all active
     /// definitions, regardless of the selected roots.
+    ///
+    /// # Returns
+    ///
+    /// A session that validates and constructs every active definition when
+    /// run.
     #[inline]
     pub fn build_all_async_session(self) -> BuildSession {
         BuildSession::new(self, true)
@@ -982,6 +1000,15 @@ impl ContainerBuilder {
     /// Validates the selected roots or all active definitions and returns
     /// their private construction owner. Validation and policy errors occur
     /// before any factory runs; profile and replacement rules are shared.
+    ///
+    /// # Returns
+    ///
+    /// The construction owner for the validated selection.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BuildFailure`] for missing roots, invalid graphs, or a
+    /// missing managed wait policy.
     pub(super) fn prepare_async(mut self, all: bool) -> Result<Construction, BuildFailure> {
         if !all && self.roots.is_empty() {
             return Err(BuildError::NoRootsSelected.into());
@@ -1055,6 +1082,14 @@ impl ContainerBuilder {
 
     /// Atomically adds an already validated complete definition to the staging
     /// area.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` after the definition is staged.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RegistrationError`] if the definition cannot be staged.
     pub(crate) fn stage_definition(&mut self, definition: PendingDefinition) -> Result<(), RegistrationError> {
         definition.stage_into(&mut self.definitions)
     }

@@ -21,6 +21,7 @@ use tokio::time::sleep;
 
 static STOPS: AtomicUsize = AtomicUsize::new(0);
 
+/// Creates a synchronous managed bean and counts its shutdown callback.
 #[bean]
 fn synchronous() -> Result<Managed<u32>, io::Error> {
     Ok(Managed::synchronous(Arc::new(7), |_| {
@@ -29,6 +30,7 @@ fn synchronous() -> Result<Managed<u32>, io::Error> {
     }))
 }
 
+/// Creates an asynchronous bean through the synchronous managed constructor.
 #[bean]
 async fn asynchronous() -> Result<Managed<String>, io::Error> {
     Ok(Managed::synchronous(Arc::new(String::from("async")), |_| {
@@ -37,6 +39,7 @@ async fn asynchronous() -> Result<Managed<String>, io::Error> {
     }))
 }
 
+/// Builds both managed beans, queries their values, and shuts them down.
 fn verify_managed_output_path() {
     let mut builder = ContainerBuilder::new().wait_policy(WaitPolicy::bounded(
         Duration::from_secs(30),
@@ -55,6 +58,7 @@ fn verify_managed_output_path() {
     assert_eq!(STOPS.load(Ordering::SeqCst), 2);
 }
 
+/// Runs the managed output path used by this fixture.
 fn main() {
     verify_managed_output_path();
 }
@@ -64,7 +68,7 @@ mod tests {
     use super::verify_managed_output_path;
 
     #[test]
-    fn managed_factory_paths_build_query_and_shutdown() {
+    fn test_managed_factory_paths_build_query_and_shutdown() {
         verify_managed_output_path();
     }
 }

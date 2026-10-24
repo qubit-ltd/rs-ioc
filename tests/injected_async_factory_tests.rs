@@ -34,7 +34,7 @@ fn ready<F: Future>(future: F) -> F::Output {
 }
 
 #[test]
-fn injected_async_resolves_required_optional_and_all() -> Result<(), Box<dyn std::error::Error>> {
+fn test_injected_async_resolves_required_optional_and_all() -> Result<(), Box<dyn Error>> {
     let mut builder = ContainerBuilder::new();
     builder.register_instance(Arc::new(7_u32))?;
     for (id, value) in [("zeta", "last"), ("alpha", "first")] {
@@ -65,7 +65,7 @@ fn injected_async_resolves_required_optional_and_all() -> Result<(), Box<dyn std
 }
 
 #[test]
-fn injected_async_rejects_missing_before_factory_runs() {
+fn test_injected_async_rejects_missing_before_factory_runs() {
     let calls = Arc::new(AtomicUsize::new(0));
     let mut builder = ContainerBuilder::new();
     let captured = Arc::clone(&calls);
@@ -84,7 +84,7 @@ fn injected_async_rejects_missing_before_factory_runs() {
 }
 
 #[test]
-fn injected_async_rejects_ambiguous_before_factory_runs() {
+fn test_injected_async_rejects_ambiguous_before_factory_runs() {
     let calls = Arc::new(AtomicUsize::new(0));
     let mut builder = ContainerBuilder::new();
     for (id, value) in [("north", "N"), ("south", "S")] {
@@ -114,7 +114,7 @@ fn injected_async_rejects_ambiguous_before_factory_runs() {
 }
 
 #[test]
-fn injected_async_sync_build_preflight() {
+fn test_injected_async_sync_build_preflight() {
     let calls = Arc::new(AtomicUsize::new(0));
     let mut builder = ContainerBuilder::new();
     let captured = Arc::clone(&calls);
@@ -135,7 +135,7 @@ fn injected_async_sync_build_preflight() {
 struct LaterFailure;
 
 #[test]
-fn injected_managed_async_rollback() {
+fn test_injected_managed_async_rollback() {
     let aborts = Arc::new(AtomicUsize::new(0));
     let abort_count = Arc::clone(&aborts);
     let mut builder = ContainerBuilder::new().wait_policy(WaitPolicy::unbounded());
@@ -175,7 +175,7 @@ fn injected_managed_async_rollback() {
 }
 
 #[test]
-fn injected_async_cancellation_stops_later_factory() {
+fn test_injected_async_cancellation_stops_later_factory() {
     let calls = Arc::new(AtomicUsize::new(0));
     let mut builder = ContainerBuilder::new();
     builder

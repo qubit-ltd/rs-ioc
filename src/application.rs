@@ -60,6 +60,18 @@ impl Application {
     }
 
     /// Attaches unique cleanup ownership to a successfully constructed context.
+    ///
+    /// # Parameters
+    ///
+    /// * `context` - the published component queries and lifecycle state. It is
+    ///   retained for shutdown observations.
+    /// * `cleanup` - the one-shot journal of managed cleanup actions, moved
+    ///   into this unique application owner.
+    /// * `policy` - the explicit wait policy retained for shutdown.
+    ///
+    /// # Returns
+    ///
+    /// An application that owns the context, cleanup journal, and wait policy.
     pub(crate) fn new(context: ApplicationContext, cleanup: CleanupJournal, policy: WaitPolicy) -> Self {
         Self {
             context,
@@ -80,6 +92,16 @@ impl Application {
     /// Immediate mode requests every abort before returning. Graceful mode
     /// starts the first request when the returned handle's wait is polled.
     /// Callback failures are retained in the handle's report.
+    ///
+    /// # Parameters
+    ///
+    /// * `mode` - selects whether abort requests begin immediately or when
+    ///   shutdown waiting is first polled.
+    ///
+    /// # Returns
+    ///
+    /// A handle that uniquely owns this application's cleanup journal and
+    /// exposes the shutdown's progress and final report.
     ///
     /// # Panics
     ///

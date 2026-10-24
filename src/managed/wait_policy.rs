@@ -100,6 +100,10 @@ impl WaitPolicy {
     /// whose termination remains unconfirmed. A timer cannot interrupt a
     /// blocking callback or future poll.
     ///
+    /// # Type Parameters
+    ///
+    /// `F` is the supplied timer factory, shared between policy clones.
+    ///
     /// # Parameters
     ///
     /// * `grace` - budget for each component's graceful wait.

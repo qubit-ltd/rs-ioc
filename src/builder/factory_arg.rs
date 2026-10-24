@@ -24,11 +24,43 @@ pub(super) mod sealed {
 /// Implementations are provided for `Arc<T>`, `Option<Arc<T>>`, and
 /// `Vec<Arc<T>>`. Use [`crate::builder::FactoryArgs`] to combine arguments
 /// into a factory parameter tuple.
+///
+/// # Examples
+///
+/// ```
+/// use std::sync::Arc;
+/// use qubit_ioc::Dependency;
+/// use qubit_ioc::FactoryArg;
+///
+/// let request = <Arc<String> as FactoryArg>::dependency();
+/// assert_eq!(request, Dependency::of::<String>());
+/// ```
 pub trait FactoryArg: sealed::Sealed + Send + 'static {
-    /// Returns the graph request required to resolve this argument.
+    /// Declares the graph request used to resolve this argument's type.
+    ///
+    /// Required arguments request one binding, optional arguments permit no
+    /// binding, and vector arguments request every matching binding.
+    ///
+    /// # Returns
+    ///
+    /// The request whose cardinality matches the argument wrapper.
+    #[must_use]
     fn dependency() -> Dependency;
 
     /// Resolves this argument from the factory's validated dependency view.
+    ///
+    /// # Parameters
+    ///
+    /// `context` is restricted to the requests declared for this factory.
+    ///
+    /// # Returns
+    ///
+    /// The argument value assembled from the selected dependencies.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BuildAccessError`] if the context cannot provide a declared
+    /// dependency requested by this argument.
     #[allow(clippy::result_large_err)]
     fn resolve(context: &BuildContext) -> Result<Self, BuildAccessError>
     where

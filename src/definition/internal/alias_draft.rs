@@ -22,8 +22,8 @@ use crate::options::DefinitionSource;
 /// alias target when the draft is created, so the type it validates always
 /// matches the projection stored alongside it.
 ///
-/// The options are taken by value: validation consumes them, and the caller
-/// cannot read them again afterwards.
+/// The validator borrows the options for validation. The draft is consumed by
+/// the build process, so the caller cannot read the options again afterwards.
 ///
 /// The result is the concrete binding key for the alias together with the
 /// profile the alias resolves to — `Some` when the alias declared a profile

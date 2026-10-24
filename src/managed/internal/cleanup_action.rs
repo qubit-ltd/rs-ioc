@@ -11,9 +11,14 @@
 use crate::managed::CleanupError;
 use crate::managed::CleanupFuture;
 
-/// One-shot type-erased stop action, consumed when shutdown starts.
+/// Sendable, `'static` callback that requests component termination once.
+///
+/// Its result reports callback failure through [`CleanupError`].
 pub(crate) type ErasedStop = Box<dyn FnOnce() -> Result<(), CleanupError> + Send + 'static>;
-/// One-shot type-erased wait callback, consumed when its future is created.
+/// Sendable, `'static` callback that creates the future used to observe
+/// component termination.
+///
+/// The returned future reports observation failure through [`CleanupError`].
 pub(crate) type ErasedWait = Box<dyn FnOnce() -> CleanupFuture + Send + 'static>;
 
 /// Type-erased lifecycle actions for one concrete binding.

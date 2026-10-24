@@ -5,6 +5,9 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
+
+// This trybuild fixture verifies that a component field with an unsupported type is rejected.
+
 use qubit_ioc::Component;
 
 #[Component]

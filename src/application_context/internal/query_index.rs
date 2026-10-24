@@ -72,6 +72,10 @@ impl QueryIndex {
     /// Returns active binding positions for one Rust type in registration
     /// order.
     ///
+    /// # Parameters
+    ///
+    /// - `type_id`: The Rust type whose active binding positions are queried.
+    ///
     /// # Returns
     ///
     /// A borrowed slice of positions into the binding vector this index was
@@ -90,6 +94,10 @@ impl QueryIndex {
     /// The same positions as [`Self::by_type`], reordered by the collection
     /// precedence `order`, then binding id, then definition source.
     ///
+    /// # Parameters
+    ///
+    /// - `type_id`: The Rust type whose active binding positions are queried.
+    ///
     /// # Returns
     ///
     /// A borrowed slice of positions into the binding vector this index was
@@ -105,6 +113,10 @@ impl QueryIndex {
 
     /// Returns the position for one exact typed key, if present.
     ///
+    /// # Parameters
+    ///
+    /// - `key`: The exact typed binding key to look up.
+    ///
     /// # Returns
     ///
     /// `Some(position)` with the position of the binding carrying exactly this
@@ -113,7 +125,6 @@ impl QueryIndex {
     /// are only meaningful relative to the binding vector given to
     /// [`Self::new`].
     #[inline]
-    #[must_use]
     pub(crate) fn by_key(&self, key: &BindingKey) -> Option<usize> {
         self.by_key.get(key).copied()
     }

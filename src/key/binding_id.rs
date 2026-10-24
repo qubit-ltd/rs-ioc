@@ -7,6 +7,10 @@
 // =============================================================================
 //! Validated binding identifiers.
 
+use std::fmt::Display;
+use std::fmt::Formatter;
+use std::fmt::Result as FmtResult;
+
 use crate::error::InvalidBindingId;
 
 /// An owned, case-sensitive binding identifier.
@@ -64,9 +68,9 @@ impl BindingId {
     }
 }
 
-impl std::fmt::Display for BindingId {
+impl Display for BindingId {
     /// Formats the validated ID using its original spelling.
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> FmtResult {
         formatter.write_str(self.as_str())
     }
 }

@@ -18,3 +18,5 @@ fn main() {
     )
     .with_graceful_stop(|_| Ok(()));
 }
+
+// This is a trybuild source fixture, not a test module.

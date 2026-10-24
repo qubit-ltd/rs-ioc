@@ -45,9 +45,8 @@ pub(crate) fn expand(value: ConfigurationIr, context: &ExpansionContext) -> Resu
     let ConfigurationIr {
         mut item,
         profile,
-        source,
+        source: _,
     } = value;
-    let _ = source;
     let Some((_, children)) = &mut item.content else {
         return Err(Error::new(
             item.ident.span(),
@@ -86,6 +85,7 @@ fn collect_installations(children: &mut [Item], profile: Option<&LitStr>) -> Res
 }
 
 /// Builds the public `register_ioc` function that replays the collected calls.
+#[must_use]
 fn registration_function(installations: &[TokenStream], runtime: &TokenStream) -> Item {
     parse_quote! {
         /// Installs this module's direct bean definitions in source order.
@@ -103,6 +103,8 @@ fn registration_function(installations: &[TokenStream], runtime: &TokenStream) -
 /// Only the final path segment is compared, so `#[bean]` and
 /// `#[qubit_ioc::bean]` both match while `#[beans]` does not. The check borrows
 /// the attribute only and performs no allocation.
+#[must_use]
+#[inline]
 fn is_bean(attribute: &Attribute) -> bool {
     attribute
         .path()

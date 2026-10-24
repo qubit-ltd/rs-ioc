@@ -20,6 +20,11 @@ use crate::options::DefinitionSource;
 /// `T` may be a concrete type or a thread-safe trait object. Factories and
 /// interface projectors execute only when the container constructs the graph.
 ///
+/// # Type Parameters
+///
+/// `T` is the component type represented by this definition. It must be
+/// thread-safe and `'static`; `?Sized` permits trait object types.
+///
 /// # Examples
 ///
 /// ```

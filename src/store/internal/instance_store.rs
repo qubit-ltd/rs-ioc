@@ -40,7 +40,6 @@ impl InstanceStore {
     /// `Some` with a shared clone of the stored value when `key` is present and
     /// holds an `Arc<T>`, otherwise `None` - both for an unknown key and for a
     /// key whose erased value holds a different concrete type.
-    #[must_use]
     #[inline]
     pub(crate) fn get<T: ?Sized + Send + Sync + 'static>(&self, key: &BindingKey) -> Option<Arc<T>> {
         self.get_erased(key)?.downcast_ref::<Arc<T>>().cloned()
@@ -61,7 +60,6 @@ impl InstanceStore {
     ///
     /// `Some` referencing the stored erased value when `key` is present, or
     /// `None` when no value is stored under that exact key.
-    #[must_use]
     #[inline]
     pub(crate) fn get_erased(&self, key: &BindingKey) -> Option<&ErasedInstance> {
         self.values.get(key)
@@ -79,7 +77,6 @@ impl InstanceStore {
     ///
     /// Returns `Some` with a shared clone when `key` is present, or `None`
     /// when no value is stored under that exact key.
-    #[must_use]
     #[inline]
     pub(crate) fn get_erased_cloned(&self, key: &BindingKey) -> Option<ErasedInstance> {
         self.values.get(key).cloned()

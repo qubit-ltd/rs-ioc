@@ -93,7 +93,6 @@ impl FactoryError {
     ///
     /// `None` indicates an ordinary factory error; `Some` borrows the stored
     /// configuration key and target name.
-    #[must_use]
     #[inline]
     pub(crate) fn config_read_context(&self) -> Option<(&str, &str)> {
         self.config_read

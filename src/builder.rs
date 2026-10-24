@@ -7,6 +7,9 @@
 // =============================================================================
 //! Explicit builder registration and validated construction.
 
+// Owns the lazy asynchronous build session type and its inherent
+// implementation.
+mod build_session;
 // Owns the `ComponentDefinition` registration contract and its inherent
 // implementation.
 mod component_definition;
@@ -21,6 +24,7 @@ mod factory_args;
 mod internal;
 mod validation_scope;
 
+pub use build_session::BuildSession;
 pub use component_definition::ComponentDefinition;
 pub use container_builder::ContainerBuilder;
 pub use factory_arg::FactoryArg;
@@ -28,6 +32,3 @@ pub use factory_args::FactoryArgs;
 pub(crate) use internal::validation::validate_dependencies;
 pub(crate) use internal::validation::validate_options;
 pub use validation_scope::ValidationScope;
-
-mod build_session;
-pub use build_session::BuildSession;

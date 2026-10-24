@@ -19,6 +19,12 @@ use crate::ManualError;
 ///
 /// The factory runs only after graph validation succeeds. Registration and
 /// build failures remain distinguishable through [`ManualError`].
+///
+/// # Errors
+///
+/// Returns [`ManualError::Registration`] when a component registration is
+/// invalid, or [`ManualError::Build`] when graph validation or factory
+/// construction fails.
 pub fn build_manual() -> Result<Application, ManualError> {
     let mut builder = ContainerBuilder::new();
     builder.register_instance(Arc::new(41_u32))?;

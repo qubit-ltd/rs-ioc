@@ -6,6 +6,7 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 use std::any::TypeId;
+use std::any::type_name;
 use std::error::Error;
 use std::fmt;
 
@@ -76,7 +77,7 @@ fn test_dependency_constructors_preserve_cardinality_and_id() {
 
     for dependency in [&required, &named, &optional, &optional_named, &all] {
         assert_eq!(dependency.type_id(), TypeId::of::<u32>());
-        assert_eq!(dependency.type_name(), std::any::type_name::<u32>());
+        assert_eq!(dependency.type_name(), type_name::<u32>());
     }
     assert_eq!(required.cardinality(), DependencyCardinality::Required);
     assert_eq!(required.id(), None);

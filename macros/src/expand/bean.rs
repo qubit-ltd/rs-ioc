@@ -35,6 +35,11 @@ use crate::ir::OutputShape;
 /// that read configuration are additionally wrapped in the runtime's
 /// configuration guard on both sides.
 ///
+/// # Returns
+///
+/// The original function followed by its generated registration marker and
+/// `ComponentDefinition` implementation.
+///
 /// # Errors
 ///
 /// This expansion currently has no fallible steps and returns `Ok` for every

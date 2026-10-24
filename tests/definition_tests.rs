@@ -48,7 +48,10 @@ fn test_public_definition_alias_shares_one_concrete_instance() {
     let concrete = context.get::<MemoryRepository>().expect("concrete instance");
     let alias = context.get::<dyn Repository>().expect("alias instance");
     let projected: Arc<dyn Repository> = concrete;
-    assert!(Arc::ptr_eq(&projected, &alias));
+    assert!(
+        Arc::ptr_eq(&projected, &alias),
+        "the alias should point to the concrete instance"
+    );
     assert_eq!(alias.value(), 42);
 }
 
@@ -217,10 +220,10 @@ fn test_alias_profile_inherits_final_concrete_options() {
         .get_by_id::<MemoryRepository>("last")
         .expect("final concrete key");
     let projected: Arc<dyn Repository> = concrete;
-    assert!(Arc::ptr_eq(
-        &projected,
-        &context.get::<dyn Repository>().expect("alias")
-    ));
+    assert!(
+        Arc::ptr_eq(&projected, &context.get::<dyn Repository>().expect("alias")),
+        "the active alias should reuse the final concrete instance"
+    );
 }
 
 /// All five construction sources produce exactly one shared component.
@@ -268,10 +271,13 @@ fn test_definition_supports_all_construction_sources_once() {
             .expect("build source");
         let context = application.context();
         assert_eq!(*context.get::<u32>().expect("component"), 42);
-        assert!(Arc::ptr_eq(
-            &context.get::<u32>().expect("component"),
-            &context.get::<u32>().expect("same component")
-        ));
+        assert!(
+            Arc::ptr_eq(
+                &context.get::<u32>().expect("component"),
+                &context.get::<u32>().expect("same component")
+            ),
+            "repeated lookups should return the same component"
+        );
         assert_eq!(calls.load(Ordering::SeqCst), 1);
     }
 }

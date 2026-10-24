@@ -21,6 +21,7 @@ use tokio::time;
 
 static STOPS: AtomicUsize = AtomicUsize::new(0);
 
+/// Creates a managed `u32` bean whose shutdown hook records its invocation.
 #[bean]
 fn synchronous() -> Result<Managed<u32>, Error> {
     Ok(Managed::synchronous(Arc::new(7), |_| {
@@ -29,6 +30,7 @@ fn synchronous() -> Result<Managed<u32>, Error> {
     }))
 }
 
+/// Creates a managed `String` bean through an asynchronous factory.
 #[bean]
 async fn asynchronous() -> Result<Managed<String>, Error> {
     Ok(Managed::synchronous(Arc::new(String::from("async")), |_| {
@@ -37,6 +39,7 @@ async fn asynchronous() -> Result<Managed<String>, Error> {
     }))
 }
 
+/// Builds the fixture container, checks both bean values, and waits for shutdown.
 fn verify_managed_output_path() {
     let mut builder = ContainerBuilder::new().wait_policy(WaitPolicy::bounded(
         Duration::from_secs(30),
@@ -58,7 +61,7 @@ fn verify_managed_output_path() {
     assert_eq!(STOPS.load(Ordering::SeqCst), 2);
 }
 
-
+/// Runs the managed-path fixture as a standalone binary.
 fn main() {
     verify_managed_output_path();
 }

@@ -11,17 +11,21 @@ use crate::graph::internal::binding_location::BindingLocation;
 use crate::key::BindingKey;
 use crate::options::DefinitionSource;
 
-/// One flattened binding with its stable registration position.
+/// One binding flattened from the active definitions for graph validation.
+///
+/// The node retains its definition location and diagnostic source alongside
+/// its matching metadata, so selection and error reporting use the same
+/// registration snapshot.
 #[derive(Clone)]
 pub(in crate::graph) struct Node {
-    /// Original position within the definition list.
+    /// Definition and binding indices in the profile-filtered input.
     pub(in crate::graph) location: BindingLocation,
-    /// Exact typed identity used during matching.
+    /// Rust type namespace and optional identifier used for exact matching.
     pub(in crate::graph) key: BindingKey,
-    /// Definition source retained for diagnostics and stable ordering.
+    /// Source metadata used to explain failures and break ordering ties.
     pub(in crate::graph) source: DefinitionSource,
-    /// Whether an unnamed request can select this candidate as primary.
+    /// Whether an unnamed single-binding request may choose this candidate.
     pub(in crate::graph) primary: bool,
-    /// Collection ordering value.
+    /// Caller-specified ordering value for requests that select all candidates.
     pub(in crate::graph) order: i32,
 }

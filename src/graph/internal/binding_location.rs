@@ -7,11 +7,12 @@
 // =============================================================================
 //! Position of a binding within the active registered definitions.
 
-/// The position of one binding in its registered definition.
+/// Identifies one binding by its position in the validated graph's definitions.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct BindingLocation {
-    /// Index of the owning definition in the active definition vector.
+    /// Position of the owning definition in the profile-filtered definition
+    /// vector.
     pub(crate) definition: usize,
-    /// Index of the binding within that definition.
+    /// Position of the binding in the owning definition's declaration order.
     pub(crate) binding: usize,
 }

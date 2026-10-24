@@ -123,7 +123,6 @@ impl RuntimePath {
     /// a `Managed` segment whose arguments are not angle-bracketed; a generic
     /// argument list whose length is not one; and a single argument that is not
     /// itself a type.
-    #[must_use]
     pub(crate) fn managed_argument<'a>(&self, ty: &'a Type) -> Option<&'a Type> {
         let Type::Path(type_path) = ty else {
             return None;

@@ -17,7 +17,12 @@ use syn::parse::ParseStream;
 
 use crate::parse::RawValue;
 
-/// A single option with its original key span.
+/// One option parsed from an attribute before macro-specific validation.
+///
+/// The key retains the user's identifier and source span for later validation
+/// and diagnostics. The value records only the syntax selected by the key's
+/// spelling; whether that key is allowed for a particular macro and whether
+/// the value is semantically valid are checked in the validation stage.
 pub(crate) struct RawOption {
     /// Option key and its original source span.
     pub(crate) key: Ident,
@@ -25,7 +30,15 @@ pub(crate) struct RawOption {
     pub(crate) value: RawValue,
 }
 impl Parse for RawOption {
-    /// Parses one `key`, `key = "literal"`, or typed IoC option.
+    /// Parses one IoC option according to its key's syntactic value shape.
+    ///
+    /// `primary` is parsed as a bare flag; `id`, `profile`, and `prefix` take
+    /// string literals; `order` takes an integer with an optional leading
+    /// minus; `bind` and `type` take Rust types; and `marker` takes an
+    /// identifier. This stage does not check which macro accepts a key or
+    /// whether the parsed value satisfies that option's semantic constraints.
+    /// Unknown keys, including the reserved `name` spelling, fail at the key
+    /// span so the diagnostic points to the user's option.
     fn parse(input: ParseStream<'_>) -> Result<Self> {
         let key = input.call(Ident::parse_any)?;
         let value = match key.to_string().as_str() {

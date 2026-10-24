@@ -139,18 +139,18 @@ impl PendingBinding {
     ///   needs, because the returned [`PendingBinding`] is `Send` and may be
     ///   moved to another thread.
     ///
-    /// # Returns
-    ///
-    /// The staged binding carries an erasing future. Construction and any
-    /// [`FactoryError`] are not observable here: they appear only when the
-    /// graph first polls that future while building asynchronously.
-    ///
     /// # Type Parameters
     ///
     /// * `T` — Produced instance type. It may be unsized and must be `Send +
     ///   Sync + 'static`.
     /// * `F` — Sendable one-shot factory returning a future that resolves to a
     ///   shared instance.
+    ///
+    /// # Returns
+    ///
+    /// The staged binding carries an erasing future. Construction and any
+    /// [`FactoryError`] are not observable here: they appear only when the
+    /// graph first polls that future while building asynchronously.
     pub(crate) fn async_factory<T, F>(key: BindingKey, primary: bool, order: i32, factory: F) -> Self
     where
         T: ?Sized + Send + Sync + 'static,
@@ -224,6 +224,13 @@ impl PendingBinding {
     ///   and it owns every dependency value it needs because the returned
     ///   [`PendingBinding`] is `Send` and may be moved to another thread.
     ///
+    /// # Type Parameters
+    ///
+    /// * `T` — Produced instance type. It may be unsized and must be `Send +
+    ///   Sync + 'static`.
+    /// * `F` — Sendable one-shot factory returning a future that resolves to a
+    ///   managed instance.
+    ///
     /// # Returns
     ///
     /// The staged binding carries an erasing future. Construction and any
@@ -270,6 +277,15 @@ impl PendingBinding {
     /// The staged binding holds the projector, not the projected value.
     /// Projection yields `Some` only when the erased value really holds an
     /// `Arc<T>`, and `None` for a type mismatch or a non-alias stage.
+    ///
+    /// # Type Parameters
+    ///
+    /// * `T` — Concrete component type held by the target binding. It may be
+    ///   unsized and must be `Send + Sync + 'static`.
+    /// * `U` — Interface type exposed by the alias. It may be unsized and must
+    ///   be `Send + Sync + 'static`.
+    /// * `F` — Shared projection from the concrete `Arc<T>` to the alias
+    ///   `Arc<U>`.
     pub(crate) fn alias<T, U, F>(key: BindingKey, target: BindingKey, primary: bool, order: i32, project: F) -> Self
     where
         T: ?Sized + Send + Sync + 'static,

@@ -16,6 +16,19 @@ use crate::error::BuildAccessError;
 /// A zero to eight argument tuple derived from a typed factory signature.
 ///
 /// The trait is sealed so request declarations always match resolution.
+///
+/// # Examples
+///
+/// ```
+/// use std::sync::Arc;
+///
+/// use qubit_ioc::FactoryArgs;
+///
+/// struct Logger;
+///
+/// let requests = <(Arc<Logger>, Arc<Logger>) as FactoryArgs>::dependencies();
+/// assert_eq!(requests.len(), 1);
+/// ```
 pub trait FactoryArgs: sealed::Sealed + Send + 'static {
     /// Returns the distinct dependency requests needed by this argument tuple.
     ///
@@ -25,6 +38,7 @@ pub trait FactoryArgs: sealed::Sealed + Send + 'static {
     /// # Returns
     ///
     /// The dependency requests in their resolution order.
+    #[must_use]
     fn dependencies() -> Vec<Dependency>;
 
     /// Resolves each declared request into the parameter tuple.

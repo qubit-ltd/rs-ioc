@@ -16,11 +16,21 @@ use qubit_ioc::RegistrationError;
 use crate::AppService;
 
 /// One bean generated from a function in a linked provider crate.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_ioc_fixture_providers::Greeting;
+///
+/// let greeting = Greeting(String::from("hello"));
+/// assert_eq!(greeting.0, "hello");
+/// ```
 pub struct Greeting(
     /// Rendered greeting returned by the bean factory.
     pub String,
 );
 
+/// Builds a greeting from the configured label and primary repository result.
 #[bean]
 fn greeting(service: Arc<AppService>) -> Greeting {
     Greeting(format!("{}:{}", service.settings.label, service.primary.find(7)))

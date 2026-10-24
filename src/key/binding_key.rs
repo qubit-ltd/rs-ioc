@@ -126,7 +126,6 @@ impl BindingKey {
     /// # Returns
     ///
     /// `Some` borrows the validated ID; `None` indicates an unnamed key.
-    #[must_use]
     #[inline]
     pub fn id(&self) -> Option<&BindingId> {
         self.id.as_ref()

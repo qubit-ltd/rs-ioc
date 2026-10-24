@@ -14,7 +14,12 @@ use crate::managed::CleanupError;
 use crate::managed::ShutdownPhase;
 use crate::options::DefinitionSource;
 
-/// One failed component cleanup action with its registered binding metadata.
+/// A cleanup failure produced while shutdown processes a registered component.
+///
+/// The value retains the binding identity, the source location that registered
+/// it, the lifecycle phase, and the original error. Shutdown reports expose
+/// these values so callers can identify which cleanup action failed and inspect
+/// its cause.
 ///
 /// # Examples
 ///
@@ -34,15 +39,16 @@ use crate::options::DefinitionSource;
 /// assert_eq!(failure.phase, ShutdownPhase::Abort);
 /// ```
 #[derive(Debug, Error)]
+#[must_use = "inspect the failed cleanup or explicitly discard it"]
 #[error("{phase:?} cleanup for {key:?} from {definition} failed: {error}")]
 pub struct ShutdownFailure {
-    /// Binding whose cleanup failed.
+    /// Identity of the binding whose cleanup action returned this failure.
     pub key: BindingKey,
-    /// Definition that registered the binding.
+    /// Source location and item name that registered the failed binding.
     pub definition: DefinitionSource,
-    /// Lifecycle phase that failed.
+    /// Shutdown operation during which the cleanup action failed.
     pub phase: ShutdownPhase,
-    /// Original cleanup failure.
+    /// Original error returned or retained by the component cleanup action.
     #[source]
     pub error: CleanupError,
 }

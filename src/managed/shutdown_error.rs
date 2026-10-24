@@ -24,11 +24,32 @@ use crate::managed::ShutdownReport;
 /// does not block, and reading the retained report through
 /// [`ShutdownError::report`] borrows it without copying.
 ///
-/// This type cannot be built through the public API. It is produced by the
-/// managed shutdown path and is only ever observed by callers, so its
-/// type-level documentation carries no runnable construction example.
+/// This type cannot be built through the public API. The example obtains it
+/// from the managed shutdown path and inspects the retained report.
+///
+/// # Examples
+///
+/// ```
+/// use qubit_ioc::Application;
+/// use qubit_ioc::ShutdownMode;
+///
+/// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+/// let mut builder = Application::builder();
+/// builder.register_instance(std::sync::Arc::new(String::from("hello")))?;
+/// builder.root::<String>();
+/// let application = builder.build()?;
+/// let mut shutdown = application.begin_shutdown(ShutdownMode::Immediate);
+///
+/// if let Err(error) = shutdown.wait().await {
+///     let report: &qubit_ioc::ShutdownReport = error.report();
+///     assert!(!report.is_success());
+/// }
+/// # Ok(())
+/// # }
+/// ```
 ///
 /// [`ShutdownReport`]: crate::managed::ShutdownReport
+#[must_use = "inspect the shutdown report carried by this error"]
 #[derive(Clone, Debug, Error)]
 #[error(
     "shutdown observed {} failure(s), {} incomplete component(s), overall deadline failed: {}",
