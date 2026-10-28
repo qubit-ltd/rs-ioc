@@ -279,6 +279,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "qubit-budget"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1bc3339bdb980771fb6d51091bf74f916308759048fbb9e6d9fec202ccb1911e"
+dependencies = [
+ "thiserror",
+]
+
+[[package]]
 name = "qubit-clock"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -347,28 +356,29 @@ checksum = "91048ed7cf5a65b23f0b6af148ec5245f84cd5364e6f4f2cb0ee15ff6fcc4a85"
 
 [[package]]
 name = "qubit-fs"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "fluent-uri",
- "qubit-budget",
+ "qubit-budget 0.10.0",
  "qubit-io",
  "qubit-redact",
 ]
 
 [[package]]
 name = "qubit-fs-local"
-version = "0.10.2"
+version = "0.11.0"
 dependencies = [
  "qubit-fs",
  "qubit-fs-registry",
  "qubit-io",
  "qubit-local-files",
+ "qubit-redact",
  "qubit-spi",
 ]
 
 [[package]]
 name = "qubit-fs-registry"
-version = "0.7.2"
+version = "0.8.0"
 dependencies = [
  "qubit-fs",
  "qubit-redact",
@@ -396,29 +406,28 @@ dependencies = [
 
 [[package]]
 name = "qubit-io"
-version = "0.17.0"
+version = "0.19.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e3eea3e8f7e4b8f96cff01287dec8214ec565b0531b5b495204d14df7a05b85e"
+checksum = "68e1ec30447bea2466d46c5149d029b45b8714e1eff690f110ff35b23904b643"
 dependencies = [
  "qubit-utils",
 ]
 
 [[package]]
 name = "qubit-ioc"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "thiserror",
 ]
 
 [[package]]
 name = "qubit-local-files"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6e2f93cb98f832648199d65e7b3b9cf36f2d51e68ade1e944873b2fb8ecfad61"
+version = "0.5.0"
 dependencies = [
  "getrandom",
  "libc",
- "qubit-budget",
+ "qubit-budget 0.10.0",
+ "qubit-io",
  "qubit-redact",
  "rustix",
  "windows-sys",
@@ -450,12 +459,10 @@ dependencies = [
 
 [[package]]
 name = "qubit-redact"
-version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "240e7d45b9e8bd72ed7653b02c4fb16ea116b09feeaa07a4aa15a6475da5e2ec"
+version = "0.10.0"
 dependencies = [
  "fluent-uri",
- "qubit-budget",
+ "qubit-budget 0.10.0",
 ]
 
 [[package]]
@@ -465,7 +472,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "84286aee1cde9a49e1d050eb1792c76919a522081b83c76167a1299ea8a46d23"
 dependencies = [
  "fastrand",
- "qubit-budget",
+ "qubit-budget 0.7.1",
  "qubit-clock",
  "thiserror",
 ]

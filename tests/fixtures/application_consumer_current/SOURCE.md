@@ -60,9 +60,26 @@ cargo +1.94.0 test --manifest-path tests/fixtures/application_consumer_current/C
 cargo +1.94.0 run --manifest-path tests/fixtures/application_consumer_current/Cargo.toml --locked
 ```
 
-The lockfile is validated against the exact sibling revisions in
-`downstream-contracts.yml`. A different local sibling checkout may require
-lockfile changes and does not establish whether the pinned CI lane passes.
+The lockfile records the local current-consumer dependency graph. Its FS
+dependencies use qubit-fs-local 0.11, qubit-fs 0.3, and qubit-fs-registry
+0.8. The remote current lane has not been validated with this dependency graph.
+The current workflow's fixed refs declare qubit-fs-local 0.10.2, qubit-fs
+0.2.2, and qubit-fs-registry 0.7.2. The overlay now requires 0.11, 0.3, and
+0.8 respectively, so the pinned current lane is incompatible with the new
+overlay. Advance those checkout refs to revisions declaring the required
+versions before integrating this overlay. No remote pass is claimed.
+
+The existing documentation checker also compares IoC and EventBus version
+constraints across both manifests. The native consumer keeps its existing
+`qubit-ioc` 0.3 and `qubit-event-bus` 0.20 constraints, while this overlay uses
+0.4.0 and 0.20.1. Those pre-existing non-FS differences are outside FSL-007;
+the FS constraints now match at 0.11/0.3/0.8. The checker reports only those
+two non-FS differences. The native consumer's baseline cannot resolve against
+the current local IoC 0.4.0 checkout because its path dependency still
+requires 0.3.0. Its FS lock entries therefore remain at 0.10.2/0.2.2/0.7.2;
+Cargo cannot update that lock until the independent IoC constraint is
+resolved. The overlay's lockfile is updated and locked metadata/check/test/run
+all use the local FS package identities at 0.11.0/0.3.0/0.8.0.
 
 CI logs exact checkout revisions, rustc/cargo versions, rustc executable SHA256,
 consumer sources and lock SHA256. Local working-tree verification records its
