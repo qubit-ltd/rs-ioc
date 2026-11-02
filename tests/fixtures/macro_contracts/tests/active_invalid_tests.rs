@@ -14,3 +14,9 @@ use trybuild::TestCases;
 fn test_active_invalid_injection_has_a_precise_compile_error() {
     TestCases::new().compile_fail("tests/ui/active_invalid_injection.rs");
 }
+
+#[test]
+#[cfg(feature = "invalid")]
+fn test_active_invalid_bean_parameter_has_a_precise_compile_error() {
+    TestCases::new().compile_fail("tests/ui/active_invalid_bean.rs");
+}

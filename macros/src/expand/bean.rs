@@ -71,15 +71,26 @@ pub(crate) fn expand(value: BeanIr, context: &ExpansionContext) -> Result<TokenS
     let has_aliases = !options.binds.is_empty();
     let concrete_options = binding_options(&options, has_aliases, runtime);
     let alias_options = binding_options(&options, false, runtime);
+    let mut validation_errors = Vec::new();
     let dependencies = params
         .iter()
-        .map(|param| {
+        .filter_map(|param| {
+            if param.validation_error.is_some() {
+                return None;
+            }
             let conditions = &param.conditions;
             let request = dependency_request(&param.dependency, runtime);
             let request = require_config(&param.dependency, request, runtime);
-            quote!(#(#conditions)* #request)
+            Some(quote!(#(#conditions)* #request))
         })
         .collect::<Vec<_>>();
+    for param in &params {
+        if let Some(error) = &param.validation_error {
+            let error = error.to_compile_error();
+            let conditions = &param.conditions;
+            validation_errors.push(quote!(#(#conditions)* #error));
+        }
+    }
     let arguments = (0..params.len())
         .map(|index| internal_ident("argument", index))
         .collect::<Vec<_>>();
@@ -93,9 +104,13 @@ pub(crate) fn expand(value: BeanIr, context: &ExpansionContext) -> Result<TokenS
         .enumerate()
         .map(|(index, param)| {
             let ident = &arguments[index];
-            let access = dependency_access(&param.dependency, &param.ident, runtime, &context);
-            let access = require_config(&param.dependency, access, runtime);
             let conditions = &param.conditions;
+            let access = if param.validation_error.is_some() {
+                quote!(loop {})
+            } else {
+                let access = dependency_access(&param.dependency, &param.ident, runtime, &context);
+                require_config(&param.dependency, access, runtime)
+            };
             quote!(#(#conditions)* let #ident = #access;)
         })
         .collect::<Vec<_>>();
@@ -155,6 +170,11 @@ pub(crate) fn expand(value: BeanIr, context: &ExpansionContext) -> Result<TokenS
         }
     });
     let item_name = &source.item;
+    let validation_allow = if validation_errors.is_empty() {
+        quote!()
+    } else {
+        quote!(#[allow(unreachable_code)])
+    };
     let generated = quote! {
         #[doc = concat!(
             "Registration definition for the `", ::core::stringify!(#function), "` factory. ",
@@ -170,6 +190,7 @@ pub(crate) fn expand(value: BeanIr, context: &ExpansionContext) -> Result<TokenS
             );
         }
 
+        #validation_allow
         impl #runtime::ComponentDefinition for #marker {
             fn source() -> #runtime::DefinitionSource { Self::__IOC_SOURCE }
 
@@ -191,7 +212,7 @@ pub(crate) fn expand(value: BeanIr, context: &ExpansionContext) -> Result<TokenS
             }
         }
     };
-    Ok(quote! { #item #generated })
+    Ok(quote! { #item #(#validation_errors)* #generated })
 }
 
 /// Wraps a request or access expression in the config requirement guard when
@@ -509,6 +530,7 @@ mod tests {
             ident: parse_str_ident(name),
             conditions: Vec::new(),
             dependency,
+            validation_error: None,
         }
     }
 

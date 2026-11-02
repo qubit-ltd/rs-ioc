@@ -12,6 +12,31 @@ use std::sync::Arc;
 
 use r#type::bean;
 
+/// Rust and the bean macro both discard the disabled parameter before type
+/// checking it.
+#[bean(marker = DisabledUnsupportedBean)]
+pub fn disabled_unsupported(#[cfg(any())] unused: UnknownType) -> u8 {
+    1
+}
+
+/// Ordinary Rust control case for `disabled_unsupported`.
+pub fn ordinary_disabled(#[cfg(any())] unused: UnknownType) -> u8 {
+    1
+}
+
+/// `cfg_attr` removes the unsupported parameter before bean validation.
+#[bean(marker = DisabledCfgAttrUnsupportedBean)]
+pub fn cfg_attr_disabled_unsupported(
+    #[cfg_attr(all(), cfg(any()))] unused: UnknownType,
+) -> u8 {
+    2
+}
+
+/// Ordinary Rust control case for `cfg_attr_disabled_unsupported`.
+pub fn ordinary_cfg_attr_disabled(#[cfg_attr(all(), cfg(any()))] unused: UnknownType) -> u8 {
+    2
+}
+
 /// Activates a bean dependency only when the matching function parameter
 /// exists.
 ///

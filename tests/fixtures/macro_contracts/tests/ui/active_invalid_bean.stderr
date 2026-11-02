@@ -1,0 +1,5 @@
+error: unsupported injection type; expected `Arc<T>`, `Option<Arc<T>>`, or `Vec<Arc<T>>`
+  --> tests/ui/active_invalid_bean.rs:11:50
+   |
+11 | fn invalid(#[cfg_attr(all(), cfg(all()))] value: u8) -> u8 {
+   |                                                  ^^

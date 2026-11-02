@@ -8,6 +8,7 @@
 //! Param macro intermediate representation.
 
 use syn::Attribute;
+use syn::Error;
 use syn::Ident;
 
 use crate::ir::DependencyIr;
@@ -18,6 +19,8 @@ pub(crate) struct ParamIr {
     pub(crate) ident: Ident,
     /// Conditions under which this parameter and its generated code exist.
     pub(crate) conditions: Vec<Attribute>,
+    /// Dependency validation failure emitted only when the parameter is active.
+    pub(crate) validation_error: Option<Error>,
     /// Request used to obtain the parameter value.
     pub(crate) dependency: DependencyIr,
 }

@@ -62,6 +62,28 @@ fn test_bean_parameter_activation_matches_dependency_and_call_argument() {
 }
 
 #[test]
+fn test_disabled_unsupported_bean_parameter_is_removed_before_validation() {
+    assert_eq!(cfg_fields::disabled_unsupported(), 1);
+    assert_eq!(cfg_fields::ordinary_disabled(), 1);
+    let mut builder = ContainerBuilder::new();
+    builder
+        .install::<cfg_fields::DisabledUnsupportedBean>()
+        .expect("install bean with disabled unsupported parameter");
+    drop(builder.build_all().expect("disabled parameter adds no dependency"));
+}
+
+#[test]
+fn test_cfg_attr_disabled_unsupported_bean_parameter_is_removed_before_validation() {
+    assert_eq!(cfg_fields::cfg_attr_disabled_unsupported(), 2);
+    assert_eq!(cfg_fields::ordinary_cfg_attr_disabled(), 2);
+    let mut builder = ContainerBuilder::new();
+    builder
+        .install::<cfg_fields::DisabledCfgAttrUnsupportedBean>()
+        .expect("install bean with cfg_attr-disabled unsupported parameter");
+    drop(builder.build_all().expect("disabled parameter adds no dependency"));
+}
+
+#[test]
 #[cfg(not(feature = "extra"))]
 fn test_disabled_fields_do_not_register_requests_or_require_config() {
     let mut builder = ContainerBuilder::new();

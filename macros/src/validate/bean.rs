@@ -25,6 +25,8 @@ use super::component::single_generic;
 use crate::conditions::activation_attributes;
 use crate::internal::RuntimePath;
 use crate::ir::BeanIr;
+use crate::ir::DependencyIr;
+use crate::ir::DependencyKind;
 use crate::ir::OutputIr;
 use crate::ir::OutputShape;
 use crate::ir::ParamIr;
@@ -108,11 +110,23 @@ pub(super) fn bean(mut item: ItemFn, options: ValidatedOptions, runtime: &Runtim
         };
         let ident = pattern.ident.clone();
         let conditions = activation_attributes(&argument.attrs)?;
-        let dependency = dependency(&mut argument.attrs, &argument.ty)?;
+        let (dependency, validation_error) = match dependency(&mut argument.attrs, &argument.ty) {
+            Ok(dependency) => (dependency, None),
+            Err(error) if conditions.is_empty() => return Err(error),
+            Err(error) => (
+                DependencyIr {
+                    kind: DependencyKind::Required,
+                    requested_type: (*argument.ty).clone(),
+                    id: None,
+                },
+                Some(error),
+            ),
+        };
         params.push(ParamIr {
             ident,
             conditions,
             dependency,
+            validation_error,
         });
     }
     let marker = options.marker.clone();
