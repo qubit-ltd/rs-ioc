@@ -19,8 +19,10 @@
 //! [`ContainerBuilder::build`] returns the [`Application`] that owns the built
 //! instances. [`Application::context`] hands out a cloneable, read-only
 //! [`ApplicationContext`] that resolves a component by its type or by an
-//! explicit [`BindingKey`]; the clones stay valid until the application is
-//! dropped, and a clone may outlive a completed shutdown.
+//! explicit [`BindingKey`]. Context clones retain their shared query storage
+//! independently of the application owner and remain queryable after the owner
+//! is dropped or shutdown completes. A successful lookup does not guarantee
+//! that the component still accepts work.
 //!
 //! A component that owns an external resource is produced by a [`Managed`]
 //! factory, so the application can shut it down. A managed graph requires an
