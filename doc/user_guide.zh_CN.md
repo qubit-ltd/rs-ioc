@@ -2,7 +2,7 @@
 
 [English user guide](user_guide.md) · [项目 README](../README.zh_CN.md)
 
-本手册面向使用 `qubit-ioc` 0.3.0 的 Rust 应用开发者，介绍如何在启动时组装
+本手册面向使用 `qubit-ioc` 0.4.0 的 Rust 应用开发者，介绍如何在启动时组装
 应用级共享组件、定位构建问题，以及安排资源关闭。项目要求 Rust 1.94 或更新版本。
 建议先完成下面的共享设置场景，再按需要阅读 bean、构建范围、失败清理和生命周期专题。
 

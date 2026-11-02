@@ -16,7 +16,9 @@ Most applications should depend on `qubit-ioc` and enable its default `macros`
 feature, which re-exports these attributes alongside the runtime API. The
 expansions use the public `Definition` / `DefinitionBuilder` registration API.
 Hidden configuration diagnostics and generated-code glue remain implementation
-details. Use matching `0.3.0` runtime and macro versions.
+details. This checkout pairs qubit-ioc 0.4.0 with qubit-ioc-macros 0.3.0.
+Applications should use the runtime facade, which selects its macro dependency;
+the two packages do not need identical version numbers.
 
 ## Installation
 
@@ -66,7 +68,9 @@ The API, supported declarations, configuration requirements, and runnable
 examples are documented in the [project README](https://github.com/qubit-ltd/rs-ioc/blob/main/README.md), the
 [English user guide](https://github.com/qubit-ltd/rs-ioc/blob/main/doc/user_guide.md), and the
 [中文用户手册](https://github.com/qubit-ltd/rs-ioc/blob/main/doc/user_guide.zh_CN.md).
-Keep the runtime and macro crates on matching `0.3.0` versions.
+This checkout pairs qubit-ioc 0.4.0 with qubit-ioc-macros 0.3.0. Applications
+should use the runtime facade, which selects its macro dependency; the two
+packages do not need identical version numbers.
 
 ## Testing
 

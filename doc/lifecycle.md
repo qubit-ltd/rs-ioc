@@ -28,7 +28,7 @@ signatures.
 
 [中文生命周期说明](lifecycle.zh_CN.md) · [User guide](user_guide.md) · [Managed adapter guide](managed-adapters.md)
 
-This guide describes `qubit-ioc` 0.3.0. Register managed factories during
+This guide describes `qubit-ioc` 0.4.0. Register managed factories during
 assembly, then create each resource inside its factory after graph validation.
 Return `Managed<T>` to transfer its value and cleanup actions to the container.
 An already-running external resource can use `register_instance(Arc<T>)`; the
@@ -245,8 +245,9 @@ shows the request/ticket adapter and the application's exit responsibility.
 ## Migration from 0.2 to 0.3
 
 These are breaking changes; old calls below are historical migration inputs.
-Runtime and macro packages must both use 0.3.0. There is no old lifecycle or
-code-generation compatibility layer.
+The historical migration target required runtime and macro packages to both use
+0.3.0. The current checkout uses runtime 0.4.0 with macros 0.3.0; there is no
+compatibility layer for the old lifecycle or code-generation protocol.
 
 | Previous call or behavior | 0.3 replacement and responsibility |
 | --- | --- |

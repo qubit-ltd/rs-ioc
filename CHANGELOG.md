@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.0
+
+This checkout pairs the `qubit-ioc` runtime at `0.4.0` with
+`qubit-ioc-macros` at `0.3.0`; applications should use the runtime facade, which
+selects its macro dependency. This corrects current guide and macro README
+version statements while preserving the historical 0.3.0 migration context.
+
+- Updates the development dependency requirement for `qubit-spi` from 0.13 to
+  0.14, as recorded in the repository history.
+
 ## 0.3.0
 
 Breaking lifecycle and definition changes from the 0.2 source line. The
