@@ -18,7 +18,9 @@ DEPENDENCIES = (
 )
 FULL_SHA_RE = re.compile(r"(?<![0-9a-fA-F])[0-9a-fA-F]{40}(?![0-9a-fA-F])")
 VERSION_STATEMENT_RE = re.compile(
-    r"\bqubit-(?:ioc|event-bus)\b\s*(?:(?:version)\b\s*)?(?:[:=]\s*)?[\"']?(?:v)?\d+\.\d+(?:\.\d+)?(?:[-+][0-9A-Za-z.-]+)?[\"']?",
+    rf"(?<![A-Za-z0-9_-])`?(?:{'|'.join(map(re.escape, DEPENDENCIES))})`?"
+    r"\s*(?:(?:version)\b\s*)?(?:[:=]\s*)?[\"']?(?:v)?"
+    r"\d+\.\d+(?:\.\d+)?(?:[-+][0-9A-Za-z.-]+)?[\"']?",
     re.IGNORECASE,
 )
 MARKDOWN_LINK_RE = re.compile(r"(?<!!)\[[^\]]*\]\(([^)]+)\)")

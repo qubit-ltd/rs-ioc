@@ -10,14 +10,7 @@ checker = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(checker)
 
 
-DEPENDENCIES = (
-    "qubit-ioc",
-    "qubit-event-bus",
-    "qubit-execution-services",
-    "qubit-fs-registry",
-    "qubit-fs-local",
-    "qubit-fs",
-)
+DEPENDENCIES = checker.DEPENDENCIES
 
 
 class CheckDownstreamContractDocsTests(unittest.TestCase):
@@ -102,8 +95,14 @@ class CheckDownstreamContractDocsTests(unittest.TestCase):
         self.assertTrue(any("0.20.1" in error and "0.20.0" in error for error in errors))
 
     def test_quoted_direct_package_versions_are_rejected(self):
-        for statement in ('qubit-ioc = \"0.3.0\"', "qubit-event-bus version: '0.20.1'"):
-            with self.subTest(statement=statement):
+        for index, dependency in enumerate(DEPENDENCIES):
+            with self.subTest(dependency=dependency):
+                if index % 3 == 0:
+                    statement = f"{dependency} = \"1.2.3\""
+                elif index % 3 == 1:
+                    statement = f"`{dependency}` version: '1.2.3'"
+                else:
+                    statement = f"`{dependency}` version\n= \"1.2.3\""
                 self.source.write_text(
                     f"{statement}\n[workflow](.github/workflows/downstream-contracts.yml) "
                     "[manifest](overlay/Cargo.toml)\n",
@@ -112,7 +111,16 @@ class CheckDownstreamContractDocsTests(unittest.TestCase):
 
                 errors = self.run_check()
 
-                self.assertTrue(any(statement.split()[0] in error for error in errors))
+                self.assertTrue(any("direct version statement" in error for error in errors))
+
+    def test_links_to_sources_without_direct_versions_pass(self):
+        self.source.write_text(
+            "Read the [workflow](.github/workflows/downstream-contracts.yml) and "
+            "[overlay manifest](overlay/Cargo.toml) for current source selection.\n",
+            encoding="utf-8",
+        )
+
+        self.assertEqual([], self.run_check())
 
     def test_full_sha_in_source_is_rejected(self):
         self.source.write_text("Pinned commit: " + "a" * 40 + "\n", encoding="utf-8")
