@@ -70,8 +70,10 @@ impl<T: ?Sized + Send + Sync + 'static> Managed<T> {
     /// cancellation, or drop before ownership transfer. A successful return
     /// means the component has terminated; there is no later wait action.
     /// During graceful shutdown, an optional graceful callback runs first as
-    /// a request, then this stop callback confirms termination. Avoid blocking
-    /// indefinitely because both callbacks run synchronously.
+    /// a request, then this stop callback confirms termination. Both callbacks
+    /// run synchronously, including on rollback, cancellation, or drop before
+    /// ownership transfer. A wait deadline cannot preempt them; use this
+    /// constructor only when direct closure is appropriate for those paths.
     ///
     /// # Type Parameters
     ///
@@ -100,7 +102,9 @@ impl<T: ?Sized + Send + Sync + 'static> Managed<T> {
     /// Creates a synchronous managed value with a graceful shutdown request.
     ///
     /// During graceful shutdown, `graceful` requests termination before
-    /// `stop` confirms it. Both callbacks run synchronously and at most once.
+    /// `stop` confirms it. Both callbacks run synchronously and at most once,
+    /// including during rollback, cancellation, or drop before ownership
+    /// transfer. A wait deadline cannot preempt either callback.
     ///
     /// # Type Parameters
     ///

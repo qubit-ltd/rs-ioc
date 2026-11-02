@@ -155,9 +155,13 @@ callback together with stop/abort and wait. If a request returns a ticket, use
 `Managed::asynchronous_with_ticket` or
 `Managed::asynchronous_with_graceful_ticket`, which keep the produced ticket
 paired with its wait callback. Dropping an unused ticket must not cancel
-shutdown. Abort and graceful requests must not join, block on a future or
-condition variable, execute business handlers, or perform unbounded I/O. A
-graceful request drains only its own component and must not close dependencies.
+shutdown. Asynchronous abort and graceful requests must not join, block on a
+future or condition variable, execute business handlers, or perform unbounded
+I/O. A graceful request drains only its own component and must not close
+dependencies. A synchronous `stop` is different: it runs inline and a successful
+return confirms termination. It may run during Drop, cancellation, or rollback;
+deadlines cannot preempt it, so use it only when direct closure is appropriate
+for those paths.
 A ready wait future must not stand in for an unfinished worker. The
 [adapter guide](managed-adapters.md) shows these constructors and ticket-based
 waits.

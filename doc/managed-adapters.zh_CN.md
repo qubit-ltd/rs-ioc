@@ -2,7 +2,7 @@
 
 [English guide](managed-adapters.md) · [生命周期说明](lifecycle.zh_CN.md) · [用户手册](user_guide.zh_CN.md)
 
-本文适用于 `qubit-ioc` 0.3.0。应用创建资源，且需要在关闭依赖前确认资源终止时，
+本文适用于 `qubit-ioc` 0.4.0。应用创建资源，且需要在关闭依赖前确认资源终止时，
 应使用托管工厂。装配时登记工厂，构建选中依赖图时才创建资源。应用保留返回的
 `Application` 作为生命周期所有者，配置由应用持续驱动且有期限的 `WaitPolicy`，
 等待关闭句柄完成后再释放驱动资源的运行时。
@@ -21,17 +21,18 @@ abort 和 graceful 回调应只发出非阻塞请求。用 `wait` 确认终止�
 
 ## 根据终止方式选择构造函数
 
-如果停止方法返回前已经让资源终止，使用 `Managed::synchronous(value, stop)`。
-`stop` 成功返回就是终止确认；仅发送停止信号的方法不符合这个条件。该回调会同步
-执行，包括回滚和 Drop 时，因此执行时间必须有界。
+如果应用可以直接关闭资源，且成功返回表示资源已终止，使用
+`Managed::synchronous(value, stop)`。它不是 worker join 机制：回调会内联执行，
+包括回滚、取消和 Drop 时，`WaitPolicy` 时限无法中断它。只有在这些路径都适合直接
+关闭资源时才使用；回调可能阻塞。
 
 ```rust
 use std::sync::Arc;
 use qubit_ioc::Managed;
 
-// Worker::stop_and_join 由应用实现：返回前 worker 已退出，并提供自身的错误类型。
-let managed = Managed::synchronous(Arc::clone(&worker), |worker| {
-    worker.stop_and_join().map_err(qubit_ioc::CleanupError::new)
+// ApplicationResource::close 由应用实现，直接关闭资源。
+let managed = Managed::synchronous(Arc::clone(&resource), |resource| {
+    resource.close().map_err(qubit_ioc::CleanupError::new)
 });
 ```
 

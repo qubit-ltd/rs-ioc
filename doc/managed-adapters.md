@@ -2,7 +2,7 @@
 
 [中文指南](managed-adapters.zh_CN.md) · [Lifecycle guide](lifecycle.md) · [User guide](user_guide.md)
 
-This guide covers `qubit-ioc` 0.3.0. Use a managed factory when the application
+This guide covers `qubit-ioc` 0.4.0. Use a managed factory when the application
 creates a resource and must confirm its termination before stopping its
 dependencies. Register the factory during assembly; create the resource only
 when the selected graph is built. Keep the returned `Application` as the
@@ -29,20 +29,19 @@ timer.
 
 ## Choose how termination is confirmed
 
-For a resource whose stop method finishes termination before it returns,
-construct `Managed::synchronous(value, stop)`. A successful `stop` return is
-the termination confirmation. Do not use it for a method that only sends a
-stop signal. The callback runs synchronously, including on rollback and Drop,
-so it must have a bounded execution time.
+If the application can close a resource directly and successful return means
+it has terminated, use `Managed::synchronous(value, stop)`. This is not a
+worker join mechanism: the callback runs inline, including during rollback,
+cancellation, and Drop, and a `WaitPolicy` deadline cannot interrupt it. Use it
+only when direct closure is appropriate on all those paths; it may block.
 
 ```rust
 use std::sync::Arc;
 use qubit_ioc::Managed;
 
-// Worker::stop_and_join is supplied by the application. It returns only
-// after the worker has exited, and maps its own error to CleanupError.
-let managed = Managed::synchronous(Arc::clone(&worker), |worker| {
-    worker.stop_and_join().map_err(qubit_ioc::CleanupError::new)
+// ApplicationResource::close is supplied by the application and closes it directly.
+let managed = Managed::synchronous(Arc::clone(&resource), |resource| {
+    resource.close().map_err(qubit_ioc::CleanupError::new)
 });
 ```
 

@@ -21,6 +21,8 @@ DOCS = {
     "doc/complete-design.zh_CN.md": "本文描述 qubit-ioc 0.4.0 当前实现。\n",
     "doc/lifecycle.md": "This guide describes qubit-ioc 0.4.0. Historical migration target: runtime and macro packages both use 0.3.0. Current checkout uses runtime 0.4.0 with macros 0.3.0.\n\n## Migration from 0.2 to 0.3\n",
     "doc/lifecycle.zh_CN.md": "本文适用于 qubit-ioc 0.4.0。当年的迁移目标要求运行时和宏都使用 0.3.0。当前 checkout 使用 runtime 0.4.0 与 macros 0.3.0。\n\n## 从 0.2 迁移到 0.3\n",
+    "doc/managed-adapters.md": "This guide covers qubit-ioc 0.4.0.\n",
+    "doc/managed-adapters.zh_CN.md": "本文适用于 qubit-ioc 0.4.0。\n",
     "README.md": 'Install with qubit-ioc = "0.4".\n',
     "README.zh_CN.md": '安装 qubit-ioc = "0.4"。\n',
     "CHANGELOG.md": "# Changelog\n\n## 0.4.0\n\nCurrent compatibility record.\n\n## 0.3.0\n\nHistorical changes.\n",
@@ -77,6 +79,18 @@ class CheckDocVersionsTests(unittest.TestCase):
     def test_stale_chinese_current_version_is_reported(self):
         self.write("doc/user_guide.zh_CN.md", "本手册适用于 qubit-ioc 0.3.0。\n")
         self.assertTrue(any("user_guide.zh_CN.md" in error for error in self.run_check()))
+
+    def test_stale_managed_adapter_version_is_reported(self):
+        name = "doc/managed-adapters.zh_CN.md"
+        self.write(name, "本文适用于 qubit-ioc 0.3.0。\n")
+        original_guides = checker.CURRENT_GUIDES
+        try:
+            checker.CURRENT_GUIDES = tuple(path for path in original_guides if path != name)
+            self.assertFalse(any(name in error for error in self.run_check()))
+            checker.CURRENT_GUIDES = original_guides
+            self.assertTrue(any(name in error for error in self.run_check()))
+        finally:
+            checker.CURRENT_GUIDES = original_guides
 
     def test_changed_runtime_and_macro_manifest_versions_must_match_docs(self):
         self.write("Cargo.toml", '[package]\nname = "qubit-ioc"\nversion = "0.5.0"\n[dependencies]\nqubit-ioc-macros = { path = "macros", version = "0.4.0" }\n')

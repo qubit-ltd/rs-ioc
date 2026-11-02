@@ -14,6 +14,8 @@ CURRENT_GUIDES = (
     "doc/complete-design.zh_CN.md",
     "doc/lifecycle.md",
     "doc/lifecycle.zh_CN.md",
+    "doc/managed-adapters.md",
+    "doc/managed-adapters.zh_CN.md",
 )
 INSTALL_RE = re.compile(
     r"\bqubit-ioc\s*=\s*(?:\{[^}]*?\bversion\s*=\s*['\"]([^'\"]+)['\"]|['\"]([^'\"]+)['\"])",

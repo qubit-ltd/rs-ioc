@@ -130,8 +130,10 @@ stop 回调成功返回就表示资源已终止的情况。后台资源使用
 回调与 stop/abort 和 wait 一起固定下来。请求返回 ticket 时使用
 `Managed::asynchronous_with_ticket` 或 `Managed::asynchronous_with_graceful_ticket`，由构造器
 保持请求产出的 ticket 与 wait 回调配对；未使用的 ticket 被丢弃时不能取消资源关闭。
-abort 和 graceful 请求不能 join、block_on、等待条件变量、执行业务 handler 或进行无界
-I/O。graceful 请求只排空当前组件，不能顺手关闭依赖。不能用 ready future 冒充尚未退出的
+异步 abort 和 graceful 请求不能 join、block_on、等待条件变量、执行业务 handler 或进行
+无界 I/O。graceful 请求只排空当前组件，不能顺手关闭依赖。同步 stop 则不同：它会内联
+执行，成功返回即确认资源终止；Drop、取消或回滚时也可能调用它，时限无法抢占该回调，
+因此只应在这些路径适合直接关闭资源时使用。不能用 ready future 冒充尚未退出的
 后台任务。更多示例见[托管资源适配指南](managed-adapters.zh_CN.md)。
 
 - `application.begin_shutdown(ShutdownMode::Graceful)` 转移所有权并发布 ShuttingDown，
