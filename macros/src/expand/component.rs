@@ -394,7 +394,7 @@ mod tests {
         let Item::Impl(registration) = &generated.items[1] else {
             panic!("expected registration impl");
         };
-        let (_, trait_path, _) = registration
+        let (trait_path, _) = registration
             .trait_
             .as_ref()
             .expect("expected ComponentDefinition trait");

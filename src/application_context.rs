@@ -93,7 +93,6 @@ impl ApplicationContext {
     /// [`ApplicationState::Incomplete`] if the stored discriminant is not one
     /// this version recognises.
     #[inline]
-    #[must_use]
     pub fn state(&self) -> ApplicationState {
         match self.inner.state.load(Ordering::Acquire) {
             0 => ApplicationState::Running,

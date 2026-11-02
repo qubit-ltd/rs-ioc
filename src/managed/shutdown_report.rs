@@ -112,7 +112,6 @@ impl ShutdownReport {
     }
 
     /// Returns failures in observation order, retaining their original sources.
-    #[must_use]
     #[inline]
     pub fn failures(&self) -> &[ShutdownFailure] {
         &self.failures

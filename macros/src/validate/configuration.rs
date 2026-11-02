@@ -15,7 +15,6 @@ use syn::spanned::Spanned;
 
 use super::ValidatedOptions;
 use crate::ir::ConfigurationIr;
-use crate::ir::SourceIr;
 
 /// Normalizes an inline module and rejects a conflicting generated function.
 ///
@@ -35,8 +34,7 @@ use crate::ir::SourceIr;
 /// # Returns
 ///
 /// Returns a [`ConfigurationIr`] containing the unchanged module, its default
-/// profile, and the module's source identity for later expansion and
-/// diagnostics.
+/// profile.
 ///
 /// # Errors
 ///
@@ -56,13 +54,8 @@ pub(super) fn configuration(item: ItemMod, options: ValidatedOptions) -> Result<
             ));
         }
     }
-    let source = SourceIr {
-        item: item.ident.clone(),
-        span: item.ident.span(),
-    };
     Ok(ConfigurationIr {
         item,
         profile: options.profile,
-        source,
     })
 }

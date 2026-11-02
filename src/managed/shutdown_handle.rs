@@ -164,6 +164,6 @@ impl ShutdownHandle {
 impl Drop for ShutdownHandle {
     /// Requests remaining aborts and publishes completeness without waiting.
     fn drop(&mut self) {
-        self.driver.abandon();
+        let _ = self.driver.abandon();
     }
 }

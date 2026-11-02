@@ -60,7 +60,7 @@ impl Parse for RawOption {
             }
             "bind" | "type" => {
                 input.parse::<Token![=]>()?;
-                RawValue::Type(input.parse()?)
+                RawValue::Type(Box::new(input.parse()?))
             }
             "marker" => {
                 input.parse::<Token![=]>()?;

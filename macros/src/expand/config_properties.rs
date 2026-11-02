@@ -288,7 +288,7 @@ mod tests {
         let Item::Impl(registration) = &bridged.items[0] else {
             panic!("expected registration impl")
         };
-        let (_, trait_path, _) = registration.trait_.as_ref().expect("expected registration trait");
+        let (trait_path, _) = registration.trait_.as_ref().expect("expected registration trait");
         assert_path(trait_path, &["renamed_ioc", "ComponentDefinition"]);
         let register = registration
             .items

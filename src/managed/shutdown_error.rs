@@ -84,7 +84,6 @@ impl ShutdownError {
     ///
     /// An error that exposes the given observations through its `Display`
     /// implementation and through [`ShutdownError::report`].
-    #[must_use]
     #[inline]
     pub(crate) fn new(report: ShutdownReport) -> Self {
         Self { report }

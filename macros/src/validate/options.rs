@@ -84,7 +84,10 @@ pub(super) fn validate_options(kind: MacroKind, options: Vec<RawOption>) -> Resu
                 validate_id(&value)?;
                 validated.id = Some(value);
             }
-            ("bind", RawValue::Type(Type::TraitObject(value))) => validated.binds.push(value),
+            ("bind", RawValue::Type(value)) => match *value {
+                Type::TraitObject(value) => validated.binds.push(value),
+                _ => return Err(Error::new(key.span(), "`bind` requires `dyn Trait`")),
+            },
             ("bind", _) => {
                 return Err(Error::new(key.span(), "`bind` requires `dyn Trait`"));
             }
@@ -99,7 +102,7 @@ pub(super) fn validate_options(kind: MacroKind, options: Vec<RawOption>) -> Resu
             }
             ("profile", RawValue::String(value)) => validated.profile = Some(value),
             ("prefix", RawValue::String(value)) => validated.prefix = Some(value),
-            ("type", RawValue::Type(value)) => validated.explicit_type = Some(value),
+            ("type", RawValue::Type(value)) => validated.explicit_type = Some(*value),
             ("marker", RawValue::Ident(value)) => validated.marker = Some(value),
             _ => return Err(Error::new(key.span(), "invalid IoC option value")),
         }

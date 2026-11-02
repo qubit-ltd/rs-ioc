@@ -42,11 +42,7 @@ use crate::parse::parse_options;
 /// child's activation attributes are malformed, or when a `#[bean]` option list
 /// cannot be parsed.
 pub(crate) fn expand(value: ConfigurationIr, context: &ExpansionContext) -> Result<TokenStream> {
-    let ConfigurationIr {
-        mut item,
-        profile,
-        source: _,
-    } = value;
+    let ConfigurationIr { mut item, profile } = value;
     let Some((_, children)) = &mut item.content else {
         return Err(Error::new(
             item.ident.span(),
@@ -166,7 +162,6 @@ fn add_profile(attribute: &mut Attribute, profile: &LitStr) {
 
 #[cfg(test)]
 mod tests {
-    use proc_macro2::Span;
     use quote::quote;
     use syn::Expr;
     use syn::File;
@@ -187,15 +182,10 @@ mod tests {
 
     use crate::expand::ExpansionContext;
     use crate::ir::ConfigurationIr;
-    use crate::ir::SourceIr;
 
     /// Expands an inline group and returns its actual generated child items.
     fn expand_group(item: ItemMod, profile: Option<LitStr>) -> Vec<Item> {
-        let source = SourceIr {
-            item: item.ident.clone(),
-            span: Span::call_site(),
-        };
-        let value = ConfigurationIr { item, profile, source };
+        let value = ConfigurationIr { item, profile };
         let context = ExpansionContext {
             runtime: quote!(::qubit_ioc),
         };

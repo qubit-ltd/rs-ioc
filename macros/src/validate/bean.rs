@@ -76,7 +76,7 @@ use crate::ir::SourceIr;
 pub(super) fn bean(mut item: ItemFn, options: ValidatedOptions, runtime: &RuntimePath) -> Result<BeanIr> {
     let signature = &item.sig;
     if signature.constness.is_some()
-        || signature.unsafety.is_some()
+        || matches!(signature.safety, syn::Safety::Unsafe(_))
         || signature.abi.is_some()
         || signature.variadic.is_some()
         || !signature.generics.params.is_empty()

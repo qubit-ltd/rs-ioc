@@ -10,14 +10,10 @@
 use syn::ItemMod;
 use syn::LitStr;
 
-use crate::ir::SourceIr;
-
 /// An inline configuration module and its default profile.
 pub(crate) struct ConfigurationIr {
     /// Original inline module containing the declarations.
     pub(crate) item: ItemMod,
     /// Default profile applied to direct beans without an override.
     pub(crate) profile: Option<LitStr>,
-    /// Source identity retained for diagnostics.
-    pub(crate) source: SourceIr,
 }

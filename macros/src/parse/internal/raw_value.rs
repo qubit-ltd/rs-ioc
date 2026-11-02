@@ -31,7 +31,7 @@ pub(crate) enum RawValue {
     /// A Rust type value such as `dyn Trait`.
     Type(
         /// Parsed Rust type before validating the option's supported shape.
-        Type,
+        Box<Type>,
     ),
     /// An identifier value such as a generated marker name.
     Ident(
