@@ -39,7 +39,7 @@ the actual `spawn_io` results 43 and 22 and handler message `final-report:22`.
 The rooted provider resolves `file:///report.csv` with `stat` length 22.
 The current direct dependency constraints are defined by this overlay's
 [`Cargo.toml`](Cargo.toml) and the native consumer manifest at
-`rs-execution-services/tests/fixtures/ioc_application_consumer/Cargo.toml`.
+`rs-execution-services/tests/fixtures/ioc_application_consumer/Cargo.toml`. Both current consumers use the local core 0.21 checkout; this local validation does not update or claim compatibility for workflow-pinned revisions.
 Fs and FsRegistry use matching direct paths and crates.io patches. The current
 lane's checkout refs come from [`downstream-contracts.yml`](../../../.github/workflows/downstream-contracts.yml);
 the historical lane has its own pin and manifest.
