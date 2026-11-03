@@ -121,6 +121,10 @@ provider crate 应导出显式 `register_ioc(&mut builder)`，由应用决定纳
 `Immediate` 则在返回句柄前为全部托管组件请求 abort，然后显式 `wait` 确认终止。
 某个清理动作报错或 unwind panic 会记录在报告中，后续条目仍会执行。
 
+上述 panic 隔离覆盖清理回调和 future poll，不覆盖用户提供的 wait future、ticket 或捕获值
+析构函数。此类析构 panic 会向外传播；关闭可能无法完成报告或访问后续条目，因此这些
+析构函数不得 panic。
+
 取消 `wait` future 会把活跃 future 与 deadline 留在句柄里，再次调用会继续原预算。
 `abort()` 可升级未完成条目；`abandon()` 请求剩余 abort、返回报告但不启动 wait。
 owner、未移交的 `Managed` 与句柄 Drop 尽力请求 abort，不等待；查询 context Drop

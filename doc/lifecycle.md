@@ -187,8 +187,11 @@ Graceful timeout records a failure, requests abort for that component, and
 keeps its existing pending wait under the termination budget. Another timeout
 marks it incomplete and proceeds to later entries. A graceful request failure
 also falls back to abort; wait errors or panics cannot recreate a consumed
-one-shot wait to prove termination. A termination budget failure degrades the
-consumer-before-dependency guarantee for that unfinished consumer.
+one-shot wait to prove termination. If a termination budget expires, a
+consumer may remain active while shutdown proceeds to dependencies.
+The driver does not catch a panic from dropping a user-provided wait future,
+ticket, or captured value. Such a panic propagates and can prevent report
+finalization or later cleanup actions; these destructors must not panic.
 
 The application must drive the supplied timer. Deadlines constrain futures
 that yield Pending; they cannot interrupt blocking callbacks, blocking

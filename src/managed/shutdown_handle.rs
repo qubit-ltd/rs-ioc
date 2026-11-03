@@ -97,6 +97,12 @@ impl ShutdownHandle {
     /// Deadlines require the supplied timer runtime to be driven and cannot
     /// interrupt blocking callbacks or future polls.
     ///
+    /// Panics from cleanup requests and future polling are reported, but
+    /// panics from destructors of user-provided wait futures, tickets, or
+    /// captured values are not caught. Such a destructor panic propagates from
+    /// this method and may leave the final report unavailable and later
+    /// cleanup actions unvisited.
+    ///
     /// # Returns
     ///
     /// The stable final report, also returned by every later read of this

@@ -135,7 +135,9 @@ impl<T: ?Sized + Send + Sync + 'static> Managed<T> {
     /// The abort callback must request termination without blocking. During
     /// explicit asynchronous shutdown, `wait` confirms termination before
     /// dependencies are stopped. Dropping an untransferred value only calls
-    /// abort and never starts `wait`.
+    /// abort and never starts `wait`. The wait future and values it captures
+    /// must not panic during destruction: destructor panics are not converted
+    /// into cleanup report entries and can interrupt shutdown observation.
     ///
     /// # Type Parameters
     ///
@@ -168,7 +170,10 @@ impl<T: ?Sized + Send + Sync + 'static> Managed<T> {
     ///
     /// During graceful shutdown, `graceful` requests termination before
     /// `wait` confirms it; dependencies are stopped only after that wait
-    /// completes. Dropping an untransferred value only calls `abort`.
+    /// completes. Dropping an untransferred value only calls `abort`. The wait
+    /// future and values it captures must not panic during destruction:
+    /// destructor panics are not converted into cleanup report entries and can
+    /// interrupt shutdown observation.
     ///
     /// # Type Parameters
     ///
@@ -202,7 +207,9 @@ impl<T: ?Sized + Send + Sync + 'static> Managed<T> {
     /// `abort` must request termination without waiting. `wait` consumes the
     /// ticket during explicit shutdown and confirms termination. Dropping an
     /// untransferred value calls only `abort`. The ticket's destructor must not
-    /// cancel shutdown, because an unused ticket may be discarded on upgrade.
+    /// cancel shutdown, because an unused ticket may be discarded on upgrade;
+    /// ticket and wait-future destructors must not panic, since those panics
+    /// are not converted into cleanup report entries.
     /// Use [`Self::asynchronous_with_graceful_ticket`] when a graceful request
     /// is needed so its ticket can be passed to `wait`.
     ///
@@ -255,6 +262,8 @@ impl<T: ?Sized + Send + Sync + 'static> Managed<T> {
     /// If only the newest request's ticket can confirm termination, keep
     /// upgradeable shared observation state in the resource and use
     /// [`Self::asynchronous_with_graceful`] with a stable wait future instead.
+    /// Ticket and wait-future destructors must not panic: their panics are not
+    /// converted into cleanup report entries and can interrupt observation.
     /// This constructor keeps its graceful callback paired with its ticket;
     /// use [`Self::asynchronous_with_ticket`] when no graceful request is
     /// needed.

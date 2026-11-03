@@ -231,6 +231,11 @@ appears in the report. `Immediate` requests every abort before returning the
 handle, then explicit `wait` confirms termination. Failed cleanup actions and
 unwind panics are reported while later entries continue.
 
+This panic containment covers cleanup callbacks and future polling, not
+destructors of user-provided wait futures, tickets, or captured values. A
+panic from those destructors propagates; shutdown may not finalize its report
+or visit later entries. These destructors must not panic.
+
 Cancelling a `wait` future preserves its active future and deadline in the
 handle; another call resumes without resetting the budget. `abort()` upgrades
 unfinished entries. `abandon()` returns a report after requesting remaining

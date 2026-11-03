@@ -153,6 +153,8 @@ bounded policy 为每个组件分别提供 grace 和 termination 预算。Gracef
 预算；再次超时则标记 incomplete，继续后续组件。graceful 请求失败也会退回 abort；
 wait 报错或 panic 后，已消费的一次性 wait 不能重新创建来证明终止。终止预算耗尽时，
 尚未结束的消费者不能再获得“先结束消费者、再关闭依赖”的完整保证。
+driver 不会捕获用户提供的 wait future、ticket 或捕获值析构时的 panic；该 panic 会向外传播，
+并可能导致报告无法完成或后续清理动作未执行，因此这些析构函数不得 panic。
 
 应用必须正常驱动计时器。期限只约束会返回 Pending 的 future，无法打断阻塞回调、
 阻塞的 `Future::poll`、析构函数或 `panic = "abort"`。创建或轮询计时器时的 unwind
