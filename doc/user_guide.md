@@ -147,6 +147,9 @@ as `CustomValue`, so roots and queries use `CustomValue`. A
 module's beans without running them. This grouping attribute needs no
 `config` feature. Reading configuration with `#[value]` or
 `#[ConfigurationProperties]` needs both `macros` and `config`.
+The generated function occupies that name inside the module, so an active
+user-defined `register_ioc` conflicts and is diagnosed by Rust. A function
+removed by `cfg` does not conflict.
 
 The three roots select the definitions; the assertions observe `1`, `2`, and
 `"ready"` after construction. Run the identical

@@ -8,7 +8,6 @@
 //! Inline configuration module validation.
 
 use syn::Error;
-use syn::Item;
 use syn::ItemMod;
 use syn::Result;
 use syn::spanned::Spanned;
@@ -16,13 +15,14 @@ use syn::spanned::Spanned;
 use super::ValidatedOptions;
 use crate::ir::ConfigurationIr;
 
-/// Normalizes an inline module and rejects a conflicting generated function.
+/// Validates that a configuration module has an inline body.
 ///
 /// The module must carry its body inline, so a file-style `mod name;` is
-/// rejected. Only a direct child free function named `register_ioc` counts as
-/// a conflict; every other child item is carried through untouched. The
-/// resulting IR keeps the whole module, so the expansion stage can emit the
-/// user's own items alongside the generated registration.
+/// rejected. Child items are carried through untouched. Name conflicts with
+/// generated items are left to Rust, which can account for conditional
+/// compilation before deciding whether a conflict exists. The resulting IR
+/// keeps the whole module, so the expansion stage can emit the user's own
+/// items alongside the generated registration.
 ///
 /// # Parameters
 ///
@@ -38,22 +38,14 @@ use crate::ir::ConfigurationIr;
 ///
 /// # Errors
 ///
-/// Returns an error when `item` has no inline body, or when it already declares
-/// a `register_ioc` function that the generated code would collide with.
+/// Returns an error when `item` has no inline body.
 pub(super) fn configuration(item: ItemMod, options: ValidatedOptions) -> Result<ConfigurationIr> {
-    let Some((_, items)) = &item.content else {
-        return Err(Error::new(item.span(), "#[Configuration] requires an inline module"));
+    let Some((_, _)) = &item.content else {
+        return Err(Error::new(
+            item.span(),
+            "#[Configuration] requires an inline module",
+        ));
     };
-    for child in items {
-        if let Item::Fn(function) = child
-            && function.sig.ident == "register_ioc"
-        {
-            return Err(Error::new(
-                function.sig.ident.span(),
-                "#[Configuration] conflicts with existing `register_ioc`",
-            ));
-        }
-    }
     Ok(ConfigurationIr {
         item,
         profile: options.profile,

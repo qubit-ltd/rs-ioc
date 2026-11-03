@@ -663,8 +663,8 @@ fn test_configuration_properties_accepts_empty_root_prefix() {
 }
 
 #[test]
-fn test_configuration_rejects_existing_register_ioc_function() {
-    let error = declaration(
+fn test_configuration_ir_retains_existing_register_ioc_function() {
+    let parsed = declaration(
         MacroKind::Configuration,
         quote!(),
         quote!(
@@ -673,9 +673,16 @@ fn test_configuration_rejects_existing_register_ioc_function() {
             }
         ),
     )
-    .expect_err("an existing register_ioc function conflicts with generated output");
-
-    assert!(error.to_string().contains("conflicts with existing"), "{error}");
+    .expect("configuration IR retains same-named functions for cfg-aware compilation");
+    let Declaration::Configuration(configuration) = parsed else {
+        panic!("configuration IR was expected");
+    };
+    let Some((_, items)) = configuration.item.content else {
+        panic!("inline configuration body should be retained");
+    };
+    assert!(
+        matches!(items.first(), Some(syn::Item::Fn(function)) if function.sig.ident == "register_ioc")
+    );
 }
 
 #[test]

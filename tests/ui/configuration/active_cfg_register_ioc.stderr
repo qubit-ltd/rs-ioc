@@ -1,0 +1,10 @@
+error[E0428]: the name `register_ioc` is defined multiple times
+  --> tests/ui/configuration/active_cfg_register_ioc.rs:12:5
+   |
+ 9 | #[qubit_ioc::Configuration]
+   | --------------------------- previous definition of the value `register_ioc` here
+...
+12 |     fn register_ioc() {}
+   |     ^^^^^^^^^^^^^^^^^ `register_ioc` redefined here
+   |
+   = note: `register_ioc` must be defined only once in the value namespace of this module

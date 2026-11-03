@@ -138,6 +138,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 `CustomValue`。`#[Configuration]` 模块导出 `register_ioc`；调用它只安装模块中的
 bean，不执行工厂。这个分组功能不依赖 `config`，而通过 `#[value]` 或
 `#[ConfigurationProperties]` 读取配置时，才需要同时启用 `macros` 和 `config`。
+生成的函数会在模块内占用这个名称，因此仍处于激活状态的用户 `register_ioc`
+函数会与其冲突，并由 Rust 报错。被 `cfg` 移除的函数不会产生冲突。
 
 三个根节点选中相应定义；构建后的断言验证 `1`、`2` 和 `"ready"`。在仓库根目录运行
 同一份[完整示例](../examples/readme_beans.rs)：
