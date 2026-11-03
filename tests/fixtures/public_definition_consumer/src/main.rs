@@ -22,7 +22,7 @@ use crate::service::Service;
 
 /// Builds one public definition and checks both bindings share its allocation.
 fn verify_public_definition() {
-    let value = Arc::new(Service(42));
+    let value = Arc::new(Service::new(42));
     let definition = Definition::<Service>::builder()
         .source(DefinitionSource::new(
             "consumer",

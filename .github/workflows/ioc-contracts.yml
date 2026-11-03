@@ -112,6 +112,8 @@ jobs:
         run: cargo +1.94.0 test --manifest-path tests/fixtures/ioc_cross_crate/Cargo.toml -p qubit-ioc-fixture-app --locked
       - name: Test feature-minimal manual assembly
         run: cargo +1.94.0 test --manifest-path tests/fixtures/ioc_cross_crate/Cargo.toml -p qubit-ioc-fixture-manual --locked
+      - name: Test public definition consumer
+        run: cargo +1.94.0 test --manifest-path tests/fixtures/public_definition_consumer/Cargo.toml --locked
       - name: Verify manual consumer feature isolation
         run: |
           python3 -m unittest discover -s .infra/tools/tests -p 'test_check_manual_feature_isolation.py' -v

@@ -15,6 +15,13 @@ pub(super) struct Service(
     u32,
 );
 
+impl Service {
+    /// Creates the fixture service with the given value.
+    pub(super) fn new(value: u32) -> Self {
+        Self(value)
+    }
+}
+
 impl Api for Service {
     /// Returns the service's stored value without modifying it.
     ///
