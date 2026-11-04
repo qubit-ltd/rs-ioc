@@ -71,9 +71,19 @@ pub fn get_value_for<T: FromConfig>(config: &Config, path: &str, target: &str) -
 
 /// Deserializes a subtree at `prefix` without interpolation.
 ///
-/// `T` must be an owned Serde target. The default `Config::deserialize`
-/// rejects unknown fields. Any configuration error keeps its root-relative
-/// field path in the retained source chain.
+/// `T` must be an owned Serde target. Unknown-field rejection depends on what
+/// the target deserializer observes: ordinary derived structs generally reject
+/// unknown fields, while `flatten`, untagged variants, and custom
+/// `Deserialize` implementations can consume or discard fields without
+/// reporting them as unknown. For a closed schema, use
+/// `#[serde(deny_unknown_fields)]` on each payload struct, including structs
+/// used by untagged variants. Serde does not support combining that attribute
+/// with `flatten`.
+///
+/// Unknown-field failures may be reported as redacted deserialization errors;
+/// callers must not rely on an `UnknownProperties` variant or a complete list
+/// of unknown paths. The original [`qubit_config::ConfigError`] remains in the
+/// factory error's source chain, but a concrete field path is not guaranteed.
 ///
 /// # Type Parameters
 ///
@@ -91,15 +101,25 @@ pub fn get_value_for<T: FromConfig>(config: &Config, path: &str, target: &str) -
 /// # Errors
 ///
 /// Returns [`FactoryError`] when the subtree is absent or cannot be
-/// deserialized as `T`.
+/// deserialized as `T`. Unknown-field behavior and diagnostic path guarantees
+/// follow the target's Serde deserializer as described above.
 pub fn deserialize_properties<T: DeserializeOwned>(config: &Config, prefix: &str) -> Result<T, FactoryError> {
     config.deserialize::<T>(prefix).map_err(FactoryError::new)
 }
 
 /// Deserializes a generated properties type and retains its name for errors.
 ///
-/// The Config error stays as the direct source of the factory error. This
-/// function is a macro code-generation protocol.
+/// Unknown-field rejection depends on what the target deserializer observes:
+/// ordinary derived structs generally reject unknown fields, while `flatten`,
+/// untagged variants, and custom `Deserialize` implementations can consume or
+/// discard them. Closed schemas should use `#[serde(deny_unknown_fields)]` on
+/// each payload struct, including untagged variant payloads; Serde does not
+/// support combining that attribute with `flatten`.
+///
+/// Unknown-field failures may be redacted and need not identify every unknown
+/// path or use a particular error variant. The original Config error remains
+/// in the factory error's source chain, but a concrete field path is not
+/// guaranteed. This function is a macro code-generation protocol.
 ///
 /// # Type Parameters
 ///
@@ -118,7 +138,8 @@ pub fn deserialize_properties<T: DeserializeOwned>(config: &Config, prefix: &str
 /// # Errors
 ///
 /// Returns [`FactoryError`] with `prefix` and `target` context when
-/// deserialization fails.
+/// deserialization fails. Unknown-field behavior and diagnostic path
+/// guarantees follow the target's Serde deserializer as described above.
 #[doc(hidden)]
 pub fn deserialize_properties_for<T: DeserializeOwned>(
     config: &Config,

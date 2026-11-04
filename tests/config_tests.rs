@@ -32,6 +32,35 @@ struct EndpointProperties {
     endpoint: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum OpenChoice {
+    Service { port: u16 },
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ClosedService {
+    port: u16,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum ClosedChoice {
+    Service(ClosedService),
+}
+
+fn source_chain_contains_config_error(error: &(dyn Error + 'static)) -> bool {
+    let mut current = Some(error);
+    while let Some(source) = current {
+        if source.downcast_ref::<ConfigError>().is_some() {
+            return true;
+        }
+        current = source.source();
+    }
+    false
+}
+
 #[test]
 fn test_with_config_shares_one_snapshot_with_factories() {
     let mut config = Config::new();
@@ -136,6 +165,10 @@ fn test_deserialize_properties_rejects_unknown_fields_and_keeps_paths() {
 
     let error =
         deserialize_properties::<ServiceProperties>(&config, "service").expect_err("unknown field must be rejected");
+    assert!(
+        source_chain_contains_config_error(&error),
+        "factory error source chain should retain the ConfigError"
+    );
     let source = error.source().expect("configuration source");
     assert!(
         matches!(
@@ -144,6 +177,30 @@ fn test_deserialize_properties_rejects_unknown_fields_and_keeps_paths() {
                 if paths == &["service.extra".to_owned()]
         ),
         "unknown property error should retain its path"
+    );
+}
+
+#[test]
+fn test_deserialize_properties_observes_serde_unknown_field_boundaries() {
+    let mut config = Config::new();
+    config.set("service.port", 8080).expect("set port");
+    config.set("service.typo", "unexpected").expect("set typo");
+
+    let open = deserialize_properties::<OpenChoice>(&config, "service")
+        .expect("untagged payload without deny_unknown_fields may ignore unknown data");
+    let OpenChoice::Service { port } = open;
+    assert_eq!(port, 8080);
+
+    let error = match deserialize_properties::<ClosedChoice>(&config, "service") {
+        Err(error) => error,
+        Ok(ClosedChoice::Service(service)) => {
+            assert_eq!(service.port, 8080);
+            panic!("deny_unknown_fields payload should reject unknown data");
+        }
+    };
+    assert!(
+        source_chain_contains_config_error(&error),
+        "closed payload failure should retain the ConfigError in its source chain"
     );
 }
 
