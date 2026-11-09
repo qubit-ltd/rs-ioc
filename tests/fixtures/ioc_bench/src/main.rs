@@ -7,12 +7,14 @@
 // =============================================================================
 //! Reproducible graph and published-context query workloads.
 //!
-//! Run `correctness` separately before `graph`, `query`, or `all` in release
-//! mode. Teardown and assertions are outside measured regions. Each measured
-//! workload follows untimed warm-up; no machine-time threshold is imposed.
+//! Run `correctness` separately before `graph`, `query`, `requests`, or `all`
+//! in release mode. Teardown and assertions are outside measured regions. Each
+//! measured workload follows untimed warm-up; no machine-time threshold is
+//! imposed.
 
 mod graph_workloads;
 mod query_workloads;
+mod request_workloads;
 
 use std::time::Duration;
 use std::time::Instant;
@@ -23,21 +25,36 @@ const SIZES: [usize; 4] = [1_000, 2_000, 4_000, 8_000];
 /// Selects the first argument; defaults to correctness and rejects unknown
 /// modes.
 fn main() {
-    let mode = std::env::args().nth(1).unwrap_or_else(|| "correctness".to_owned());
-    println!("mode={mode} samples={SAMPLES} sizes={SIZES:?}");
+    let mode = std::env::args()
+        .nth(1)
+        .unwrap_or_else(|| "correctness".to_owned());
+    match mode.as_str() {
+        "requests" => println!(
+            "mode={mode} samples={SAMPLES} request_sizes={:?}",
+            request_workloads::SIZES
+        ),
+        "correctness" | "all" => println!(
+            "mode={mode} samples={SAMPLES} sizes={SIZES:?} request_sizes={:?}",
+            request_workloads::SIZES
+        ),
+        _ => println!("mode={mode} samples={SAMPLES} sizes={SIZES:?}"),
+    }
     match mode.as_str() {
         "correctness" => {
             graph_workloads::check();
             query_workloads::check();
+            request_workloads::check();
             println!("correctness=passed");
         }
         "graph" => graph_workloads::run(),
         "query" => query_workloads::run(),
+        "requests" => request_workloads::run(),
         "all" => {
             graph_workloads::run();
             query_workloads::run();
+            request_workloads::run();
         }
-        _ => panic!("expected correctness, graph, query, or all"),
+        _ => panic!("expected correctness, graph, query, requests, or all"),
     }
 }
 
@@ -64,5 +81,8 @@ fn print_samples(label: &str, samples: &[Duration]) {
     let raw: Vec<_> = samples.iter().map(Duration::as_nanos).collect();
     let mut sorted = raw.clone();
     sorted.sort_unstable();
-    println!("{label} samples_ns={raw:?} median_ns={}", sorted[sorted.len() / 2]);
+    println!(
+        "{label} samples_ns={raw:?} median_ns={}",
+        sorted[sorted.len() / 2]
+    );
 }
