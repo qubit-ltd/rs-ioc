@@ -108,10 +108,15 @@ async factory, a synchronous build returns `AsyncRequired` before running any
 factory. The application supplies and drives its executor; synchronous and
 async factories can coexist in an async build.
 
-Validation resolves roots and requests after profile filtering, then checks
-missing or ambiguous dependencies, duplicate active keys, primary selection,
-and cycles. Neither a factory nor an alias projector runs until the complete selected
-graph validates and, for synchronous construction, the async preflight passes.
+After profile filtering, Reachable validation selects roots and resolves
+requests while closing over their dependencies and every binding in each
+selected definition. Its binding index still includes every active binding,
+so candidates outside the root closure can affect type selection. AllActive
+validates the full active graph before reporting root errors, and `build_all()`
+resolves every active definition. Validation checks missing or ambiguous
+dependencies, duplicate active keys, primary selection, and cycles. Neither a
+factory nor an alias projector runs until the complete selected graph validates
+and, for synchronous construction, the async preflight passes.
 Absent optional requests resolve to `None`, and absent collection requests to
 an empty vector; matching requests still participate in validation. Factories
 run serially with dependencies before consumers, preserving registration and
@@ -152,8 +157,10 @@ the graph; an undeclared query returns `BuildAccessError`.
 
 The published context builds immutable exact-key and per-type indexes; each
 per-type index is ordered once by binding order, ID, source location, and
-registration position. Single-value and ID queries iterate that index
-directly, while collection queries reuse its order.
+registration position. Unnamed single-value queries use a cached position
+when a type has one binding or one unique primary; otherwise the existing
+candidate diagnostics decide the result. Exact-ID queries use the exact-key
+index, while collection queries reuse the per-type order.
 `BuildContext::get_all` and `ApplicationContext::get_all` order collections by
 ascending `order`, ID, and source location; complete ties retain registration
 order. Diagnostic candidate and available-binding lists retain registration
