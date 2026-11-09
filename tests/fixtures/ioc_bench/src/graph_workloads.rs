@@ -26,13 +26,27 @@ use crate::SIZES;
 use crate::print_samples;
 
 const SMALL_CLOSURE: usize = 8;
-const WORKLOADS: [&str; 5] = ["chain", "alias", "collection", "root_closure", "missing_tail"];
+const WORKLOADS: [&str; 5] = [
+    "chain",
+    "alias",
+    "collection",
+    "root_closure",
+    "missing_tail",
+];
+const UNREACHABLE_CASES: [(usize, usize); 2] = [(100, 64), (1_000, 1_024)];
 
 /// Shared projection interface for one concrete definition with many aliases.
 trait Value: Send + Sync {
     /// Returns the small value held by the concrete allocation.
     fn value(&self) -> u32;
 }
+
+/// Candidate type for the unreachable collection workload, distinct from the
+/// fixed `u32` root chain and its `usize` consumers.
+struct Candidate(u64);
+
+/// Consumer output records the sum of its selected candidate collection.
+struct Consumer(usize);
 
 impl Value for u32 {
     fn value(&self) -> u32 {
@@ -68,7 +82,10 @@ fn chain(
     for index in 0..n {
         let next = (index + 1 < length || (missing && index + 1 == length))
             .then(|| format!("node.n{}", index + 1));
-        let dependencies: Vec<_> = next.iter().map(|id| Dependency::with_id::<u32>(id)).collect();
+        let dependencies: Vec<_> = next
+            .iter()
+            .map(|id| Dependency::with_id::<u32>(id))
+            .collect();
         let calls = counter.clone();
         builder
             .register_factory_with::<u32, _>(
@@ -84,7 +101,9 @@ fn chain(
             )
             .expect("register named chain node");
     }
-    builder.root_by_id::<u32>("node.n0").expect("valid chain root");
+    builder
+        .root_by_id::<u32>("node.n0")
+        .expect("valid chain root");
     builder
 }
 
@@ -97,13 +116,16 @@ fn aliases(n: usize, counter: Option<Arc<AtomicUsize>>) -> ContainerBuilder {
         Ok(Arc::new(7))
     });
     for index in 0..n {
-        definition = definition.bind::<dyn Value, _>(options(format!("alias.a{index}")), |value| value);
+        definition =
+            definition.bind::<dyn Value, _>(options(format!("alias.a{index}")), |value| value);
     }
     let mut builder = ContainerBuilder::new();
     builder
         .register_definition(definition.build().expect("valid alias definition"))
         .expect("register alias definition");
-    builder.root_by_id::<dyn Value>("alias.a0").expect("valid alias root");
+    builder
+        .root_by_id::<dyn Value>("alias.a0")
+        .expect("valid alias root");
     builder
 }
 
@@ -148,6 +170,64 @@ fn setup(workload: &str, n: usize, counter: Option<Arc<AtomicUsize>>) -> Contain
     }
 }
 
+/// Registers the fixed root chain plus unreachable all-candidate consumers.
+/// One chosen consumer may include an absent exact dependency for the
+/// all-active validation control.
+fn unreachable_collections(
+    consumers: usize,
+    candidates: usize,
+    selected_consumer: Option<usize>,
+    missing_dependency: bool,
+    counter: Option<Arc<AtomicUsize>>,
+) -> ContainerBuilder {
+    let mut builder = chain(8, 8, false, counter.clone());
+    for index in 0..candidates {
+        let calls = counter.clone();
+        builder
+            .register_factory_with::<Candidate, _>(
+                &[],
+                BindingOptions {
+                    order: index as i32,
+                    ..options(format!("candidate.c{index}"))
+                },
+                move |_| {
+                    constructed(&calls);
+                    Ok(Arc::new(Candidate((index + 1) as u64)))
+                },
+            )
+            .expect("register candidate");
+    }
+    for index in 0..consumers {
+        let calls = counter.clone();
+        let mut dependencies = vec![Dependency::all::<Candidate>()];
+        if missing_dependency && index == 0 {
+            dependencies.push(Dependency::with_id::<u8>("absent.consumer_dependency"));
+        }
+        builder
+            .register_factory_with::<Consumer, _>(
+                &dependencies,
+                options(format!("consumer.c{index}")),
+                move |context| {
+                    let sum = context
+                        .get_all::<Candidate>()
+                        .expect("declared candidate collection")
+                        .iter()
+                        .map(|candidate| candidate.0 as usize)
+                        .sum();
+                    constructed(&calls);
+                    Ok(Arc::new(Consumer(sum)))
+                },
+            )
+            .expect("register collection consumer");
+    }
+    if let Some(index) = selected_consumer {
+        builder
+            .root_by_id::<Consumer>(&format!("consumer.c{index}"))
+            .expect("valid consumer root");
+    }
+    builder
+}
+
 /// Checks all sizes outside any timer, including exact counts and error paths.
 pub(super) fn check() {
     for n in SIZES {
@@ -157,14 +237,20 @@ pub(super) fn check() {
             if workload == "missing_tail" {
                 let failure = result.err().expect("missing last dependency must fail");
                 match failure.cause() {
-                    BuildError::MissingDependency { dependency, path, .. } => {
-                        assert_eq!(dependency, &Dependency::with_id::<u32>(&format!("node.n{n}")));
+                    BuildError::MissingDependency {
+                        dependency, path, ..
+                    } => {
+                        assert_eq!(
+                            dependency,
+                            &Dependency::with_id::<u32>(&format!("node.n{n}"))
+                        );
                         assert_eq!(path.len(), n);
                         for (index, key) in path.iter().enumerate() {
                             assert_eq!(
                                 key,
                                 &BindingKey::of::<u32>(Some(
-                                    BindingId::parse(&format!("node.n{index}")).expect("valid path ID"),
+                                    BindingId::parse(&format!("node.n{index}"))
+                                        .expect("valid path ID"),
                                 ))
                             );
                         }
@@ -177,7 +263,10 @@ pub(super) fn check() {
                 let context = application.context();
                 let expected_count = match workload {
                     "chain" => {
-                        assert_eq!(*context.get_by_id::<u32>("node.n0").expect("first node"), n as u32);
+                        assert_eq!(
+                            *context.get_by_id::<u32>("node.n0").expect("first node"),
+                            n as u32
+                        );
                         assert_eq!(
                             *context
                                 .get_by_id::<u32>(&format!("node.n{}", n - 1))
@@ -208,12 +297,23 @@ pub(super) fn check() {
                     }
                     "root_closure" => {
                         assert_eq!(
-                            *context.get_by_id::<u32>("node.n0").expect("small closure root"),
+                            *context
+                                .get_by_id::<u32>("node.n0")
+                                .expect("small closure root"),
                             SMALL_CLOSURE as u32
                         );
-                        assert_eq!(*context.get_by_id::<u32>("node.n7").expect("closure last node"), 1);
+                        assert_eq!(
+                            *context
+                                .get_by_id::<u32>("node.n7")
+                                .expect("closure last node"),
+                            1
+                        );
                         assert_eq!(context.get_all::<u32>().len(), SMALL_CLOSURE);
-                        assert!(context.get_by_id::<u32>(&format!("node.n{}", n - 1)).is_err());
+                        assert!(
+                            context
+                                .get_by_id::<u32>(&format!("node.n{}", n - 1))
+                                .is_err()
+                        );
                         SMALL_CLOSURE
                     }
                     _ => unreachable!("successful workload"),
@@ -222,6 +322,70 @@ pub(super) fn check() {
             }
             println!("correctness graph={workload} n={n} passed");
         }
+    }
+    for (consumers, candidates) in UNREACHABLE_CASES {
+        let counter = Arc::new(AtomicUsize::new(0));
+        let application = unreachable_collections(
+            consumers,
+            candidates,
+            None,
+            false,
+            Some(Arc::clone(&counter)),
+        )
+        .build()
+        .expect("fixed root chain builds without unreachable consumers");
+        assert_eq!(counter.load(Ordering::Relaxed), 8);
+        let context = application.context();
+        assert_eq!(*context.get_by_id::<u32>("node.n0").expect("root chain"), 8);
+        assert_eq!(context.get_all::<Candidate>().len(), 0);
+        assert!(context.get_by_id::<Consumer>("consumer.c0").is_err());
+
+        let counter = Arc::new(AtomicUsize::new(0));
+        let selected = unreachable_collections(
+            consumers,
+            candidates,
+            Some(0),
+            false,
+            Some(Arc::clone(&counter)),
+        )
+        .build()
+        .expect("selected consumer builds");
+        let context = selected.context();
+        let all = context.get_all::<Candidate>();
+        assert_eq!(all.len(), candidates);
+        let sum: usize = all.iter().map(|candidate| candidate.0 as usize).sum();
+        assert_eq!(all.first().expect("first candidate").0, 1);
+        assert_eq!(all.last().expect("last candidate").0, candidates as u64);
+        assert_eq!(
+            context
+                .get_by_id::<Consumer>("consumer.c0")
+                .expect("selected consumer")
+                .0,
+            sum
+        );
+        assert_eq!(counter.load(Ordering::Relaxed), 8 + candidates + 1);
+
+        let counter = Arc::new(AtomicUsize::new(0));
+        let result = unreachable_collections(
+            consumers,
+            candidates,
+            None,
+            true,
+            Some(Arc::clone(&counter)),
+        )
+        .build_all();
+        let failure = match result {
+            Ok(_) => panic!("all-active validation must reject unreachable missing dependency"),
+            Err(failure) => failure,
+        };
+        assert!(matches!(
+            failure.cause(),
+            BuildError::MissingDependency { .. }
+        ));
+        assert_eq!(counter.load(Ordering::Relaxed), 0);
+        println!(
+            "correctness graph=unreachable_collections consumers={consumers} candidates={candidates} passed"
+        );
     }
 }
 
@@ -251,5 +415,37 @@ pub(super) fn run() {
                 &construction,
             );
         }
+    }
+    for (consumers, candidates) in UNREACHABLE_CASES {
+        drop(unreachable_collections(consumers, candidates, None, false, None).build());
+        let mut registration = Vec::with_capacity(SAMPLES);
+        let mut construction = Vec::with_capacity(SAMPLES);
+        for _ in 0..SAMPLES {
+            let started = Instant::now();
+            let builder = black_box(unreachable_collections(
+                black_box(consumers),
+                black_box(candidates),
+                None,
+                false,
+                None,
+            ));
+            registration.push(started.elapsed());
+            let started = Instant::now();
+            let result = black_box(builder.build());
+            construction.push(started.elapsed());
+            drop(result);
+        }
+        print_samples(
+            &format!(
+                "graph=unreachable_collections consumers={consumers} candidates={candidates} phase=registration"
+            ),
+            &registration,
+        );
+        print_samples(
+            &format!(
+                "graph=unreachable_collections consumers={consumers} candidates={candidates} phase=validation_construction"
+            ),
+            &construction,
+        );
     }
 }
