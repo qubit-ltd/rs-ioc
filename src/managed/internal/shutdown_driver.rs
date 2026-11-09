@@ -181,8 +181,18 @@ impl ShutdownDriver {
         if let Some(report) = &self.report {
             return Poll::Ready(report.clone());
         }
-        if self.active.is_none() && self.cursor == 0 {
-            return Poll::Ready(self.finish());
+        if self.active.is_none() {
+            while self.cursor > 0
+                && matches!(
+                    self.entries[self.cursor - 1].state,
+                    EntryState::Done | EntryState::Incomplete
+                )
+            {
+                self.cursor -= 1;
+            }
+            if self.cursor == 0 {
+                return Poll::Ready(self.finish());
+            }
         }
         if !self.overall_started {
             self.overall_started = true;

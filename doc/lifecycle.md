@@ -8,6 +8,9 @@ application-wide deadline. Its timer starts on the first poll of
 `ShutdownHandle::wait()` and is reused if that borrowed future is cancelled or
 the shutdown mode is upgraded. It does not restart for `abort()`. Empty
 applications, `abandon()`, and Drop do not start it.
+If the first wait poll finds that synchronous shutdown work already finished,
+the total timer is not created; any failures from that work remain in the
+report.
 
 When the total timer expires, IoC requests abort for every unconfirmed managed
 component and records the cause in `ShutdownReport::overall_failure()`. Pending

@@ -505,7 +505,7 @@ where
 
 当应用需要给托管资源的正常停止和终止确认设置统一上限时，可配置
 `WaitPolicy::bounded_with_total(grace, termination, total, timer)`。总计时从
-`ShutdownHandle::wait()` 首次被 poll 时启动；取消等待后预算仍保留。到期后，系统会请求尚未确认终止的组件 abort，并通过 `ShutdownReport::overall_failure()` 报告总体失败。应用应检查关闭报告，并按业务策略处理仍未确认终止的组件；期限不能中断同步阻塞工作或阻塞的单次 future poll。详见[生命周期说明](lifecycle.zh_CN.md)和[托管资源适配指南](managed-adapters.zh_CN.md)。
+`ShutdownHandle::wait()` 首次被 poll 时启动；取消等待后预算仍保留。若首次 poll 时同步关闭工作已经完成，则不会创建总计时器，且此前产生的失败仍保留在报告中。到期后，系统会请求尚未确认终止的组件 abort，并通过 `ShutdownReport::overall_failure()` 报告总体失败。应用应检查关闭报告，并按业务策略处理仍未确认终止的组件；期限不能中断同步阻塞工作或阻塞的单次 future poll。详见[生命周期说明](lifecycle.zh_CN.md)和[托管资源适配指南](managed-adapters.zh_CN.md)。
 
 ## 错误与排障
 

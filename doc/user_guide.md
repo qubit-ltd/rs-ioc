@@ -224,8 +224,10 @@ For managed shutdown, `WaitPolicy::bounded_with_total(grace, termination,
 total, timer)` adds an application-wide budget. It starts when `wait()` is
 first polled; cancellation preserves it. Expiry requests abort for unconfirmed
 components and appears in `ShutdownReport::overall_failure()`. A total deadline
-cannot interrupt synchronous blocking work. See the [lifecycle guide](lifecycle.md)
-for the full contract.
+cannot interrupt synchronous blocking work. If synchronous shutdown work has
+already finished at the first `wait()` poll, no total timer is created and its
+failures remain in the report. See the [lifecycle guide](lifecycle.md) for the
+full contract.
 
 
 ## Choosing definitions and build scope

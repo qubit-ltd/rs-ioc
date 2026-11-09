@@ -6,6 +6,7 @@
 使用 `bounded_with_total(grace, termination, total, timer)`。总时限在
 `ShutdownHandle::wait()` 首次被 poll 时启动；借用的 wait future 被取消或关闭模式升级后
 仍复用同一计时器，调用 `abort()` 也不会重置。空应用、`abandon()` 和 Drop 不启动总计时器。
+若首次 poll 时同步关闭工作已完成，则不创建总计时器；此前工作产生的失败仍保留在报告中。
 
 总计时器到期后，IoC 会请求所有未确认托管组件 abort，并在
 `ShutdownReport::overall_failure()` 记录原因。仍未确认的组件列入 `incomplete()`；

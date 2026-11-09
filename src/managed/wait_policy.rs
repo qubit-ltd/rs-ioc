@@ -62,8 +62,12 @@ impl WaitPolicy {
     /// Uses independent per-component grace and termination budgets.
     ///
     /// `timer` creates an owned deadline when waiting begins. It must return
-    /// promptly and must be callable from the executor driving shutdown.
-    /// Zero budgets expire immediately; a simultaneously ready wait wins.
+    /// promptly and must be callable from the executor driving shutdown. When
+    /// the grace budget expires, the driver requests abort and retains the same
+    /// wait future under the termination budget. The wait must observe final
+    /// termination after Immediate escalation; see
+    /// [`crate::Managed::asynchronous_with_graceful_ticket`]. Zero budgets
+    /// expire immediately; a simultaneously ready wait wins.
     ///
     /// # Type Parameters
     ///
@@ -72,8 +76,8 @@ impl WaitPolicy {
     ///
     /// # Parameters
     ///
-    /// * `grace` - budget granted to a graceful stop request before the wait is
-    ///   abandoned in favour of termination.
+    /// * `grace` - budget for the graceful wait. On expiry, abort is requested
+    ///   and the same wait future continues under the termination budget.
     /// * `termination` - budget granted to the termination wait.
     /// * `timer` - creates the owned deadline future for the selected budget.
     ///
@@ -98,7 +102,9 @@ impl WaitPolicy {
     /// continues across cancellation and abort upgrades. On expiry, the driver
     /// requests abort for every unfinished component and reports any component
     /// whose termination remains unconfirmed. A timer cannot interrupt a
-    /// blocking callback or future poll.
+    /// blocking callback or future poll. If no shutdown work remains when
+    /// waiting starts, no total timer is created; failures from completed work
+    /// are still included in the report.
     ///
     /// # Type Parameters
     ///

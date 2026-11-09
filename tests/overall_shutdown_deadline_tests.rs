@@ -18,11 +18,13 @@ use std::task::Context;
 use std::task::Poll;
 use std::time::Duration;
 
+use qubit_ioc::ApplicationState;
 use qubit_ioc::BindingKey;
 use qubit_ioc::CleanupError;
 use qubit_ioc::ContainerBuilder;
 use qubit_ioc::Managed;
 use qubit_ioc::ShutdownMode;
+use qubit_ioc::ShutdownPhase;
 use qubit_ioc::WaitPolicy;
 use support::shutdown_timer::Gate;
 use support::shutdown_timer::Timers;
@@ -229,6 +231,124 @@ fn test_empty_application_does_not_create_overall_timer() {
 
     assert!(report.is_success());
     assert!(timers.durations().is_empty());
+}
+
+#[test]
+fn test_immediate_sync_completion_does_not_start_overall_timer() {
+    let timers = Arc::new(AtomicUsize::new(0));
+    let timer_calls = Arc::clone(&timers);
+    let stops = Arc::new(AtomicUsize::new(0));
+    let stop_calls = Arc::clone(&stops);
+    let mut builder = ContainerBuilder::new().wait_policy(WaitPolicy::bounded_with_total(
+        Duration::from_secs(13),
+        Duration::from_secs(7),
+        Duration::ZERO,
+        move |_| {
+            timer_calls.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async {})
+        },
+    ));
+    builder
+        .register_managed_factory::<u32, _>(&[], move |_| {
+            Ok(Managed::synchronous(Arc::new(1), move |_| {
+                stop_calls.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            }))
+        })
+        .expect("register synchronous managed component");
+    let application = builder.build_all().expect("build component");
+    let mut shutdown = application.begin_shutdown(ShutdownMode::Immediate);
+    assert!(shutdown.pending().is_empty());
+    let report = ready(shutdown.wait()).expect("already completed shutdown");
+    assert!(report.is_success());
+    assert!(report.overall_failure().is_none());
+    assert_eq!(timers.load(Ordering::SeqCst), 0);
+    assert_eq!(stops.load(Ordering::SeqCst), 1);
+    assert!(ready(shutdown.wait()).expect("repeat observation").is_success());
+    assert_eq!(stops.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn test_immediate_sync_completion_skips_panicking_overall_timer() {
+    let mut builder = ContainerBuilder::new().wait_policy(WaitPolicy::bounded_with_total(
+        Duration::from_secs(13),
+        Duration::from_secs(7),
+        Duration::ZERO,
+        |_| panic!("completed shutdown must not create a timer"),
+    ));
+    builder
+        .register_managed_factory::<u32, _>(&[], |_| Ok(Managed::synchronous(Arc::new(1), |_| Ok(()))))
+        .expect("register synchronous managed component");
+    let application = builder.build_all().expect("build component");
+
+    let report = ready(application.begin_shutdown(ShutdownMode::Immediate).wait()).expect("already completed shutdown");
+    assert!(report.is_success());
+    assert!(report.overall_failure().is_none());
+}
+
+#[test]
+fn test_immediate_sync_failure_preserves_report_without_timer() {
+    let mut builder = ContainerBuilder::new().wait_policy(WaitPolicy::bounded_with_total(
+        Duration::from_secs(13),
+        Duration::from_secs(7),
+        Duration::ZERO,
+        |_| panic!("completed shutdown must not create a timer"),
+    ));
+    builder
+        .register_managed_factory::<u32, _>(&[], |_| {
+            Ok(Managed::synchronous(Arc::new(1), |_| {
+                Err(CleanupError::new(io::Error::other("sync stop failed")))
+            }))
+        })
+        .expect("register synchronous managed component");
+    let application = builder.build_all().expect("build component");
+    let context = application.context().clone();
+
+    let error = ready(application.begin_shutdown(ShutdownMode::Immediate).wait())
+        .expect_err("synchronous cleanup failure is reported");
+    let report = error.report();
+    assert_eq!(report.failures().len(), 1);
+    assert_eq!(report.failures()[0].phase, ShutdownPhase::Abort);
+    let source = report.failures()[0]
+        .error
+        .source()
+        .expect("original cleanup source")
+        .downcast_ref::<io::Error>()
+        .expect("io error remains downcastable");
+    assert_eq!(source.to_string(), "sync stop failed");
+    assert!(report.overall_failure().is_none());
+    assert_eq!(report.incomplete(), [BindingKey::of::<u32>(None)]);
+    assert_eq!(context.state(), ApplicationState::Incomplete);
+}
+
+#[test]
+fn test_immediate_mixed_completion_still_uses_overall_timer() {
+    let timers = Timers::default();
+    let async_aborts = Arc::new(AtomicUsize::new(0));
+    let sync_stops = Arc::new(AtomicUsize::new(0));
+    let mut builder = ContainerBuilder::new().wait_policy(timers.policy_with_total(Duration::from_secs(30)));
+    add_pending::<u32>(&mut builder, Arc::clone(&async_aborts));
+    let sync_calls = Arc::clone(&sync_stops);
+    builder
+        .register_managed_factory::<u64, _>(&[], move |_| {
+            Ok(Managed::synchronous(Arc::new(1), move |_| {
+                sync_calls.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            }))
+        })
+        .expect("register synchronous managed component");
+    let application = builder.build_all().expect("build mixed components");
+    let mut shutdown = application.begin_shutdown(ShutdownMode::Immediate);
+    assert_eq!(shutdown.pending(), &[BindingKey::of::<u32>(None)]);
+
+    assert!(poll_once(shutdown.wait()).is_pending());
+    assert_eq!(timers.durations(), [Duration::from_secs(30), Duration::from_secs(7)]);
+    timers.trigger(0);
+    let error = ready(shutdown.wait()).expect_err("overall deadline expires");
+    assert!(error.report().overall_failure().is_some());
+    assert_eq!(error.report().incomplete(), [BindingKey::of::<u32>(None)]);
+    assert_eq!(async_aborts.load(Ordering::SeqCst), 1);
+    assert_eq!(sync_stops.load(Ordering::SeqCst), 1);
 }
 
 #[test]
