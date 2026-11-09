@@ -28,14 +28,22 @@ use crate::error::BuildFailure;
 /// ));
 /// assert!(matches!(error, BuildSessionError::Build(_)));
 /// ```
-// The public variant preserves BuildFailure and its unique cleanup owner by value.
+/// The public variant preserves `BuildFailure` and its unique cleanup owner
+/// by value.
+///
+/// This error distinguishes construction failure from a session cancelled or
+/// already completed by an earlier poll.
 #[allow(clippy::large_enum_variant)]
 #[must_use]
 #[derive(Debug, thiserror::Error)]
 pub enum BuildSessionError {
     /// Preserves the original cause, source chain, and rollback ownership.
     #[error(transparent)]
-    Build(#[from] BuildFailure),
+    Build(
+        /// The original construction failure and its cleanup ownership.
+        #[from]
+        BuildFailure,
+    ),
     /// The previously polled build future was dropped before completion.
     #[error("build session was cancelled")]
     Cancelled,

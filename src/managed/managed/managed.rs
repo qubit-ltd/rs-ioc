@@ -25,6 +25,11 @@ mod ticket;
 mod ticket_state;
 
 /// One-shot synchronous stop request for a managed component.
+///
+/// # Type Parameters
+///
+/// `T` is the component value passed to the stop callback through a shared
+/// `Arc`.
 type StopCallback<T> = Box<dyn FnOnce(Arc<T>) -> Result<(), CleanupError> + Send + 'static>;
 
 /// A component value paired with explicit application shutdown actions.

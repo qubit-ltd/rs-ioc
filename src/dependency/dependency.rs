@@ -40,6 +40,14 @@ pub struct Dependency {
 
 impl PartialEq for Dependency {
     /// Compares type, optional ID, and request cardinality.
+    ///
+    /// # Parameters
+    ///
+    /// `other` is the dependency request compared with `self`.
+    ///
+    /// # Returns
+    ///
+    /// `true` when both requests have the same type, ID, and cardinality.
     fn eq(&self, other: &Self) -> bool {
         self.type_id == other.type_id && self.id == other.id && self.cardinality == other.cardinality
     }
@@ -49,6 +57,14 @@ impl Eq for Dependency {}
 
 impl Hash for Dependency {
     /// Hashes the same request identity components used by equality.
+    ///
+    /// # Type Parameters
+    ///
+    /// `H` is the hash state implementation selected by the caller.
+    ///
+    /// # Parameters
+    ///
+    /// * `state` — Hash state that receives the type, ID, and cardinality.
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.type_id.hash(state);
         self.id.hash(state);
@@ -201,6 +217,22 @@ impl Dependency {
 
     /// Creates a normalized request while keeping its ID unvalidated until
     /// registration.
+    ///
+    /// # Type Parameters
+    ///
+    /// `T` is the requested possibly unsized type and must be `'static` so its
+    /// runtime identity can be stored.
+    ///
+    /// # Parameters
+    ///
+    /// * `id` — Optional raw identifier retained for registration-time
+    ///   validation.
+    /// * `cardinality` — Required, optional, or collection request behavior.
+    ///
+    /// # Returns
+    ///
+    /// A request containing `T`'s identity and the supplied selection
+    /// constraints.
     #[must_use]
     fn make<T: ?Sized + 'static>(id: Option<&str>, cardinality: DependencyCardinality) -> Self {
         Self {

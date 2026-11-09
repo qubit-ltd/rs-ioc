@@ -72,6 +72,10 @@ impl DefinitionSource {
 
 impl Display for DefinitionSource {
     /// Formats the source file, line, column, and declared item name.
+    ///
+    /// # Parameters
+    ///
+    /// `formatter` is the destination for the source location text.
     fn fmt(&self, formatter: &mut Formatter<'_>) -> Result {
         write!(formatter, "{}:{}:{} ({})", self.file, self.line, self.column, self.item)
     }

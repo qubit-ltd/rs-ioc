@@ -33,6 +33,11 @@ use crate::options::DefinitionSource;
 /// Setters replace previous values; `bind` appends an alias. Validation never
 /// invokes a factory or projector and produces an atomic [`Definition`].
 ///
+/// # Type Parameters
+///
+/// `T` is the concrete component type, or an unsized interface type, being
+/// configured. It must be thread-safe and `'static` for graph storage.
+///
 /// # Examples
 ///
 /// ```

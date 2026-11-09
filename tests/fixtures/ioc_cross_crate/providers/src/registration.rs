@@ -16,14 +16,16 @@ use crate::PreviewMarker;
 use crate::Settings;
 use crate::greeting::register_ioc as register_greeting_ioc;
 
-/// Installs every provider definition in this crate into an application builder.
+/// Installs every provider definition in this crate into an application
+/// builder.
 ///
 /// The list is explicit so the application does not depend on linker retention
 /// of registration-only items.
 ///
 /// # Parameters
 ///
-/// - `builder`: the application builder that receives each provider registration.
+/// - `builder`: the application builder that receives each provider
+///   registration.
 ///
 /// # Returns
 ///

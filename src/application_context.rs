@@ -205,9 +205,7 @@ impl ApplicationContext {
     ///
     /// Returns [`ResolveError`] when multiple non-primary candidates remain.
     #[must_use = "handle the optional component lookup result"]
-    pub fn try_get<T: ?Sized + Send + Sync + 'static>(
-        &self,
-    ) -> Result<Option<Arc<T>>, ResolveError> {
+    pub fn try_get<T: ?Sized + Send + Sync + 'static>(&self) -> Result<Option<Arc<T>>, ResolveError> {
         if let Some(index) = self.inner.query_index.selected(TypeId::of::<T>()) {
             return Ok(Some(self.read::<T>(&self.inner.bindings[index].key)));
         }
@@ -319,6 +317,10 @@ impl ApplicationContext {
     /// The store is keyed by the registered binding key, so the value is
     /// already shared and this lookup only clones the existing handle. `T` must
     /// match the type the binding was registered with.
+    ///
+    /// # Type Parameters
+    ///
+    /// `T` is the concrete or trait-object type registered for `key`.
     ///
     /// # Parameters
     ///

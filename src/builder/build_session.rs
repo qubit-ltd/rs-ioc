@@ -58,6 +58,16 @@ pub struct BuildSession {
 impl BuildSession {
     /// Retains `builder` without validation; `all` selects every active
     /// binding.
+    ///
+    /// # Parameters
+    ///
+    /// * `builder` — Registrations retained until the session begins running.
+    /// * `all` — Selects all active definitions when `true`; otherwise uses the
+    ///   builder's registered roots.
+    ///
+    /// # Returns
+    ///
+    /// A ready, single-use session that has not validated or run any factory.
     pub(super) fn new(builder: ContainerBuilder, all: bool) -> Self {
         Self {
             builder: Some(builder),

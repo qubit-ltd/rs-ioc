@@ -191,6 +191,13 @@ impl PendingBinding {
     /// staged binding and surfaces later, as the graph error of the component
     /// that consumes this binding; no lifecycle action is registered in that
     /// case.
+    ///
+    /// # Type Parameters
+    ///
+    /// * `T` — Produced instance type. It may be unsized and must be `Send +
+    ///   Sync + 'static`.
+    /// * `F` — Sendable one-shot factory returning a managed instance or a
+    ///   deferred factory error.
     pub(crate) fn managed_sync_factory<T, F>(key: BindingKey, primary: bool, order: i32, factory: F) -> Self
     where
         T: ?Sized + Send + Sync + 'static,

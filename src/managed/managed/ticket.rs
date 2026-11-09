@@ -29,6 +29,15 @@ pub(super) type TicketRequest<T, K> = Box<dyn FnOnce(Arc<T>) -> Result<K, Cleanu
 /// Stores a request ticket or returns it for disposal when waiting already
 /// began. Any replaced ticket is dropped by the caller after the lock is
 /// released.
+///
+/// # Type Parameters
+///
+/// `K` is the request ticket to store or discard.
+///
+/// # Parameters
+///
+/// `state` tracks whether waiting started and any pending ticket. `ticket` is
+/// the ticket produced by a request.
 fn store<K>(state: &Mutex<TicketState<K>>, ticket: K) {
     let discarded = {
         let mut state = state.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -43,6 +52,14 @@ fn store<K>(state: &Mutex<TicketState<K>>, ticket: K) {
 
 /// Takes the pending ticket and marks the wait callback as started.
 /// Returns `None` when every request failed to produce a ticket.
+///
+/// # Type Parameters
+///
+/// `K` is the request ticket type.
+///
+/// # Parameters
+///
+/// `state` tracks whether waiting started and any pending ticket.
 fn take<K>(state: &Mutex<TicketState<K>>) -> Option<K> {
     let mut state = state.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     state.wait_started = true;

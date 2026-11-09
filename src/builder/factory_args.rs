@@ -63,10 +63,21 @@ pub trait FactoryArgs: sealed::Sealed + Send + 'static {
 
 impl sealed::Sealed for () {}
 impl FactoryArgs for () {
+    /// Declares no dependency requests for the empty argument tuple.
     fn dependencies() -> Vec<Dependency> {
         Vec::new()
     }
 
+    /// Resolves the empty tuple without reading the build context.
+    ///
+    /// # Parameters
+    ///
+    /// `_context` is the factory's declared-dependency view; this empty tuple
+    /// has no arguments to read from it.
+    ///
+    /// # Returns
+    ///
+    /// The empty argument tuple.
     fn resolve(_context: &BuildContext) -> Result<Self, BuildAccessError> {
         Ok(())
     }

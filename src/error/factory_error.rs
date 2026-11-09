@@ -40,6 +40,10 @@ impl FactoryError {
     /// The wrapper takes ownership of `source`, so later mutation of the
     /// caller's error state is not observed here.
     ///
+    /// # Type Parameters
+    ///
+    /// `E` is the owned, thread-safe error type.
+    ///
     /// # Parameters
     ///
     /// * `source` - Any owned, thread-safe error kept as the reported cause.
@@ -69,6 +73,10 @@ impl FactoryError {
     /// * `path_key` - Borrowed lookup key, copied into the read context.
     /// * `target` - Borrowed field, parameter, or properties name, copied into
     ///   the read context.
+    ///
+    /// # Type Parameters
+    ///
+    /// `E` is the owned, thread-safe configuration error type.
     ///
     /// # Returns
     ///

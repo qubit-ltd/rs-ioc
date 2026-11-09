@@ -40,6 +40,10 @@ impl CleanupError {
     /// # Returns
     ///
     /// A cleanup error whose source chain contains `source`.
+    ///
+    /// # Type Parameters
+    ///
+    /// `E` is the owned, thread-safe cleanup error type.
     pub fn new<E: Error + Send + Sync + 'static>(source: E) -> Self {
         Self {
             source: Box::new(source),

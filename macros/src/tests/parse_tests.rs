@@ -680,9 +680,7 @@ fn test_configuration_ir_retains_existing_register_ioc_function() {
     let Some((_, items)) = configuration.item.content else {
         panic!("inline configuration body should be retained");
     };
-    assert!(
-        matches!(items.first(), Some(syn::Item::Fn(function)) if function.sig.ident == "register_ioc")
-    );
+    assert!(matches!(items.first(), Some(syn::Item::Fn(function)) if function.sig.ident == "register_ioc"));
 }
 
 #[test]

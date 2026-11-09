@@ -54,6 +54,11 @@ pub struct SettledBuildFailure {
 
 impl SettledBuildFailure {
     /// Stores the original build cause and the completed cleanup observation.
+    ///
+    /// # Parameters
+    ///
+    /// `cause` is the construction error. `cleanup_report` is the completed
+    /// rollback observation, if cleanup was owned.
     pub(crate) fn new(cause: BuildError, cleanup_report: Option<ShutdownReport>) -> Self {
         Self { cause, cleanup_report }
     }
@@ -76,6 +81,10 @@ impl SettledBuildFailure {
 impl fmt::Display for SettledBuildFailure {
     /// Shows the original cause and whether cleanup was absent, successful,
     /// or unsuccessful.
+    ///
+    /// # Parameters
+    ///
+    /// `formatter` is the destination for the display representation.
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         let cleanup = match &self.cleanup_report {
             None => "no cleanup",

@@ -1,5 +1,5 @@
 error: unsupported injection type; expected `Arc<T>`, `Option<Arc<T>>`, or `Vec<Arc<T>>`
-  --> tests/ui/component/invalid_field.rs:15:11
+  --> tests/ui/component/invalid_field.rs:16:11
    |
-15 |     name: String,
+16 |     name: String,
    |           ^^^^^^

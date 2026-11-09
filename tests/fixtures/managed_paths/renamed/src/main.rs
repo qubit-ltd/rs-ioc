@@ -6,16 +6,16 @@
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
 use std::io;
+use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
-use std::sync::Arc;
 use std::time::Duration;
 
-use ioc::bean;
 use ioc::ContainerBuilder;
 use ioc::Managed;
 use ioc::ShutdownMode;
 use ioc::WaitPolicy;
+use ioc::bean;
 use tokio::runtime::Builder;
 use tokio::time::sleep;
 

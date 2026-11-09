@@ -9,9 +9,9 @@
 
 use std::sync::Arc;
 
-use qubit_ioc::bean;
 use qubit_ioc::ContainerBuilder;
 use qubit_ioc::RegistrationError;
+use qubit_ioc::bean;
 
 use crate::AppService;
 

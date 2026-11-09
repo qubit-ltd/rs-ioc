@@ -39,6 +39,10 @@ pub struct BindingKey {
 
 impl PartialEq for BindingKey {
     /// Compares Rust type identity and the optional validated ID.
+    ///
+    /// # Parameters
+    ///
+    /// `other` is the key to compare with this value.
     fn eq(&self, other: &Self) -> bool {
         self.type_id == other.type_id && self.id == other.id
     }
@@ -48,6 +52,14 @@ impl Eq for BindingKey {}
 
 impl Hash for BindingKey {
     /// Hashes the same identity components used by equality.
+    ///
+    /// # Type Parameters
+    ///
+    /// `H` is the hasher receiving this key's identity.
+    ///
+    /// # Parameters
+    ///
+    /// `state` is the hasher to update.
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.type_id.hash(state);
         self.id.hash(state);

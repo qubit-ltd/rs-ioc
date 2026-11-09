@@ -12,7 +12,8 @@ use qubit_ioc::ContainerBuilder;
 use qubit_ioc::RegistrationError;
 use qubit_ioc_fixture_providers::register_ioc;
 
-/// Stages an explicit provider list and configuration without running factories.
+/// Stages an explicit provider list and configuration without running
+/// factories.
 ///
 /// `profiles` replaces the default active profile set; invalid profile names
 /// or registration errors are returned before graph construction.

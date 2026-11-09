@@ -7,7 +7,8 @@
 // =============================================================================
 //! Defines the consumer's interface binding.
 
-/// Defines the interface used to resolve the concrete service through a binding.
+/// Defines the interface used to resolve the concrete service through a
+/// binding.
 ///
 /// Implementations must be safe to share between threads and return the value
 /// associated with the service instance.

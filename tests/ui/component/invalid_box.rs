@@ -17,4 +17,3 @@ struct Consumer {
 }
 
 fn main() {}
-

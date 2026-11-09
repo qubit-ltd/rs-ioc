@@ -60,6 +60,7 @@ pub(crate) struct ShutdownDriver {
     overall_started: bool,
     /// Timer and failure for the complete shutdown budget.
     overall_deadline: Option<DeadlineFuture>,
+    /// Failure produced when the complete shutdown budget expires or panics.
     overall_failure: Option<Arc<CleanupError>>,
     /// Immutable result once every entry is finalized or abandoned.
     report: Option<ShutdownReport>,
@@ -251,6 +252,10 @@ impl ShutdownDriver {
     }
 
     /// Polls the one retained whole-shutdown timer and stores timer failures.
+    ///
+    /// # Parameters
+    ///
+    /// `context` is the task context used to poll the retained timer.
     fn poll_overall_deadline(&mut self, context: &mut Context<'_>) -> Poll<()> {
         let Some(deadline) = self.overall_deadline.as_mut() else {
             return Poll::Pending;
@@ -345,6 +350,10 @@ impl ShutdownDriver {
     /// termination budget and leaving a termination wait unchanged. A budget
     /// factory panic marks the entry incomplete instead of reinstalling the
     /// observation.
+    ///
+    /// # Parameters
+    ///
+    /// `active` is the wait observation temporarily removed from the driver.
     fn restore_active(&mut self, mut active: ActiveWait) {
         if active.phase != ShutdownPhase::GracefulWait {
             self.active = Some(active);
@@ -363,6 +372,12 @@ impl ShutdownDriver {
     /// Records one failure, sends abort, and finalizes the entry as
     /// incomplete. The three steps always follow a failed wait or budget, so
     /// no active observation is left installed.
+    ///
+    /// # Parameters
+    ///
+    /// * `index` - Entry position in construction order.
+    /// * `phase` - Shutdown phase that failed.
+    /// * `error` - Failure to add to the report.
     fn fail_incomplete(&mut self, index: usize, phase: ShutdownPhase, error: CleanupError) {
         self.fail(index, phase, error);
         self.abort_entry(index);
@@ -372,6 +387,10 @@ impl ShutdownDriver {
     /// Handles an expired budget: the failure is recorded in the phase that
     /// owned the budget, abort is sent, and a graceful entry receives one
     /// termination budget instead of being finalized immediately.
+    ///
+    /// # Parameters
+    ///
+    /// `active` is the wait observation whose budget expired.
     fn expire(&mut self, active: ActiveWait) {
         let index = active.index;
         let phase = active.phase;
@@ -390,6 +409,10 @@ impl ShutdownDriver {
 
     /// Requests graceful admission closure once, falling back to abort when
     /// unsupported or failed. No wait is started here.
+    ///
+    /// # Parameters
+    ///
+    /// `index` is the entry position in construction order.
     fn request_graceful(&mut self, index: usize) {
         if self.entries[index].state != EntryState::Constructed {
             return;
@@ -413,6 +436,10 @@ impl ShutdownDriver {
     }
 
     /// Sends one abort, preserving active waits and skipping finalized entries.
+    ///
+    /// # Parameters
+    ///
+    /// `index` is the entry position in construction order.
     fn abort_entry(&mut self, index: usize) {
         if matches!(
             self.entries[index].state,
@@ -439,6 +466,12 @@ impl ShutdownDriver {
 
     /// Calls a nonblocking request and captures its returned error or unwind.
     /// Returns whether the request completed successfully.
+    ///
+    /// # Parameters
+    ///
+    /// * `index` - Entry position in construction order.
+    /// * `phase` - Shutdown phase associated with this request.
+    /// * `action` - One-shot callback to invoke.
     fn request(&mut self, index: usize, phase: ShutdownPhase, action: ErasedStop) -> bool {
         let result = catch_unwind(AssertUnwindSafe(action))
             .unwrap_or_else(|payload| Err(panic_cleanup_error("shutdown request", payload)));
@@ -488,6 +521,12 @@ impl ShutdownDriver {
 
     /// Records one error with the concrete binding's original definition
     /// source.
+    ///
+    /// # Parameters
+    ///
+    /// * `index` - Entry position whose definition is attached to the failure.
+    /// * `phase` - Shutdown phase where the error occurred.
+    /// * `error` - Cleanup error to record.
     fn fail(&mut self, index: usize, phase: ShutdownPhase, error: CleanupError) {
         let entry = &self.entries[index];
         self.failures.push(ShutdownFailure {
@@ -499,6 +538,10 @@ impl ShutdownDriver {
     }
 
     /// Disarms unused callbacks after confirmed termination, including abort.
+    ///
+    /// # Parameters
+    ///
+    /// `index` is the entry position to mark complete.
     fn complete_entry(&mut self, index: usize) {
         let entry = &mut self.entries[index];
         entry.state = EntryState::Done;

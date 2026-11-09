@@ -22,8 +22,8 @@ pub struct Conditional {
     /// `Arc<u8>` from the container and clones it into the struct literal, so
     /// every consumer must provide exactly one such binding. When the `extra`
     /// feature is off the field is stripped before expansion and neither the
-    /// struct member nor the container request for `Arc<u8>` is generated, which
-    /// is exactly the contract this fixture pins down.
+    /// struct member nor the container request for `Arc<u8>` is generated,
+    /// which is exactly the contract this fixture pins down.
     #[cfg(feature = "extra")]
     extra: Arc<u8>,
 }

@@ -55,4 +55,3 @@ fn verify_public_definition() {
 fn main() {
     verify_public_definition();
 }
-

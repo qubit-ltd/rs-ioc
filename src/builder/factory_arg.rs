@@ -13,11 +13,7 @@ use crate::build_context::BuildContext;
 use crate::dependency::Dependency;
 use crate::error::BuildAccessError;
 
-pub(super) mod sealed {
-    /// Prevents external implementations from separating a type's request
-    /// declaration from its resolution behavior.
-    pub trait Sealed {}
-}
+pub(super) mod sealed;
 
 /// One typed factory argument and the dependency request it represents.
 ///
@@ -69,10 +65,20 @@ pub trait FactoryArg: sealed::Sealed + Send + 'static {
 
 impl<T: ?Sized + Send + Sync + 'static> sealed::Sealed for Arc<T> {}
 impl<T: ?Sized + Send + Sync + 'static> FactoryArg for Arc<T> {
+    /// Declares one required request for `T`.
     fn dependency() -> Dependency {
         Dependency::of::<T>()
     }
 
+    /// Clones the selected `Arc<T>` from the validated factory context.
+    ///
+    /// # Parameters
+    ///
+    /// `context` provides only the dependencies declared by this factory.
+    ///
+    /// # Returns
+    ///
+    /// The selected shared `T` value.
     fn resolve(context: &BuildContext) -> Result<Self, BuildAccessError> {
         context.get::<T>()
     }
@@ -80,10 +86,20 @@ impl<T: ?Sized + Send + Sync + 'static> FactoryArg for Arc<T> {
 
 impl<T: ?Sized + Send + Sync + 'static> sealed::Sealed for Option<Arc<T>> {}
 impl<T: ?Sized + Send + Sync + 'static> FactoryArg for Option<Arc<T>> {
+    /// Declares an optional request for `T`.
     fn dependency() -> Dependency {
         Dependency::optional::<T>()
     }
 
+    /// Resolves the selected `Arc<T>`, or `None` when no candidate exists.
+    ///
+    /// # Parameters
+    ///
+    /// `context` provides only the dependencies declared by this factory.
+    ///
+    /// # Returns
+    ///
+    /// The selected shared `T` value, or `None` when no candidate exists.
     fn resolve(context: &BuildContext) -> Result<Self, BuildAccessError> {
         context.try_get::<T>()
     }
@@ -91,10 +107,20 @@ impl<T: ?Sized + Send + Sync + 'static> FactoryArg for Option<Arc<T>> {
 
 impl<T: ?Sized + Send + Sync + 'static> sealed::Sealed for Vec<Arc<T>> {}
 impl<T: ?Sized + Send + Sync + 'static> FactoryArg for Vec<Arc<T>> {
+    /// Declares a collection request for every matching `T`.
     fn dependency() -> Dependency {
         Dependency::all::<T>()
     }
 
+    /// Resolves all selected `Arc<T>` values in binding order.
+    ///
+    /// # Parameters
+    ///
+    /// `context` provides only the dependencies declared by this factory.
+    ///
+    /// # Returns
+    ///
+    /// The selected shared values in binding order.
     fn resolve(context: &BuildContext) -> Result<Self, BuildAccessError> {
         context.get_all::<T>()
     }

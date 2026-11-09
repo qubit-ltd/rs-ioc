@@ -26,9 +26,7 @@ pub fn ordinary_disabled(#[cfg(any())] unused: UnknownType) -> u8 {
 
 /// `cfg_attr` removes the unsupported parameter before bean validation.
 #[bean(marker = DisabledCfgAttrUnsupportedBean)]
-pub fn cfg_attr_disabled_unsupported(
-    #[cfg_attr(all(), cfg(any()))] unused: UnknownType,
-) -> u8 {
+pub fn cfg_attr_disabled_unsupported(#[cfg_attr(all(), cfg(any()))] unused: UnknownType) -> u8 {
     2
 }
 
@@ -46,10 +44,9 @@ pub fn ordinary_cfg_attr_disabled(#[cfg_attr(all(), cfg(any()))] unused: Unknown
 ///
 /// # Parameters
 ///
-/// * `value` - Injected `Arc<u8>` dependency. Present only while the
-///   consumer's `extra` feature is enabled; with the feature off the parameter
-///   is stripped from the signature and the generated factory takes no
-///   dependency at all.
+/// * `value` - Injected `Arc<u8>` dependency. Present only while the consumer's
+///   `extra` feature is enabled; with the feature off the parameter is stripped
+///   from the signature and the generated factory takes no dependency at all.
 ///
 /// # Returns
 ///
@@ -71,9 +68,9 @@ pub fn conditional_bean(#[cfg(feature = "extra")] value: Arc<u8>) -> u32 {
 ///
 /// # Parameters
 ///
-/// * `value` - Configuration value read from the `test.conditional` key. Present
-///   only while the consumer's `value_input` feature is enabled; with the
-///   feature off both the parameter and the generated configuration read
+/// * `value` - Configuration value read from the `test.conditional` key.
+///   Present only while the consumer's `value_input` feature is enabled; with
+///   the feature off both the parameter and the generated configuration read
 ///   disappear, so the factory requires no configuration at all.
 ///
 /// # Returns

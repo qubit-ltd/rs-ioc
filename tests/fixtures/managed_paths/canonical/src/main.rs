@@ -5,16 +5,16 @@
 //
 //    Licensed under the Apache License, Version 2.0.
 // =============================================================================
+use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
-use std::sync::Arc;
 use std::time::Duration;
 
-use qubit_ioc::bean;
 use qubit_ioc::ContainerBuilder;
 use qubit_ioc::Managed;
 use qubit_ioc::ShutdownMode;
 use qubit_ioc::WaitPolicy;
+use qubit_ioc::bean;
 
 static STOPS: AtomicUsize = AtomicUsize::new(0);
 
@@ -42,7 +42,10 @@ fn verify_managed_output_path() {
     ));
     builder.install::<SynchronousBean>().unwrap();
     builder.install::<AsynchronousBean>().unwrap();
-    let runtime = tokio::runtime::Builder::new_current_thread().enable_time().build().unwrap();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+        .unwrap();
     let application = runtime.block_on(builder.build_all_async()).unwrap();
     let context = application.context();
     assert_eq!(*context.get::<u32>().unwrap(), 7);

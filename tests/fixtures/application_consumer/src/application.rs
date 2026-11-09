@@ -23,7 +23,8 @@ use qubit_ioc::WaitPolicy;
 use qubit_ioc::bean;
 use tokio::runtime::Handle;
 
-/// Creates execution services and transfers shutdown ownership to the container.
+/// Creates execution services and transfers shutdown ownership to the
+/// container.
 #[bean(marker = ExecutionServicesBean)]
 fn execution_services(runtime: Arc<Handle>) -> Result<Managed<ExecutionServices>, FactoryError> {
     let services = ExecutionServices::builder()
@@ -50,9 +51,7 @@ fn execution_services(runtime: Arc<Handle>) -> Result<Managed<ExecutionServices>
 #[bean(marker = EventBusBean)]
 fn event_bus(registry: Arc<EventBusRegistry>) -> Result<Arc<EventBus>, FactoryError> {
     // Historical EventBus has no nonblocking request/ticket protocol.
-    let bus = registry
-        .create(&EventBusConfig::default())
-        .map_err(FactoryError::new)?;
+    let bus = registry.create(&EventBusConfig::default()).map_err(FactoryError::new)?;
     Ok(Arc::new(bus))
 }
 

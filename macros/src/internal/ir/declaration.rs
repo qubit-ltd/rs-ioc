@@ -45,6 +45,10 @@ pub(crate) enum Declaration {
 impl Debug for Declaration {
     /// Displays only the variant because `syn` syntax trees do not enable extra
     /// debug traits.
+    ///
+    /// # Parameters
+    ///
+    /// * `formatter` - the destination receiving the declaration variant name.
     fn fmt(&self, formatter: &mut Formatter<'_>) -> Result {
         let kind = match self {
             Self::Component(_) => "Component",

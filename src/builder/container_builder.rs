@@ -101,6 +101,15 @@ impl ContainerBuilder {
     ///
     /// A selected managed factory requires an explicit policy before any
     /// factory can execute. Ordinary graphs do not require a policy.
+    ///
+    /// # Parameters
+    ///
+    /// `policy` supplies the stop and wait deadlines for selected managed
+    /// components.
+    ///
+    /// # Returns
+    ///
+    /// The builder configured with the managed-component wait policy.
     #[must_use]
     #[inline]
     pub fn wait_policy(mut self, policy: WaitPolicy) -> Self {
@@ -739,6 +748,15 @@ impl ContainerBuilder {
     /// Returns a structured registration error if the definition's internal
     /// keys are invalid. Factories and projectors are deferred until build.
     ///
+    /// # Type Parameters
+    ///
+    /// `T` is the concrete component type defined by `value`.
+    ///
+    /// # Parameters
+    ///
+    /// * `value` — Complete definition whose concrete binding and aliases are
+    ///   staged atomically.
+    ///
     /// # Returns
     ///
     /// Returns `Ok(())` after the definition is staged.
@@ -785,6 +803,17 @@ impl ContainerBuilder {
     ///
     /// * `anchor` - Exact key identifying the active definition to replace.
     /// * `definition` - Callback that stages the replacement definition.
+    ///
+    /// # Type Parameters
+    ///
+    /// `F` is a one-shot callback that stages the replacement in a temporary
+    /// builder.
+    ///
+    /// # Parameters
+    ///
+    /// * `anchor` — Exact binding key that must appear once in the staged
+    ///   replacement.
+    /// * `definition` — Callback that registers the complete replacement.
     ///
     /// # Returns
     ///
@@ -1009,6 +1038,11 @@ impl ContainerBuilder {
     ///
     /// Returns [`BuildFailure`] for missing roots, invalid graphs, or a
     /// missing managed wait policy.
+    ///
+    /// # Parameters
+    ///
+    /// * `all` — Selects every active definition when `true`; otherwise
+    ///   validates and selects the registered root closure.
     pub(super) fn prepare_async(mut self, all: bool) -> Result<Construction, BuildFailure> {
         if !all && self.roots.is_empty() {
             return Err(BuildError::NoRootsSelected.into());
@@ -1090,12 +1124,32 @@ impl ContainerBuilder {
     /// # Errors
     ///
     /// Returns [`RegistrationError`] if the definition cannot be staged.
+    ///
+    /// # Parameters
+    ///
+    /// * `definition` — Complete validated definition to append atomically.
     pub(crate) fn stage_definition(&mut self, definition: PendingDefinition) -> Result<(), RegistrationError> {
         definition.stage_into(&mut self.definitions)
     }
 
     /// Requires explicit deadlines only when the validated selection owns
     /// managed resources.
+    ///
+    /// # Parameters
+    ///
+    /// * `graph` — Validated construction selection inspected for managed
+    ///   bindings.
+    /// * `policy` — Optional explicit lifecycle deadline policy.
+    ///
+    /// # Returns
+    ///
+    /// The explicit policy, or an unbounded policy when no managed binding is
+    /// selected.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BuildError::MissingWaitPolicy`] when managed bindings are
+    /// selected without an explicit policy.
     fn selected_wait_policy(graph: &ValidatedGraph, policy: Option<WaitPolicy>) -> Result<WaitPolicy, BuildError> {
         let has_managed = graph.order.iter().any(|location| {
             matches!(
@@ -1117,6 +1171,15 @@ impl ContainerBuilder {
     /// original it overrides, and the ambiguity check across both; collecting
     /// them in one pass keeps those decisions consistent and avoids rescanning
     /// every active definition once per lookup.
+    ///
+    /// # Parameters
+    ///
+    /// * `active` — Active definitions paired with their original indices.
+    /// * `anchor` — Exact key whose declaring definitions are collected.
+    ///
+    /// # Returns
+    ///
+    /// Each matching definition index and its diagnostic source.
     fn anchor_occurrences(
         active: &[(usize, PendingDefinition)],
         anchor: &BindingKey,

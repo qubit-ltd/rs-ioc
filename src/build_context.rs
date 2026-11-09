@@ -51,6 +51,16 @@ pub struct BuildContext {
 impl BuildContext {
     /// Creates a factory view from the validated requests and their value
     /// snapshot.
+    ///
+    /// # Parameters
+    ///
+    /// * `values` — Erased values keyed by the exact selected binding keys.
+    /// * `source` — Definition location used in access errors.
+    /// * `resolved` — Requests and selected keys authorized for this factory.
+    ///
+    /// # Returns
+    ///
+    /// A context limited to the previously resolved dependency snapshot.
     pub(crate) fn new(
         values: HashMap<BindingKey, ErasedInstance>,
         source: DefinitionSource,
@@ -196,6 +206,19 @@ impl BuildContext {
 
     /// Finds only the exact request whose keys were fixed during graph
     /// validation.
+    ///
+    /// # Parameters
+    ///
+    /// * `request` — Exact typed request, including its ID and cardinality.
+    ///
+    /// # Returns
+    ///
+    /// The selected binding keys for that declared request.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BuildAccessError::UndeclaredDependency`] when the factory did
+    /// not declare this exact request.
     fn keys_for(&self, request: &Dependency) -> Result<&[BindingKey], BuildAccessError> {
         self.resolved
             .iter()
@@ -208,6 +231,19 @@ impl BuildContext {
     }
 
     /// Clones a graph-guaranteed value from this factory's dependency snapshot.
+    ///
+    /// # Type Parameters
+    ///
+    /// `T` is the concrete or trait-object type stored behind the selected key.
+    ///
+    /// # Parameters
+    ///
+    /// * `key` — Selected binding key whose value was validated for this
+    ///   request.
+    ///
+    /// # Returns
+    ///
+    /// A shared handle to the value of type `T`.
     fn read<T: ?Sized + Send + Sync + 'static>(&self, key: &BindingKey) -> Arc<T> {
         self.values
             .get(key)

@@ -193,9 +193,7 @@ fn test_unnamed_lookup_without_primary_preserves_registration_order() {
     }
     let application = builder.build_all().expect("build non-primary candidates");
     let context = application.context();
-    let error = context
-        .get::<u8>()
-        .expect_err("multiple candidates are ambiguous");
+    let error = context.get::<u8>().expect_err("multiple candidates are ambiguous");
     match error {
         ResolveError::AmbiguousBinding { candidates, .. } => {
             assert_eq!(candidates.len(), 3);
@@ -218,21 +216,12 @@ fn test_unnamed_lookup_without_primary_preserves_registration_order() {
 #[test]
 fn test_cached_query_remains_available_after_shutdown() {
     let mut builder = ContainerBuilder::new();
-    builder
-        .register_instance(Arc::new(17_u8))
-        .expect("register value");
+    builder.register_instance(Arc::new(17_u8)).expect("register value");
     let application = builder.build_all().expect("build application");
     let context = application.context().clone();
-    let report = application
-        .begin_shutdown(ShutdownMode::Immediate)
-        .abandon();
+    let report = application.begin_shutdown(ShutdownMode::Immediate).abandon();
     assert!(report.is_success());
-    assert_eq!(
-        *context
-            .get::<u8>()
-            .expect("closed context remains queryable"),
-        17
-    );
+    assert_eq!(*context.get::<u8>().expect("closed context remains queryable"), 17);
     assert_eq!(
         *context
             .try_get::<u8>()

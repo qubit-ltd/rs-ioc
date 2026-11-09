@@ -11,4 +11,3 @@ use qubit_ioc::Component;
 struct TupleStruct(u32);
 
 fn main() {}
-

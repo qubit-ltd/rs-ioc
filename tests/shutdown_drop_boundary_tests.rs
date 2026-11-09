@@ -91,7 +91,7 @@ fn panic_text(payload: &(dyn Any + Send)) -> Option<&str> {
 }
 
 #[test]
-fn ready_completion_future_drop_panic_propagates() {
+fn test_ready_completion_finalizes_before_future_drop_panic_propagates() {
     let timers = Timers::default();
     let aborts = Arc::new(AtomicUsize::new(0));
     let dropped = Arc::new(AtomicBool::new(false));
@@ -111,7 +111,7 @@ fn ready_completion_future_drop_panic_propagates() {
 }
 
 #[test]
-fn termination_deadline_future_drop_panic_propagates_without_final_report() {
+fn test_termination_deadline_drop_panic_preserves_pending_component() {
     let timers = Timers::default();
     let aborts = Arc::new(AtomicUsize::new(0));
     let dropped = Arc::new(AtomicBool::new(false));
@@ -137,7 +137,7 @@ fn termination_deadline_future_drop_panic_propagates_without_final_report() {
 }
 
 #[test]
-fn abandon_after_cancelled_wait_future_drop_panic_propagates() {
+fn test_abandon_after_cancelled_wait_propagates_future_drop_panic() {
     let timers = Timers::default();
     let aborts = Arc::new(AtomicUsize::new(0));
     let dropped = Arc::new(AtomicBool::new(false));

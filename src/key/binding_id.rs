@@ -70,12 +70,20 @@ impl BindingId {
 
 impl Display for BindingId {
     /// Formats the validated ID using its original spelling.
+    ///
+    /// # Parameters
+    ///
+    /// `formatter` is the destination for the identifier text.
     fn fmt(&self, formatter: &mut Formatter<'_>) -> FmtResult {
         formatter.write_str(self.as_str())
     }
 }
 
 /// Checks one dot-delimited segment against the binding ID grammar.
+///
+/// # Parameters
+///
+/// `segment` is the text of one dot-separated identifier segment.
 #[must_use]
 #[inline]
 fn valid_segment(segment: &str) -> bool {

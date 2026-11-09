@@ -41,6 +41,13 @@ use crate::parse::parse_options;
 /// Returns an error when the annotated item is not an inline module, when a
 /// child's activation attributes are malformed, or when a `#[bean]` option list
 /// cannot be parsed.
+///
+/// # Parameters
+///
+/// * `value` - the validated configuration module and its optional default
+///   profile.
+/// * `context` - the expansion context supplying the runtime path used in
+///   generated code.
 pub(crate) fn expand(value: ConfigurationIr, context: &ExpansionContext) -> Result<TokenStream> {
     let ConfigurationIr { mut item, profile } = value;
     let Some((_, children)) = &mut item.content else {
@@ -60,6 +67,13 @@ pub(crate) fn expand(value: ConfigurationIr, context: &ExpansionContext) -> Resu
 /// other children and nested modules are skipped. Each contributing child is
 /// also rewritten in place so it inherits the group profile when it has no
 /// explicit one, which is why the slice is taken mutably.
+///
+/// # Parameters
+///
+/// * `children` - the module items to inspect and update with the group profile
+///   when needed.
+/// * `profile` - the optional default profile inherited by direct bean
+///   children.
 fn collect_installations(children: &mut [Item], profile: Option<&LitStr>) -> Result<Vec<TokenStream>> {
     let mut installations = Vec::new();
     for child in children {
@@ -81,6 +95,12 @@ fn collect_installations(children: &mut [Item], profile: Option<&LitStr>) -> Res
 }
 
 /// Builds the public `register_ioc` function that replays the collected calls.
+///
+/// # Parameters
+///
+/// * `installations` - the generated bean installation statements in source
+///   order.
+/// * `runtime` - the runtime path used in the generated registration function.
 #[must_use]
 fn registration_function(installations: &[TokenStream], runtime: &TokenStream) -> Item {
     parse_quote! {
@@ -99,6 +119,11 @@ fn registration_function(installations: &[TokenStream], runtime: &TokenStream) -
 /// Only the final path segment is compared, so `#[bean]` and
 /// `#[qubit_ioc::bean]` both match while `#[beans]` does not. The check borrows
 /// the attribute only and performs no allocation.
+///
+/// # Parameters
+///
+/// * `attribute` - the attribute whose final path segment is checked for the
+///   bean marker.
 #[must_use]
 #[inline]
 fn is_bean(attribute: &Attribute) -> bool {
@@ -121,6 +146,13 @@ fn is_bean(attribute: &Attribute) -> bool {
 ///
 /// Returns an error when the attribute's option list cannot be parsed as
 /// `key = value` pairs.
+///
+/// # Parameters
+///
+/// * `attribute` - the bean attribute whose marker and profile options are
+///   read.
+/// * `function_name` - the child function name used to derive a fallback
+///   marker.
 fn bean_options(attribute: &Attribute, function_name: &Ident) -> Result<(Ident, bool)> {
     let mut marker = None;
     let mut has_profile = false;
@@ -144,6 +176,11 @@ fn bean_options(attribute: &Attribute, function_name: &Ident) -> Result<(Ident, 
 /// attribute becomes a fresh single-option list. The attribute's path is
 /// preserved, so a qualified `#[qubit_ioc::bean(...)]` stays qualified. Callers
 /// must only invoke this for attributes that do not already declare a profile.
+///
+/// # Parameters
+///
+/// * `attribute` - the bean attribute to update in place.
+/// * `profile` - the default profile literal appended to the attribute.
 fn add_profile(attribute: &mut Attribute, profile: &LitStr) {
     let path = attribute.path().clone();
     let tokens = match &attribute.meta {

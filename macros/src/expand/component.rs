@@ -52,6 +52,13 @@ use crate::ir::FieldIr;
 /// rejected are emitted as compile errors before any request mapping runs, so
 /// the `unreachable!` in the request and access mappers is only reachable when
 /// the intermediate representation is internally inconsistent.
+///
+/// # Parameters
+///
+/// * `value` - the validated component intermediate representation consumed
+///   during generation.
+/// * `context` - the expansion context supplying the runtime path used in
+///   generated code.
 pub(crate) fn expand(value: ComponentIr, context: &ExpansionContext) -> Result<TokenStream> {
     let ComponentIr {
         item,
@@ -132,6 +139,16 @@ pub(crate) fn expand(value: ComponentIr, context: &ExpansionContext) -> Result<T
 /// initializer, so it never reaches request or access mapping and the caller's
 /// `#[allow(unreachable_code)]` decision depends solely on whether this list is
 /// non-empty.
+///
+/// # Parameters
+///
+/// * `fields` - the validated fields to convert in declaration order.
+/// * `runtime` - the runtime path used in generated requests and guards.
+/// * `request_ident` - the generated local identifier for a field request.
+/// * `dependencies_ident` - the generated local identifier for the accumulated
+///   request list.
+/// * `context_ident` - the generated local identifier for the resolution
+///   context.
 #[must_use]
 fn field_bindings(
     fields: &[FieldIr],
@@ -173,6 +190,12 @@ fn field_bindings(
 ///
 /// The alias options are identical for every bind, so they are built once
 /// outside the loop; each step only differs by the aliased type parameter.
+///
+/// # Parameters
+///
+/// * `options` - the binding options whose interface aliases become builder
+///   calls.
+/// * `runtime` - the runtime path used in generated builder expressions.
 #[must_use]
 fn alias_bindings(options: &BindingOptions, runtime: &TokenStream) -> Vec<TokenStream> {
     let alias_options = options_tokens(options, runtime, true);
@@ -197,6 +220,11 @@ fn alias_bindings(options: &BindingOptions, runtime: &TokenStream) -> Vec<TokenS
 /// [`crate::expand::value::config_request`] and wrapped in the runtime's
 /// configuration guard. Every other kind takes the plain graph declaration
 /// and needs no guard.
+///
+/// # Parameters
+///
+/// * `dependency` - the normalized field dependency to register.
+/// * `runtime` - the runtime path used in the request expression.
 #[must_use]
 fn request_tokens(dependency: &DependencyIr, runtime: &TokenStream) -> TokenStream {
     if matches!(dependency.kind, DependencyKind::Value { .. }) {
@@ -213,6 +241,13 @@ fn request_tokens(dependency: &DependencyIr, runtime: &TokenStream) -> TokenStre
 /// [`DependencyKind::Value`] field to [`crate::expand::value::read_value`], so
 /// building it eagerly stays correct for every kind and only the guard decision
 /// depends on the dependency kind.
+///
+/// # Parameters
+///
+/// * `dependency` - the normalized dependency, used to identify configuration
+///   reads.
+/// * `expression` - the generated field access expression to guard.
+/// * `runtime` - the runtime path used to emit the configuration guard.
 #[must_use]
 fn config_guard(dependency: &DependencyIr, expression: TokenStream, runtime: &TokenStream) -> TokenStream {
     if matches!(dependency.kind, DependencyKind::Value { .. }) {
@@ -236,6 +271,11 @@ fn config_guard(dependency: &DependencyIr, expression: TokenStream, runtime: &To
 /// Panics on a [`DependencyKind::Value`] dependency. Callers must route that
 /// kind through [`request_tokens`] first, which only happens for a field the
 /// validator accepted.
+///
+/// # Parameters
+///
+/// * `dependency` - the normalized dependency to encode as a graph declaration.
+/// * `runtime` - the runtime path used in the declaration expression.
 #[must_use]
 fn dependency_tokens(dependency: &DependencyIr, runtime: &TokenStream) -> TokenStream {
     let requested_type = &dependency.requested_type;
@@ -262,6 +302,13 @@ fn dependency_tokens(dependency: &DependencyIr, runtime: &TokenStream) -> TokenS
 /// instead of a context resolution. Every other kind selects the matching
 /// accessor for its identifier form and propagates a lookup failure as a
 /// [`crate::ir`] `FactoryError` through the enclosing factory closure.
+///
+/// # Parameters
+///
+/// * `dependency` - the normalized field dependency to resolve.
+/// * `field_ident` - the source field identifier used for configuration access.
+/// * `runtime` - the runtime path used to emit access and error conversion.
+/// * `context_ident` - the generated identifier for the resolution context.
 #[must_use]
 fn field_expression(
     dependency: &DependencyIr,
@@ -293,6 +340,12 @@ fn field_expression(
 /// `selection` is false for the concrete binding, which never carries
 /// interface projection ordering, and true for every generated alias so that
 /// `primary` and `order` reach the runtime binding options.
+///
+/// # Parameters
+///
+/// * `options` - the binding properties to encode.
+/// * `runtime` - the runtime path used in the generated binding options type.
+/// * `selection` - whether interface selection metadata should be included.
 #[must_use]
 fn options_tokens(options: &BindingOptions, runtime: &TokenStream, selection: bool) -> TokenStream {
     let id = optional_string(&options.id);
@@ -314,6 +367,10 @@ fn options_tokens(options: &BindingOptions, runtime: &TokenStream, selection: bo
 /// The literal is cloned into the generated code, so an absent value stays a
 /// plain `None` instead of an empty string that the runtime would treat as a
 /// configured id or profile.
+///
+/// # Parameters
+///
+/// * `value` - the optional literal to preserve as an owned generated string.
 #[must_use]
 #[inline]
 fn optional_string(value: &Option<LitStr>) -> TokenStream {

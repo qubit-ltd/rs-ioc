@@ -155,6 +155,10 @@ impl BuildFailure {
 
 impl From<BuildError> for BuildFailure {
     /// Wraps a construction error that has no managed cleanup ownership.
+    ///
+    /// # Parameters
+    ///
+    /// `cause` is the construction error to preserve.
     fn from(cause: BuildError) -> Self {
         Self::new(cause, None)
     }
@@ -162,6 +166,10 @@ impl From<BuildError> for BuildFailure {
 
 impl fmt::Debug for BuildFailure {
     /// Reports the cause and ownership presence without exposing callbacks.
+    ///
+    /// # Parameters
+    ///
+    /// `formatter` is the destination for the debug representation.
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         let has_cleanup = self
             .cleanup
@@ -178,6 +186,10 @@ impl fmt::Debug for BuildFailure {
 
 impl fmt::Display for BuildFailure {
     /// Describes the original failure and whether cleanup ownership is present.
+    ///
+    /// # Parameters
+    ///
+    /// `formatter` is the destination for the display representation.
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         let has_cleanup = self
             .cleanup

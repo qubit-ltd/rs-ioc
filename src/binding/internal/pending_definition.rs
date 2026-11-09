@@ -35,6 +35,20 @@ impl PendingDefinition {
     /// `profile` and IDs must already be validated by the registration entry.
     /// Call [`Self::validate_self_keys`] before adding the definition to a
     /// builder.
+    ///
+    /// # Parameters
+    ///
+    /// * `source` — Source location attached to the concrete binding and its
+    ///   aliases.
+    /// * `profile` — Validated profile required to activate the definition, if
+    ///   any.
+    /// * `dependencies` — Validated requests resolved before the concrete
+    ///   factory runs.
+    /// * `concrete` — The definition's concrete binding.
+    ///
+    /// # Returns
+    ///
+    /// A pending definition containing `concrete` as its first binding.
     #[must_use]
     pub(crate) fn new(
         source: DefinitionSource,
@@ -51,6 +65,11 @@ impl PendingDefinition {
     }
 
     /// Adds an interface alias to the pending definition before validation.
+    ///
+    /// # Parameters
+    ///
+    /// * `alias` — Projection binding that targets this definition's concrete
+    ///   binding.
     pub(crate) fn add_alias(&mut self, alias: PendingBinding) {
         self.bindings.push(alias);
     }
@@ -104,6 +123,20 @@ impl PendingDefinition {
     ///
     /// On a duplicate exact key, returns its source and leaves the staging area
     /// untouched; different definitions may share keys until graph validation.
+    ///
+    /// # Parameters
+    ///
+    /// * `definitions` — Staging area that receives this definition only after
+    ///   its internal keys and aliases pass validation.
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` after appending this definition.
+    ///
+    /// # Errors
+    ///
+    /// Returns the first self-key or alias validation error without modifying
+    /// `definitions`.
     pub(crate) fn stage_into(self, definitions: &mut Vec<Self>) -> Result<(), RegistrationError> {
         self.validate_self_keys()?;
         definitions.push(self);

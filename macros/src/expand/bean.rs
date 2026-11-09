@@ -54,6 +54,13 @@ use crate::ir::OutputShape;
 /// from a shared pointer. Both conditions are rejected earlier during
 /// validation, so reaching them means the intermediate representation is
 /// internally inconsistent.
+///
+/// # Parameters
+///
+/// * `value` - the validated bean intermediate representation, consumed while
+///   generating its definition.
+/// * `context` - the expansion context supplying the runtime path used in
+///   generated code.
 pub(crate) fn expand(value: BeanIr, context: &ExpansionContext) -> Result<TokenStream> {
     let BeanIr {
         item,
@@ -217,6 +224,13 @@ pub(crate) fn expand(value: BeanIr, context: &ExpansionContext) -> Result<TokenS
 
 /// Wraps a request or access expression in the config requirement guard when
 /// the dependency reads a configuration value.
+///
+/// # Parameters
+///
+/// * `dependency` - the normalized dependency, used to determine whether it
+///   reads configuration.
+/// * `expression` - the generated request or access expression to guard.
+/// * `runtime` - the runtime path used to emit the configuration guard.
 fn require_config(dependency: &DependencyIr, expression: TokenStream, runtime: &TokenStream) -> TokenStream {
     if matches!(dependency.kind, DependencyKind::Value { .. }) {
         quote!(#runtime::__private::require_config! { #expression })
@@ -232,6 +246,14 @@ fn require_config(dependency: &DependencyIr, expression: TokenStream, runtime: &
 /// Managed outputs must be produced directly by the bean, so an `Arc` shape is
 /// rejected because the managed handle cannot be recovered from a shared
 /// pointer.
+///
+/// # Parameters
+///
+/// * `invocation` - the generated bean call expression.
+/// * `shape` - the validated output shape controlling result and Arc wrapping.
+/// * `managed` - whether the bean produces a managed handle directly.
+/// * `runtime` - the runtime path used when converting an error into
+///   FactoryError.
 fn shaped_output(invocation: &TokenStream, shape: OutputShape, managed: bool, runtime: &TokenStream) -> TokenStream {
     let fallible = match shape {
         OutputShape::ResultBare | OutputShape::ResultArc => {
@@ -255,6 +277,16 @@ fn shaped_output(invocation: &TokenStream, shape: OutputShape, managed: bool, ru
 ///
 /// Asynchronous beans are boxed into a future so the generated closure keeps a
 /// single signature shape for the builder.
+///
+/// # Parameters
+///
+/// * `context` - the generated identifier bound to the runtime factory context.
+/// * `accesses` - the generated local bindings that resolve bean parameters.
+/// * `output_ident` - the generated identifier assigned the bean output.
+/// * `output_type` - the expected output type of the generated factory closure.
+/// * `value` - the generated bean invocation and output-shaping expression.
+/// * `factory_type` - the runtime factory type declared by the closure.
+/// * `is_async` - whether the generated closure must return a boxed future.
 fn factory_closure(
     context: &Ident,
     accesses: &[TokenStream],
@@ -279,6 +311,11 @@ fn factory_closure(
 }
 
 /// Converts a function name such as `db_pool` to its `DbPoolBean` marker.
+///
+/// # Parameters
+///
+/// * `function` - the factory function identifier used to derive the marker
+///   name and span.
 pub(super) fn default_marker(function: &Ident) -> Ident {
     let raw = function.unraw().to_string();
     let mut name = String::with_capacity(raw.len() + 4);
@@ -298,6 +335,13 @@ pub(super) fn default_marker(function: &Ident) -> Ident {
 }
 
 /// Builds runtime options, leaving priority and order on aliases when present.
+///
+/// # Parameters
+///
+/// * `options` - the validated binding properties to encode.
+/// * `concrete_has_aliases` - whether aliases receive primary and ordering
+///   metadata instead of the concrete binding.
+/// * `runtime` - the runtime path used in the generated binding options type.
 fn binding_options(options: &BindingOptions, concrete_has_aliases: bool, runtime: &TokenStream) -> TokenStream {
     let id = options.id.as_ref().map_or_else(
         || quote!(::core::option::Option::None),
@@ -321,6 +365,12 @@ fn binding_options(options: &BindingOptions, concrete_has_aliases: bool, runtime
 ///
 /// A `Value` dependency always maps to the shared `Config` request; the
 /// generated `register` body removes duplicates before building the definition.
+///
+/// # Parameters
+///
+/// * `dependency` - the normalized parameter dependency to represent as a graph
+///   request.
+/// * `runtime` - the runtime path used in the generated request.
 fn dependency_request(dependency: &DependencyIr, runtime: &TokenStream) -> TokenStream {
     let target = &dependency.requested_type;
     match &dependency.kind {
@@ -339,6 +389,13 @@ fn dependency_request(dependency: &DependencyIr, runtime: &TokenStream) -> Token
 
 /// Reads one declared request and wraps any impossible access failure as a
 /// factory error.
+///
+/// # Parameters
+///
+/// * `dependency` - the normalized dependency whose value is resolved.
+/// * `parameter` - the source parameter identifier used by configuration reads.
+/// * `runtime` - the runtime path used to wrap resolution errors.
+/// * `context` - the generated identifier for the runtime resolution context.
 fn dependency_access(
     dependency: &DependencyIr,
     parameter: &Ident,

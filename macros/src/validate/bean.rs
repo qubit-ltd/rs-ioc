@@ -288,6 +288,10 @@ fn result_types(ty: &Type) -> Option<(&Type, &Type)> {
 /// not detected, so this is a conservative guard rather than a type-level
 /// proof. A future spelled as an `async fn` return position is instead handled
 /// by the bean signature itself.
+///
+/// # Parameters
+///
+/// * `ty` - the syntax type recursively checked for a visibly spelled Future.
 #[must_use]
 fn contains_future_type(ty: &Type) -> bool {
     match ty {

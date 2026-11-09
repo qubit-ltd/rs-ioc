@@ -11,13 +11,13 @@ use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
-use r#type::bean;
+use tokio::runtime;
+use tokio::time;
 use r#type::ContainerBuilder;
 use r#type::Managed;
 use r#type::ShutdownMode;
 use r#type::WaitPolicy;
-use tokio::runtime;
-use tokio::time;
+use r#type::bean;
 
 static STOPS: AtomicUsize = AtomicUsize::new(0);
 
@@ -39,7 +39,8 @@ async fn asynchronous() -> Result<Managed<String>, Error> {
     }))
 }
 
-/// Builds the fixture container, checks both bean values, and waits for shutdown.
+/// Builds the fixture container, checks both bean values, and waits for
+/// shutdown.
 fn verify_managed_output_path() {
     let mut builder = ContainerBuilder::new().wait_policy(WaitPolicy::bounded(
         Duration::from_secs(30),
@@ -48,10 +49,7 @@ fn verify_managed_output_path() {
     ));
     builder.install::<SynchronousBean>().unwrap();
     builder.install::<AsynchronousBean>().unwrap();
-    let runtime = runtime::Builder::new_current_thread()
-        .enable_time()
-        .build()
-        .unwrap();
+    let runtime = runtime::Builder::new_current_thread().enable_time().build().unwrap();
     let application = runtime.block_on(builder.build_all_async()).unwrap();
     let context = application.context();
     assert_eq!(*context.get::<u32>().unwrap(), 7);

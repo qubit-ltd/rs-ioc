@@ -45,6 +45,13 @@ use crate::ir::ConfigurationPropertiesIr;
 /// Returns a span-aware [`syn::Error`] when the validation stage rejected the
 /// declaration, so the caller reports the original diagnostic instead of
 /// emitting a definition that cannot be built.
+///
+/// # Parameters
+///
+/// * `value` - the validated configuration-properties declaration consumed
+///   during generation.
+/// * `context` - the expansion context supplying the runtime path used in
+///   generated code.
 pub(crate) fn expand(value: ConfigurationPropertiesIr, context: &ExpansionContext) -> Result<TokenStream> {
     let ConfigurationPropertiesIr {
         item,
@@ -125,6 +132,11 @@ pub(crate) fn expand(value: ConfigurationPropertiesIr, context: &ExpansionContex
 /// The mapping is a single expression over one borrowed literal and allocates
 /// nothing beyond the returned token stream, so it is inlined into its two
 /// call sites in [`expand`].
+///
+/// # Parameters
+///
+/// * `value` - the optional string literal to encode as an owned generated
+///   value.
 #[must_use]
 #[inline]
 fn optional_owned_literal(value: Option<&LitStr>) -> TokenStream {

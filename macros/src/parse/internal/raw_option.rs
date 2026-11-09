@@ -39,6 +39,11 @@ impl Parse for RawOption {
     /// whether the parsed value satisfies that option's semantic constraints.
     /// Unknown keys, including the reserved `name` spelling, fail at the key
     /// span so the diagnostic points to the user's option.
+    ///
+    /// # Parameters
+    ///
+    /// * `input` - the token stream containing one option key and its value
+    ///   syntax.
     fn parse(input: ParseStream<'_>) -> Result<Self> {
         let key = input.call(Ident::parse_any)?;
         let value = match key.to_string().as_str() {

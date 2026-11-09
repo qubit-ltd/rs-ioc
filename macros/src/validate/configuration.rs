@@ -41,10 +41,7 @@ use crate::ir::ConfigurationIr;
 /// Returns an error when `item` has no inline body.
 pub(super) fn configuration(item: ItemMod, options: ValidatedOptions) -> Result<ConfigurationIr> {
     let Some((_, _)) = &item.content else {
-        return Err(Error::new(
-            item.span(),
-            "#[Configuration] requires an inline module",
-        ));
+        return Err(Error::new(item.span(), "#[Configuration] requires an inline module"));
     };
     Ok(ConfigurationIr {
         item,
