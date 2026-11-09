@@ -26,6 +26,7 @@ use crate::graph::internal::selection::detect_errors_and_cycles;
 use crate::graph::internal::selection::exact_keys;
 use crate::graph::internal::selection::flatten;
 use crate::graph::internal::selection::resolve_edges;
+use crate::graph::internal::selection::resolve_reachable_edges;
 use crate::graph::internal::selection::select_roots;
 use crate::graph::internal::selection::stable_topology;
 use crate::graph::internal::selection::validate_primary;
@@ -156,7 +157,16 @@ impl ValidatedGraph {
             validate_primary(&nodes)?;
         }
         let index = BindingIndex::new(&nodes);
-        let (edges, resolved) = resolve_edges(&definitions, &nodes, &index);
+        let reachable_seeds = if scope == ValidationScope::Reachable {
+            roots.map(|roots| select_roots(roots, &nodes, &index)).transpose()?
+        } else {
+            None
+        };
+        let (edges, resolved) = if let Some(seeds) = &reachable_seeds {
+            resolve_reachable_edges(&definitions, &nodes, &index, seeds)
+        } else {
+            resolve_edges(&definitions, &nodes, &index)
+        };
         if roots.is_some() && scope == ValidationScope::AllActive {
             exact_keys(&nodes)?;
             validate_primary(&nodes)?;
@@ -164,7 +174,9 @@ impl ValidatedGraph {
             let (all_reachable, all_paths) = close_definitions(&definitions, &nodes, &edges, &all_seeds)?;
             detect_errors_and_cycles(&nodes, &edges, &all_reachable, &all_paths)?;
         }
-        let seeds = if let Some(roots) = roots {
+        let seeds = if let Some(seeds) = reachable_seeds {
+            seeds
+        } else if let Some(roots) = roots {
             select_roots(roots, &nodes, &index)?
         } else {
             build_all_seeds(&nodes, &edges)

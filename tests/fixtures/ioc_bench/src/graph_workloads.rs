@@ -26,13 +26,7 @@ use crate::SIZES;
 use crate::print_samples;
 
 const SMALL_CLOSURE: usize = 8;
-const WORKLOADS: [&str; 5] = [
-    "chain",
-    "alias",
-    "collection",
-    "root_closure",
-    "missing_tail",
-];
+const WORKLOADS: [&str; 5] = ["chain", "alias", "collection", "root_closure", "missing_tail"];
 const UNREACHABLE_CASES: [(usize, usize); 2] = [(100, 64), (1_000, 1_024)];
 
 /// Shared projection interface for one concrete definition with many aliases.
@@ -72,38 +66,23 @@ fn options(id: String) -> BindingOptions {
 /// Registers `n` distinct u32 bindings and selects the first root.
 /// The forward chain visits `length` nodes; `missing` requests absent node.nN.
 /// Factories only access declared dependencies and return a small Arc value.
-fn chain(
-    n: usize,
-    length: usize,
-    missing: bool,
-    counter: Option<Arc<AtomicUsize>>,
-) -> ContainerBuilder {
+fn chain(n: usize, length: usize, missing: bool, counter: Option<Arc<AtomicUsize>>) -> ContainerBuilder {
     let mut builder = ContainerBuilder::new();
     for index in 0..n {
-        let next = (index + 1 < length || (missing && index + 1 == length))
-            .then(|| format!("node.n{}", index + 1));
-        let dependencies: Vec<_> = next
-            .iter()
-            .map(|id| Dependency::with_id::<u32>(id))
-            .collect();
+        let next = (index + 1 < length || (missing && index + 1 == length)).then(|| format!("node.n{}", index + 1));
+        let dependencies: Vec<_> = next.iter().map(|id| Dependency::with_id::<u32>(id)).collect();
         let calls = counter.clone();
         builder
-            .register_factory_with::<u32, _>(
-                &dependencies,
-                options(format!("node.n{index}")),
-                move |context| {
-                    let value = next.as_deref().map_or(1, |id| {
-                        *context.get_by_id::<u32>(id).expect("declared next node") + 1
-                    });
-                    constructed(&calls);
-                    Ok(Arc::new(value))
-                },
-            )
+            .register_factory_with::<u32, _>(&dependencies, options(format!("node.n{index}")), move |context| {
+                let value = next
+                    .as_deref()
+                    .map_or(1, |id| *context.get_by_id::<u32>(id).expect("declared next node") + 1);
+                constructed(&calls);
+                Ok(Arc::new(value))
+            })
             .expect("register named chain node");
     }
-    builder
-        .root_by_id::<u32>("node.n0")
-        .expect("valid chain root");
+    builder.root_by_id::<u32>("node.n0").expect("valid chain root");
     builder
 }
 
@@ -116,16 +95,13 @@ fn aliases(n: usize, counter: Option<Arc<AtomicUsize>>) -> ContainerBuilder {
         Ok(Arc::new(7))
     });
     for index in 0..n {
-        definition =
-            definition.bind::<dyn Value, _>(options(format!("alias.a{index}")), |value| value);
+        definition = definition.bind::<dyn Value, _>(options(format!("alias.a{index}")), |value| value);
     }
     let mut builder = ContainerBuilder::new();
     builder
         .register_definition(definition.build().expect("valid alias definition"))
         .expect("register alias definition");
-    builder
-        .root_by_id::<dyn Value>("alias.a0")
-        .expect("valid alias root");
+    builder.root_by_id::<dyn Value>("alias.a0").expect("valid alias root");
     builder
 }
 
@@ -237,20 +213,14 @@ pub(super) fn check() {
             if workload == "missing_tail" {
                 let failure = result.err().expect("missing last dependency must fail");
                 match failure.cause() {
-                    BuildError::MissingDependency {
-                        dependency, path, ..
-                    } => {
-                        assert_eq!(
-                            dependency,
-                            &Dependency::with_id::<u32>(&format!("node.n{n}"))
-                        );
+                    BuildError::MissingDependency { dependency, path, .. } => {
+                        assert_eq!(dependency, &Dependency::with_id::<u32>(&format!("node.n{n}")));
                         assert_eq!(path.len(), n);
                         for (index, key) in path.iter().enumerate() {
                             assert_eq!(
                                 key,
                                 &BindingKey::of::<u32>(Some(
-                                    BindingId::parse(&format!("node.n{index}"))
-                                        .expect("valid path ID"),
+                                    BindingId::parse(&format!("node.n{index}")).expect("valid path ID"),
                                 ))
                             );
                         }
@@ -263,10 +233,7 @@ pub(super) fn check() {
                 let context = application.context();
                 let expected_count = match workload {
                     "chain" => {
-                        assert_eq!(
-                            *context.get_by_id::<u32>("node.n0").expect("first node"),
-                            n as u32
-                        );
+                        assert_eq!(*context.get_by_id::<u32>("node.n0").expect("first node"), n as u32);
                         assert_eq!(
                             *context
                                 .get_by_id::<u32>(&format!("node.n{}", n - 1))
@@ -297,23 +264,12 @@ pub(super) fn check() {
                     }
                     "root_closure" => {
                         assert_eq!(
-                            *context
-                                .get_by_id::<u32>("node.n0")
-                                .expect("small closure root"),
+                            *context.get_by_id::<u32>("node.n0").expect("small closure root"),
                             SMALL_CLOSURE as u32
                         );
-                        assert_eq!(
-                            *context
-                                .get_by_id::<u32>("node.n7")
-                                .expect("closure last node"),
-                            1
-                        );
+                        assert_eq!(*context.get_by_id::<u32>("node.n7").expect("closure last node"), 1);
                         assert_eq!(context.get_all::<u32>().len(), SMALL_CLOSURE);
-                        assert!(
-                            context
-                                .get_by_id::<u32>(&format!("node.n{}", n - 1))
-                                .is_err()
-                        );
+                        assert!(context.get_by_id::<u32>(&format!("node.n{}", n - 1)).is_err());
                         SMALL_CLOSURE
                     }
                     _ => unreachable!("successful workload"),
@@ -325,15 +281,9 @@ pub(super) fn check() {
     }
     for (consumers, candidates) in UNREACHABLE_CASES {
         let counter = Arc::new(AtomicUsize::new(0));
-        let application = unreachable_collections(
-            consumers,
-            candidates,
-            None,
-            false,
-            Some(Arc::clone(&counter)),
-        )
-        .build()
-        .expect("fixed root chain builds without unreachable consumers");
+        let application = unreachable_collections(consumers, candidates, None, false, Some(Arc::clone(&counter)))
+            .build()
+            .expect("fixed root chain builds without unreachable consumers");
         assert_eq!(counter.load(Ordering::Relaxed), 8);
         let context = application.context();
         assert_eq!(*context.get_by_id::<u32>("node.n0").expect("root chain"), 8);
@@ -341,15 +291,9 @@ pub(super) fn check() {
         assert!(context.get_by_id::<Consumer>("consumer.c0").is_err());
 
         let counter = Arc::new(AtomicUsize::new(0));
-        let selected = unreachable_collections(
-            consumers,
-            candidates,
-            Some(0),
-            false,
-            Some(Arc::clone(&counter)),
-        )
-        .build()
-        .expect("selected consumer builds");
+        let selected = unreachable_collections(consumers, candidates, Some(0), false, Some(Arc::clone(&counter)))
+            .build()
+            .expect("selected consumer builds");
         let context = selected.context();
         let all = context.get_all::<Candidate>();
         assert_eq!(all.len(), candidates);
@@ -366,26 +310,14 @@ pub(super) fn check() {
         assert_eq!(counter.load(Ordering::Relaxed), 8 + candidates + 1);
 
         let counter = Arc::new(AtomicUsize::new(0));
-        let result = unreachable_collections(
-            consumers,
-            candidates,
-            None,
-            true,
-            Some(Arc::clone(&counter)),
-        )
-        .build_all();
+        let result = unreachable_collections(consumers, candidates, None, true, Some(Arc::clone(&counter))).build_all();
         let failure = match result {
             Ok(_) => panic!("all-active validation must reject unreachable missing dependency"),
             Err(failure) => failure,
         };
-        assert!(matches!(
-            failure.cause(),
-            BuildError::MissingDependency { .. }
-        ));
+        assert!(matches!(failure.cause(), BuildError::MissingDependency { .. }));
         assert_eq!(counter.load(Ordering::Relaxed), 0);
-        println!(
-            "correctness graph=unreachable_collections consumers={consumers} candidates={candidates} passed"
-        );
+        println!("correctness graph=unreachable_collections consumers={consumers} candidates={candidates} passed");
     }
 }
 
@@ -406,10 +338,7 @@ pub(super) fn run() {
                 construction.push(started.elapsed());
                 drop(result);
             }
-            print_samples(
-                &format!("graph={workload} n={n} phase=registration"),
-                &registration,
-            );
+            print_samples(&format!("graph={workload} n={n} phase=registration"), &registration);
             print_samples(
                 &format!("graph={workload} n={n} phase=validation_construction"),
                 &construction,
@@ -436,9 +365,7 @@ pub(super) fn run() {
             drop(result);
         }
         print_samples(
-            &format!(
-                "graph=unreachable_collections consumers={consumers} candidates={candidates} phase=registration"
-            ),
+            &format!("graph=unreachable_collections consumers={consumers} candidates={candidates} phase=registration"),
             &registration,
         );
         print_samples(

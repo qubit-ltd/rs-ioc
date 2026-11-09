@@ -187,6 +187,16 @@ pub(in crate::graph) fn close_definitions(
 /// each carrying `node.source` as the requesting definition and the supplied
 /// diagnostic `path`. Sharing one mapping keeps the closure walk and the cycle
 /// walk reporting identical errors for identical edges.
+///
+/// # Parameters
+///
+/// - `edge`: The resolved target or deferred failure to convert.
+/// - `node`: The node whose dependency or alias edge was resolved.
+/// - `path`: The diagnostic path from a selected root to `node`.
+///
+/// # Returns
+///
+/// The corresponding build error for a failure edge, or `None` for a target.
 fn edge_problem(edge: &Edge, node: &Node, path: Vec<BindingKey>) -> Option<BuildError> {
     match edge {
         Edge::Target(_) => None,
@@ -219,6 +229,11 @@ fn edge_problem(edge: &Edge, node: &Node, path: Vec<BindingKey>) -> Option<Build
 /// remaining region is added so cycles are also reached by validation.
 /// Every node is covered by the resulting seed closures. An empty graph
 /// produces an empty vector.
+///
+/// # Parameters
+///
+/// - `nodes`: The flattened bindings whose components are being selected.
+/// - `edges`: The resolved outgoing edges indexed in parallel with `nodes`.
 pub(in crate::graph) fn build_all_seeds(nodes: &[Node], edges: &[Vec<Edge>]) -> Vec<usize> {
     let mut has_incoming = vec![false; nodes.len()];
     for requests in edges {
@@ -307,6 +322,15 @@ fn mark_build_all_closure(
 }
 
 /// Flattens definitions in builder entry order and binding declaration order.
+///
+/// # Parameters
+///
+/// - `definitions`: The active definitions whose bindings are flattened.
+///
+/// # Returns
+///
+/// One graph node per declared binding, preserving definition and binding
+/// order.
 pub(in crate::graph) fn flatten(definitions: &[PendingDefinition]) -> Vec<Node> {
     let mut nodes = Vec::new();
     for (definition_index, definition) in definitions.iter().enumerate() {
@@ -335,6 +359,14 @@ pub(in crate::graph) fn flatten(definitions: &[PendingDefinition]) -> Vec<Node> 
 /// Returns [`BuildError::DuplicateBinding`] for the first key that appears
 /// twice, reporting the key together with the sources of the first and second
 /// definitions that declare it.
+///
+/// # Parameters
+///
+/// - `nodes`: Active graph nodes in registration order.
+///
+/// # Returns
+///
+/// A map from each unique exact binding key to its node position.
 #[allow(clippy::result_large_err)]
 pub(in crate::graph) fn exact_keys(nodes: &[Node]) -> Result<HashMap<BindingKey, usize>, BuildError> {
     let mut by_key = HashMap::with_capacity(nodes.len());
@@ -359,6 +391,14 @@ pub(in crate::graph) fn exact_keys(nodes: &[Node]) -> Result<HashMap<BindingKey,
 ///
 /// Returns [`BuildError::MultiplePrimaryBindings`] listing the key and source
 /// of every primary binding that shares the offending type identifier.
+///
+/// # Parameters
+///
+/// - `nodes`: Active graph nodes in registration order.
+///
+/// # Returns
+///
+/// `Ok(())` when no type has multiple primary bindings.
 #[allow(clippy::result_large_err)]
 pub(in crate::graph) fn validate_primary(nodes: &[Node]) -> Result<(), BuildError> {
     let mut seen = HashSet::new();
@@ -388,6 +428,17 @@ pub(in crate::graph) fn validate_primary(nodes: &[Node]) -> Result<(), BuildErro
 /// resolved requests, indexed by definition and then by that definition's
 /// dependency order. Requests that a node cannot reach keep an empty
 /// `ResolvedDependency::keys`.
+///
+/// # Parameters
+///
+/// - `definitions`: Definitions whose declared dependency requests are read.
+/// - `nodes`: Flattened binding nodes indexed by the returned edges.
+/// - `index`: The binding candidate index built over `nodes`.
+///
+/// # Returns
+///
+/// Per-node outgoing edges and per-definition resolved requests in declaration
+/// order.
 pub(in crate::graph) fn resolve_edges(
     definitions: &[PendingDefinition],
     nodes: &[Node],
@@ -434,12 +485,130 @@ pub(in crate::graph) fn resolve_edges(
     (edges, resolved)
 }
 
+/// Resolves only nodes in the closure of `seeds`, leaving full-shape outputs.
+///
+/// Definitions may contain several bindings, so reaching one member queues
+/// every member. Each node's alias edge is resolved independently, while only
+/// concrete nodes resolve the definition's dependency declarations.
+///
+/// # Returns
+///
+/// Edges indexed by node and resolved requests indexed by definition and
+/// declaration order. Unvisited definitions retain empty resolved-request
+/// lists.
+///
+/// # Parameters
+///
+/// - `definitions`: Active definitions whose members and requests form the
+///   graph.
+/// - `nodes`: Flattened binding nodes indexed by the returned edges.
+/// - `index`: The binding candidate index built over every active node.
+/// - `seeds`: Root node positions from which dependency resolution begins.
+///
+/// # Returns
+///
+/// Full-shape per-node outgoing edges and per-definition resolved requests;
+/// definitions outside the selected closure have empty request lists.
+pub(in crate::graph) fn resolve_reachable_edges(
+    definitions: &[PendingDefinition],
+    nodes: &[Node],
+    index: &BindingIndex,
+    seeds: &[usize],
+) -> (Vec<Vec<Edge>>, Vec<Vec<ResolvedDependency>>) {
+    let mut edges = vec![Vec::new(); nodes.len()];
+    let mut resolved = (0..definitions.len()).map(|_| Vec::new()).collect::<Vec<_>>();
+    let mut visited = vec![false; nodes.len()];
+    let mut expanded = vec![false; definitions.len()];
+    let mut resolved_initialized = vec![false; definitions.len()];
+    let mut dependency_edges = (0..definitions.len()).map(|_| None).collect::<Vec<Option<Vec<Edge>>>>();
+    // `flatten` lays each definition's bindings out contiguously, so retain
+    // just its range instead of allocating one node-index vector per
+    // definition.
+    let mut nodes_by_definition = Vec::with_capacity(definitions.len());
+    let mut node_start = 0;
+    for definition in definitions {
+        let node_end = node_start + definition.bindings.len();
+        nodes_by_definition.push(node_start..node_end);
+        node_start = node_end;
+    }
+    let mut queue = seeds.to_vec();
+    let mut cursor = 0;
+    while cursor < queue.len() {
+        let ni = queue[cursor];
+        cursor += 1;
+        if visited[ni] {
+            continue;
+        }
+        visited[ni] = true;
+        let node = &nodes[ni];
+        let di = node.location.definition;
+        if !expanded[di] {
+            expanded[di] = true;
+            queue.extend(nodes_by_definition[di].clone());
+        }
+        let binding = &definitions[di].bindings[node.location.binding];
+        if let PendingBindingKind::Alias { target, .. } = &binding.kind {
+            edges[ni].push(match index.by_key(target).first() {
+                Some(&t) => Edge::Target(t),
+                None => Edge::MissingAliasTarget(target.clone()),
+            });
+        } else {
+            if !resolved_initialized[di] {
+                resolved[di] = definitions[di]
+                    .dependencies
+                    .iter()
+                    .cloned()
+                    .map(|request| ResolvedDependency {
+                        request,
+                        keys: Vec::new(),
+                    })
+                    .collect();
+                let mut definition_edges = Vec::new();
+                for (ri, request) in definitions[di].dependencies.iter().enumerate() {
+                    let candidates = candidates_for(request, index);
+                    match select(request, candidates, nodes) {
+                        Ok(selected) => {
+                            resolved[di][ri].keys = selected.iter().map(|&i| nodes[i].key.clone()).collect();
+                            definition_edges.extend(selected.into_iter().map(Edge::Target));
+                        }
+                        Err(problem) => definition_edges.push(problem),
+                    }
+                }
+                dependency_edges[di] = Some(definition_edges);
+                resolved_initialized[di] = true;
+            }
+            for edge in dependency_edges[di]
+                .as_ref()
+                .expect("concrete definition dependencies were resolved")
+                .iter()
+                .cloned()
+            {
+                if let Edge::Target(target) = &edge {
+                    queue.push(*target);
+                }
+                edges[ni].push(edge);
+            }
+        }
+    }
+    (edges, resolved)
+}
+
 /// Gets candidate indices for an exact ID or for a Rust type namespace.
 ///
 /// A request carrying an id string is matched on the full exact key, and an id
 /// that [`BindingId::parse`] rejects yields no candidates at all rather than
 /// falling back to the type namespace, so a malformed id surfaces as a missing
 /// dependency instead of a wrong match.
+///
+/// # Parameters
+///
+/// - `request`: The exact-ID or type-wide dependency request to match.
+/// - `index`: The binding index containing active exact-key and type positions.
+///
+/// # Returns
+///
+/// Candidate node positions for the request, or an empty slice when none
+/// match.
 fn candidates_for<'index>(request: &Dependency, index: &'index BindingIndex) -> &'index [usize] {
     match request.id() {
         Some(id) => {
@@ -596,6 +765,12 @@ pub(in crate::graph) fn detect_errors_and_cycles(
 /// nodes are settled by registration position, so the result is deterministic
 /// and contains no duplicates; a reachable cycle would leave nodes out, which
 /// the caller must have ruled out beforehand.
+///
+/// # Parameters
+///
+/// - `nodes`: The flattened graph nodes.
+/// - `edges`: Outgoing edges indexed in parallel with `nodes`.
+/// - `reachable`: Flags selecting the nodes to place in dependency-first order.
 pub(in crate::graph) fn stable_topology(
     nodes: &[Node],
     edges: &[Vec<Edge>],

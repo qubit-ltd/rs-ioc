@@ -581,6 +581,32 @@ fn test_graph_root_ignores_unreachable_exact_and_primary_conflicts() {
 }
 
 #[test]
+fn test_graph_root_resolves_only_reachable_definition_requests() {
+    let graph = ValidatedGraph::validate_roots(
+        vec![
+            instance("root", A, vec![Dependency::of::<B>()], None, false, 0, None),
+            instance("dependency", B, vec![], None, false, 0, None),
+            instance(
+                "unreachable_collection_consumer",
+                C,
+                vec![Dependency::all::<B>()],
+                None,
+                false,
+                0,
+                None,
+            ),
+        ],
+        &[],
+        Some(&[Dependency::of::<A>()]),
+    )
+    .expect("the reachable root closure validates");
+
+    assert_eq!(graph.resolved[0].len(), 1);
+    assert_eq!(graph.resolved[0][0].keys, vec![BindingKey::of::<B>(None)]);
+    assert!(graph.resolved[2].is_empty());
+}
+
+#[test]
 fn test_graph_root_reports_dependency_exact_ambiguity_with_full_path() {
     let exact = BindingKey::of::<C>(Some(BindingId::parse("exact").expect("valid ID")));
     let result = ValidatedGraph::validate_roots(

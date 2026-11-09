@@ -11,6 +11,7 @@ use crate::dependency::Dependency;
 use crate::key::BindingKey;
 
 /// A resolved edge or a failure delayed until its root path is known.
+#[derive(Clone)]
 pub(in crate::graph) enum Edge {
     /// A dependency or alias target selected by validation.
     Target(
