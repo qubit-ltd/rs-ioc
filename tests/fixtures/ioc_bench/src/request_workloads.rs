@@ -34,10 +34,7 @@ pub(super) fn check() {
             let expected = (size as u64) * (size as u64 + 1) / 2;
             assert_eq!(*context.get::<u64>().expect("summary root"), expected);
             assert_eq!(calls.load(Ordering::Relaxed), 1);
-            println!(
-                "correctness requests size={size} order={} passed",
-                order_name(reverse)
-            );
+            println!("correctness requests size={size} order={} passed", order_name(reverse));
         }
     }
 }
@@ -47,17 +44,13 @@ pub(super) fn run() {
     for size in SIZES {
         for reverse in [false, true] {
             let ids = request_ids(size, reverse);
-            let registration = sample("registration", size, || {
-                setup_from_ids(size, &ids, None, None)
-            });
+            let registration = sample("registration", size, || setup_from_ids(size, &ids, None, None));
             report(size, reverse, "registration", &registration);
 
             let mut complete_build = Vec::with_capacity(SAMPLES);
             // One untimed warm-up build, followed by five independent samples.
             drop(black_box(
-                setup_from_ids(size, &ids, None, None)
-                    .build()
-                    .expect("warm-up build"),
+                setup_from_ids(size, &ids, None, None).build().expect("warm-up build"),
             ));
             for _ in 0..SAMPLES {
                 let builder = setup_from_ids(size, &ids, None, None);
@@ -80,22 +73,12 @@ pub(super) fn run() {
                 let application = setup_from_ids(size, &ids, None, Some(Arc::clone(&elapsed)))
                     .build()
                     .expect("lookup-loop sample build");
-                black_box(
-                    application
-                        .context()
-                        .get::<u64>()
-                        .expect("resolve sample root"),
-                );
+                black_box(application.context().get::<u64>().expect("resolve sample root"));
                 let duration = Duration::from_nanos(elapsed.load(Ordering::Relaxed));
                 assert!(!duration.is_zero(), "factory request loop must execute");
                 lookup.push(duration);
             }
-            report(
-                size,
-                reverse,
-                "factory_lookup_loop_arc_clone_and_sum",
-                &lookup,
-            );
+            report(size, reverse, "factory_lookup_loop_arc_clone_and_sum", &lookup);
         }
     }
 }
@@ -141,23 +124,14 @@ fn setup_from_ids(
     elapsed: Option<Arc<AtomicU64>>,
 ) -> ContainerBuilder {
     let mut builder = register_instances(size);
-    let dependencies: Vec<_> = ids
-        .iter()
-        .map(|id| Dependency::with_id::<u32>(id))
-        .collect();
+    let dependencies: Vec<_> = ids.iter().map(|id| Dependency::with_id::<u32>(id)).collect();
     let factory_ids = ids.to_vec();
     builder
         .register_factory::<u64, _>(&dependencies, move |context| {
             let started = elapsed.as_ref().map(|_| Instant::now());
             let sum = factory_ids
                 .iter()
-                .map(|id| {
-                    u64::from(
-                        *context
-                            .get_by_id::<u32>(id)
-                            .expect("declared independent request"),
-                    )
-                })
+                .map(|id| u64::from(*context.get_by_id::<u32>(id).expect("declared independent request")))
                 .sum();
             if let (Some(elapsed), Some(started)) = (elapsed, started) {
                 elapsed.store(started.elapsed().as_nanos() as u64, Ordering::Relaxed);

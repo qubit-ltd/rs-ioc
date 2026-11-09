@@ -25,9 +25,7 @@ const SIZES: [usize; 4] = [1_000, 2_000, 4_000, 8_000];
 /// Selects the first argument; defaults to correctness and rejects unknown
 /// modes.
 fn main() {
-    let mode = std::env::args()
-        .nth(1)
-        .unwrap_or_else(|| "correctness".to_owned());
+    let mode = std::env::args().nth(1).unwrap_or_else(|| "correctness".to_owned());
     match mode.as_str() {
         "requests" => println!(
             "mode={mode} samples={SAMPLES} request_sizes={:?}",
@@ -81,8 +79,5 @@ fn print_samples(label: &str, samples: &[Duration]) {
     let raw: Vec<_> = samples.iter().map(Duration::as_nanos).collect();
     let mut sorted = raw.clone();
     sorted.sort_unstable();
-    println!(
-        "{label} samples_ns={raw:?} median_ns={}",
-        sorted[sorted.len() / 2]
-    );
+    println!("{label} samples_ns={raw:?} median_ns={}", sorted[sorted.len() / 2]);
 }
