@@ -42,9 +42,9 @@ use crate::ir::ConfigurationPropertiesIr;
 ///
 /// # Errors
 ///
-/// Returns a span-aware [`syn::Error`] when the validation stage rejected the
-/// declaration, so the caller reports the original diagnostic instead of
-/// emitting a definition that cannot be built.
+/// This expander currently has no fallible steps. Declaration validation
+/// errors are returned before this function is called; the `Result` signature
+/// is retained for the expansion pipeline.
 ///
 /// # Parameters
 ///

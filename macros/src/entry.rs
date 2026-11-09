@@ -21,9 +21,10 @@ use crate::validate;
 /// The invocation is first parsed into a raw declaration, then the crate
 /// runtime path is resolved, then the raw declaration is validated against
 /// that path, and finally the validated declaration is expanded into generated
-/// code. Every stage runs in the proc-macro process, performs no I/O, and
-/// passes ownership of the intermediate value to the next stage, so no stage
-/// leaves partially shared state behind.
+/// code. Runtime-path resolution may read Cargo manifests; parsing, validation,
+/// and token generation transform the supplied syntax and intermediate
+/// representation. Each stage passes ownership of its intermediate value to
+/// the next stage, so no stage leaves partially shared state behind.
 ///
 /// A failing stage is not turned into a panic: the whole pipeline runs inside
 /// one `Result`, and the first [`syn::Error`] is converted into a
