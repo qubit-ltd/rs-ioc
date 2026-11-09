@@ -21,4 +21,7 @@ pub(super) struct TypePositions {
     /// The same positions reordered by collection precedence: explicit
     /// `order`, then binding id, then definition source.
     pub(super) collection: Vec<usize>,
+    /// The selected binding for an unnamed query when selection is
+    /// unambiguous, or `None` when selection requires diagnostics.
+    pub(super) selected: Option<usize>,
 }

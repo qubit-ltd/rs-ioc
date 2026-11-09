@@ -56,6 +56,21 @@ impl QueryIndex {
             index.by_key.insert(binding.key.clone(), position);
         }
         for positions in index.by_type.values_mut() {
+            let mut only = None;
+            let mut primary = None;
+            let mut primary_count = 0;
+            for &position in &positions.registration {
+                only = Some(position);
+                if bindings[position].primary {
+                    primary = Some(position);
+                    primary_count += 1;
+                }
+            }
+            positions.selected = match positions.registration.as_slice() {
+                [_] => only,
+                _ if primary_count == 1 => primary,
+                _ => None,
+            };
             positions.collection = positions.registration.clone();
             positions.collection.sort_by(|left, right| {
                 let left = &bindings[*left];
@@ -87,6 +102,20 @@ impl QueryIndex {
         self.by_type
             .get(&type_id)
             .map_or(&[], |positions| positions.registration.as_slice())
+    }
+
+    /// Returns the position selected by an unnamed query when it is
+    /// unambiguous.
+    ///
+    /// A single binding is selected directly, and multiple bindings select
+    /// their unique primary. Missing types, ambiguous bindings, and multiple
+    /// primaries return `None` so callers can preserve their diagnostic path.
+    #[inline]
+    #[must_use]
+    pub(crate) fn selected(&self, type_id: TypeId) -> Option<usize> {
+        self.by_type
+            .get(&type_id)
+            .and_then(|positions| positions.selected)
     }
 
     /// Returns active binding positions for one Rust type in collection order.
@@ -149,6 +178,34 @@ mod tests {
         assert_eq!(index.by_type_collection(TypeId::of::<u8>()), [2, 1, 0]);
     }
 
+    #[test]
+    fn test_selected_returns_only_unambiguous_default_binding() {
+        let single = [binding("single", 0)];
+        assert_eq!(
+            QueryIndex::new(&single).selected(TypeId::of::<u8>()),
+            Some(0)
+        );
+
+        let unique_primary = [binding("first", 0), primary_binding("second", 0)];
+        assert_eq!(
+            QueryIndex::new(&unique_primary).selected(TypeId::of::<u8>()),
+            Some(1)
+        );
+
+        let no_primary = [binding("first", 0), binding("second", 0)];
+        assert_eq!(
+            QueryIndex::new(&no_primary).selected(TypeId::of::<u8>()),
+            None
+        );
+
+        let multiple_primaries = [primary_binding("first", 0), primary_binding("second", 0)];
+        assert_eq!(
+            QueryIndex::new(&multiple_primaries).selected(TypeId::of::<u8>()),
+            None
+        );
+        assert_eq!(QueryIndex::new(&[]).selected(TypeId::of::<u8>()), None);
+    }
+
     /// Creates test metadata for one typed binding.
     fn binding(id: &'static str, order: i32) -> BuiltBinding {
         BuiltBinding {
@@ -157,6 +214,14 @@ mod tests {
             order,
             source: DefinitionSource::new("test", "test", "test.rs", 1, 1, id),
             replaced_sources: Vec::new(),
+        }
+    }
+
+    /// Creates a primary test binding for selection-index coverage.
+    fn primary_binding(id: &'static str, order: i32) -> BuiltBinding {
+        BuiltBinding {
+            primary: true,
+            ..binding(id, order)
         }
     }
 }

@@ -145,6 +145,9 @@ impl ApplicationContext {
     /// ambiguous.
     #[must_use = "handle the component lookup result"]
     pub fn get<T: ?Sized + Send + Sync + 'static>(&self) -> Result<Arc<T>, ResolveError> {
+        if let Some(index) = self.inner.query_index.selected(TypeId::of::<T>()) {
+            return Ok(self.read::<T>(&self.inner.bindings[index].key));
+        }
         let request = BindingKey::of::<T>(None);
         let candidates = self.inner.query_index.by_type(TypeId::of::<T>());
         let selected = self.select(&request, candidates)?;
@@ -202,7 +205,12 @@ impl ApplicationContext {
     ///
     /// Returns [`ResolveError`] when multiple non-primary candidates remain.
     #[must_use = "handle the optional component lookup result"]
-    pub fn try_get<T: ?Sized + Send + Sync + 'static>(&self) -> Result<Option<Arc<T>>, ResolveError> {
+    pub fn try_get<T: ?Sized + Send + Sync + 'static>(
+        &self,
+    ) -> Result<Option<Arc<T>>, ResolveError> {
+        if let Some(index) = self.inner.query_index.selected(TypeId::of::<T>()) {
+            return Ok(Some(self.read::<T>(&self.inner.bindings[index].key)));
+        }
         let request = BindingKey::of::<T>(None);
         let candidates = self.inner.query_index.by_type(TypeId::of::<T>());
         if candidates.is_empty() {

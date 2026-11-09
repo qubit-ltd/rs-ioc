@@ -13,6 +13,7 @@ use qubit_ioc::BindingKey;
 use qubit_ioc::BindingOptions;
 use qubit_ioc::ContainerBuilder;
 use qubit_ioc::ResolveError;
+use qubit_ioc::ShutdownMode;
 
 #[test]
 fn test_get_reuses_shared_arc() {
@@ -174,6 +175,71 @@ fn test_unique_primary_get_and_try_get_reuse_the_same_arc() {
         &selected,
         &context.get_by_id::<u8>("a").expect("named primary")
     ));
+}
+
+#[test]
+fn test_unnamed_lookup_without_primary_preserves_registration_order() {
+    let mut builder = ContainerBuilder::new();
+    for (id, value) in [("z", 3_u8), ("a", 1), ("m", 2)] {
+        builder
+            .register_instance_with(
+                Arc::new(value),
+                BindingOptions {
+                    id: Some(id.to_owned()),
+                    ..BindingOptions::default()
+                },
+            )
+            .expect("register non-primary candidate");
+    }
+    let application = builder.build_all().expect("build non-primary candidates");
+    let context = application.context();
+    let error = context
+        .get::<u8>()
+        .expect_err("multiple candidates are ambiguous");
+    match error {
+        ResolveError::AmbiguousBinding { candidates, .. } => {
+            assert_eq!(candidates.len(), 3);
+            assert_eq!(
+                candidates
+                    .iter()
+                    .filter_map(|key| key.id().map(|id| id.as_str()))
+                    .collect::<Vec<_>>(),
+                ["z", "a", "m"]
+            );
+        }
+        other => panic!("expected ambiguity, got {other:?}"),
+    }
+    assert!(matches!(
+        context.try_get::<u8>(),
+        Err(ResolveError::AmbiguousBinding { .. })
+    ));
+}
+
+#[test]
+fn test_cached_query_remains_available_after_shutdown() {
+    let mut builder = ContainerBuilder::new();
+    builder
+        .register_instance(Arc::new(17_u8))
+        .expect("register value");
+    let application = builder.build_all().expect("build application");
+    let context = application.context().clone();
+    let report = application
+        .begin_shutdown(ShutdownMode::Immediate)
+        .abandon();
+    assert!(report.is_success());
+    assert_eq!(
+        *context
+            .get::<u8>()
+            .expect("closed context remains queryable"),
+        17
+    );
+    assert_eq!(
+        *context
+            .try_get::<u8>()
+            .expect("closed context optional query")
+            .expect("value exists"),
+        17
+    );
 }
 
 #[test]
