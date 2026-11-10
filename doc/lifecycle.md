@@ -203,6 +203,28 @@ panics are recorded as Deadline failures and do not stop later entries.
 `WaitPolicy::unbounded()` explicitly allows indefinite waiting and is useful
 for controlled tests; it provides no finite termination guarantee.
 
+## Cooperative progress and cancellation
+
+An asynchronous build can return `Pending` between batches of completed
+bindings, and `ShutdownHandle::wait()` can return `Pending` between batches of
+shutdown work, including synchronous callbacks and immediately ready waits.
+The application's executor must continue polling and honor the future's waker.
+Small graphs and shutdowns may still complete in one poll. The private batch
+size is an implementation detail, not a timing guarantee.
+
+Cancelling a build stops later factories. An ordinary build future makes a
+best-effort synchronous abort for resources already accepted by the container
+but does not retain a cleanup observer. A cancelled `BuildSession::run()`
+keeps cleanup ownership in the session so `wait_cancelled_cleanup()` can resume
+observation; `BuildFailure` is returned on a build failure, not cancellation.
+Cancelling a borrowed shutdown wait retains its active wait and deadline in
+the handle; polling a later `wait()` resumes that state without repeating
+completed actions.
+Validation, synchronous factories and callbacks, one blocking future poll,
+and synchronous batch aborts performed by Immediate requests, Drop, abandon,
+or overall expiry cannot be preempted. These scheduling points do not provide
+a hard real-time latency bound.
+
 Cancelling the borrowing `wait()` future retains the active wait, deadline,
 phase and budget in the handle. Calling `wait()` again on that handle resumes
 without recreating actions or restarting the deadline. `abort()` upgrades all

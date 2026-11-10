@@ -15,6 +15,8 @@ selected revision. Its lockfile is
 own checkout, used by the workflow's native locked test command. A local
 checkout or successful local run does not establish that a remote workflow
 revision passed.
+This wrapper lockfile is aligned with the current lane's pinned sibling
+manifests and registry versions; keep it synchronized when those pins change.
 
 The wrapper registers four external integration-test targets, which must be
 present and all their tests must be discovered and run. Zero-test unit targets

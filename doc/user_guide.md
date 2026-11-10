@@ -199,6 +199,17 @@ factory. Create managed resources after graph validation where possible;
 side effects performed before an async factory returns `Managed<T>` remain that
 factory's responsibility if construction later fails or is cancelled.
 
+Async construction can return `Pending` between batches even when each factory
+completes immediately. The selected executor must keep polling the future and
+honor its waker. Dropping a build future stops later factories. A cancelled
+ordinary `build_async()` makes a best-effort synchronous abort for resources
+already accepted by the container but does not retain a cleanup observer; a
+cancelled `BuildSession::run()` keeps cleanup ownership in the session, where
+`wait_cancelled_cleanup()` can resume observation. `BuildFailure` is the
+observer returned on a build failure, not on cancellation. Graph validation,
+synchronous factories and a single blocking factory-future poll cannot be
+interrupted. Small graphs may still finish in one poll.
+
 For example, this complete function uses a required `String` dependency and
 builds all active definitions asynchronously:
 

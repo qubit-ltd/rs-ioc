@@ -94,8 +94,14 @@ impl ShutdownHandle {
     /// Waits in reverse construction order, resuming any interrupted wait.
     ///
     /// Graceful mode confirms each consumer before stopping its dependencies.
+    /// Polling may return `Pending` between batches of shutdown work, even
+    /// when callbacks are synchronous and waits are immediately ready. The
+    /// executor must keep polling and honor the waker. Cancelling this borrowed
+    /// wait retains its active state for a later call.
     /// Deadlines require the supplied timer runtime to be driven and cannot
-    /// interrupt blocking callbacks or future polls.
+    /// interrupt blocking callbacks, one blocking future poll, or synchronous
+    /// batch aborts performed by Immediate requests, Drop, abandon, or overall
+    /// expiry. Cooperative polling does not promise hard real-time latency.
     ///
     /// Panics from cleanup requests and future polling are reported, but
     /// panics from destructors of user-provided wait futures, tickets, or

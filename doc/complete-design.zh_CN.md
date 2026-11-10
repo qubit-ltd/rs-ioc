@@ -45,6 +45,13 @@ workspace 包含运行时 `qubit-ioc` 与过程宏 `qubit-ioc-macros`。Edition 
 
 `build()` 从一个或多个 `root` 构造所选定义的依赖闭包；至少需要一个 root。`build_all()` 构造所有生效定义，并允许空图。异步对应方法为 `build_async()` 与 `build_all_async()`。若选中图含异步工厂，同步 build 会在运行任何工厂前返回 `AsyncRequired`。异步构建由应用提供执行器，且可以混合同步和异步工厂。
 
+即使工厂立即完成，异步构建也可能在已完成绑定的批次之间返回 `Pending`。执行器必须
+持续 poll 并遵守 waker；小图仍可能在一次 poll 内完成。取消普通构建 future 会停止后续
+工厂，并对已接管资源尽力同步请求 abort，但不保留清理观察句柄；取消
+`BuildSession::run()` 后，session 会保留清理所有权，可用 `wait_cancelled_cleanup()` 恢复
+观察。`BuildFailure` 是构建失败时返回的观察句柄，不是取消结果。图验证、同步工厂和单次
+阻塞的 future poll 仍不可抢占。
+
 手工同步工厂可接收零至八个类型化元组参数。`Arc<T>`、`Option<Arc<T>>` 和
 `Vec<Arc<T>>` 分别生成必需、可选和集合依赖请求。依赖请求与工厂实际读取的值来自同一
 元组类型；完全相同的请求会去重。例如：
@@ -138,7 +145,32 @@ ticket，在托管 wait 回调中等待 `wait_async()`。即便是同步
 观察不取消后台关闭。[生命周期说明](lifecycle.zh_CN.md)提供从 0.2 到 0.3 的完整
 迁移、构建失败处理和可运行 worker 入口。
 
-## 7. 当前验收依据
+## 7. 协作调度测量（2026-11-10）
+
+批次选择使用临时 integration-test harness 测量，结束后已删除。每种批次重复 12 次，
+每次构建或关闭 4096 个绑定。构建工厂立即完成。关闭分别测试同步 graceful 回调，以及
+graceful 回调加立即返回 Ready 的异步 wait future。harness 只计时操作本身，统计到
+Ready 的 poll 次数，并记录单次 poll 内完成工厂或 wait 的最大增量。使用 release profile，
+依次单独测试 32、64、128；例如 32 的命令为
+`BATCH_LABEL=32 cargo test --release --locked --test t3_measure_temp -- --nocapture`，
+其余两档只将 `BATCH_LABEL` 改为 64 和 128。
+时间单位为毫秒，列出最小值 / 中位数 / 最大值：
+
+| 批次 | 构建耗时；poll / 每 poll 最大完成数 | 同步关闭耗时；poll / 每 poll 最大回调 | 异步 Ready wait 耗时；poll / 每 poll 最大完成 wait |
+| ---: | --- | --- | --- |
+| 32 | 9.200 / 9.437 / 14.470；128 / 32 | 0.428 / 0.436 / 0.497；128 / 32 | 0.733 / 0.765 / 0.816；256 / 16 |
+| 64 | 8.986 / 9.231 / 14.370；64 / 64 | 0.425 / 0.429 / 0.433；64 / 64 | 0.721 / 0.729 / 0.750；128 / 32 |
+| 128 | 9.085 / 9.182 / 14.116；32 / 128 | 0.427 / 0.433 / 0.469；32 / 128 | 0.724 / 0.732 / 0.744；64 / 64 |
+
+环境为 Rust 1.94.0（`4a4ef493e`，2026-03-02）、Cargo 1.94.0
+（`85eff7c80`，2026-01-15），Intel Xeon E5-2680 v4 @ 2.40 GHz（双路，每路
+14 核，共 56 个逻辑 CPU）。release 墙钟耗时在样本间有离散，因此只是环境观测，不作为
+延迟结论。构建和同步关闭每轮完成数达到批次上限。异步 Ready wait 每轮完成的条目数是
+批次的一半，因为每项消耗两个工作单元：开始下一条目，以及轮询其保留的 active wait。
+这些有界工作量数据支持保留 64 作为 poll 次数与单轮工作量之间的初始内部折中值；它不是
+稳定 API 或实时性承诺。
+
+## 8. 当前验收依据
 
 当前契约由 `tests/`、宏 crate 测试和跨 crate fixture 验证，重点包括：显式安装和未安装 root 诊断；候选、ID、profile、替换及完整路径；同步/异步构造和取消；trait alias 的共享身份；配置 source 保留；托管 stop/wait 顺序、错误聚合和取消恢复；独立 feature 组合。公共 API 的精确签名以生成的 Rust API 文档为准。完整 worker 启停示例见[生命周期说明](lifecycle.zh_CN.md)与[可运行程序](../examples/app_lifecycle.rs)。
 

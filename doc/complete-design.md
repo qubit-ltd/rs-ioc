@@ -108,6 +108,17 @@ async factory, a synchronous build returns `AsyncRequired` before running any
 factory. The application supplies and drives its executor; synchronous and
 async factories can coexist in an async build.
 
+An async build may return `Pending` between batches of completed bindings,
+including when factories complete immediately. The executor must continue
+polling and honor the waker. Small graphs may still complete in one poll.
+Dropping the future stops later factories. A cancelled ordinary build makes a
+best-effort synchronous abort for resources already accepted by the container
+but does not retain a cleanup observer; a cancelled `BuildSession::run()`
+keeps cleanup ownership in the session for `wait_cancelled_cleanup()`.
+`BuildFailure` is the observer returned for build failure, not cancellation.
+Validation, synchronous factories and one blocking future poll remain
+non-preemptible.
+
 After profile filtering, Reachable validation selects roots and resolves
 requests while closing over their dependencies and every binding in each
 selected definition. Its binding index still includes every active binding,
@@ -238,6 +249,15 @@ appears in the report. `Immediate` requests every abort before returning the
 handle, then explicit `wait` confirms termination. Failed cleanup actions and
 unwind panics are reported while later entries continue.
 
+`ShutdownHandle::wait()` may return `Pending` between bounded batches of
+shutdown work, including synchronous callbacks and immediately ready waits.
+The executor must keep polling and honor the waker. Cancelling the borrowed
+wait retains its active future and deadline so a later wait resumes without
+repeating completed actions. The internal batch size is not a public contract.
+Immediate requests, Drop, `abandon()`, and overall expiry still perform
+synchronous batch aborts that cannot be preempted. Cooperative polling does
+not promise hard real-time latency.
+
 This panic containment covers cleanup callbacks and future polling, not
 destructors of user-provided wait futures, tickets, or captured values. A
 panic from those destructors propagates; shutdown may not finalize its report
@@ -260,7 +280,36 @@ abort callback. Ticket Drop or cancelled observation does not cancel its
 background shutdown. The [lifecycle guide](lifecycle.md) includes the exact
 migration from 0.2 to 0.3, failure flow and runnable worker link.
 
-## 7. Verification sources
+## 7. Cooperative scheduling measurement (2026-11-10)
+
+The internal batch-size choice was measured with a temporary integration-test
+harness, then deleted. Each of 12 release samples constructed or shut down
+4096 bindings. Build factories completed immediately. Shutdown was measured
+with both synchronous graceful callbacks and asynchronous graceful callbacks
+whose wait futures immediately returned Ready. The harness timed only each
+operation, counted polls until Ready, and measured the largest per-poll
+increase in completed factories or waits. For each value, it used
+`BATCH_LABEL=32 cargo test --release --locked --test t3_measure_temp -- --nocapture`
+(repeating with 64 and 128). Times are milliseconds, shown as min / median / max:
+
+| Batch | Build time, polls / max completed per poll | Sync shutdown time, polls / max callbacks | Async Ready wait time, polls / max completed waits |
+| ---: | --- | --- | --- |
+| 32 | 9.200 / 9.437 / 14.470; 128 / 32 | 0.428 / 0.436 / 0.497; 128 / 32 | 0.733 / 0.765 / 0.816; 256 / 16 |
+| 64 | 8.986 / 9.231 / 14.370; 64 / 64 | 0.425 / 0.429 / 0.433; 64 / 64 | 0.721 / 0.729 / 0.750; 128 / 32 |
+| 128 | 9.085 / 9.182 / 14.116; 32 / 128 | 0.427 / 0.433 / 0.469; 32 / 128 | 0.724 / 0.732 / 0.744; 64 / 64 |
+
+The host used Rust 1.94.0 (`4a4ef493e`, 2026-03-02) and Cargo 1.94.0
+(`85eff7c80`, 2026-01-15), on an Intel Xeon E5-2680 v4 at 2.40 GHz (2 sockets,
+14 cores per socket, 56 logical CPUs). Release wall times varied across
+samples, so timings are environment observations rather than a basis for a
+latency claim. Build and synchronous-shutdown completions reached the batch
+limit per poll. The async Ready-wait workload completed half a batch of entries
+per poll because each entry uses two work units: starting the next item and
+polling its retained active wait. These bounded-work counts support retaining
+64 as the initial internal compromise between poll count and uninterrupted
+work, not as a stable API or real-time promise.
+
+## 8. Verification sources
 
 The public contracts are exercised by `tests/`, macro tests and consumer
 fixtures. They cover explicit installation, root selection, IDs, profiles,

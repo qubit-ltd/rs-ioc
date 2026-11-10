@@ -13,6 +13,21 @@
 此前的失败和回退信息会保留。`is_complete()` 表示已确认终止，`is_success()` 还要求没有
 全局失败。时限无法中断同步回调、一次阻塞的 future poll 或析构函数。
 
+## 协作推进与取消
+
+异步构建可能在已完成绑定的批次之间返回 `Pending`；`ShutdownHandle::wait()` 也可能在
+关闭工作批次之间返回 `Pending`，包括同步回调和立即就绪的 wait。应用提供的执行器必须
+继续 poll 并遵守 future 的 waker。小图和小规模关闭仍可能在一次 poll 内完成。私有批次
+大小属于实现细节，不是时间保证。
+
+取消构建会停止后续工厂。普通构建 future 会对已接管资源尽力同步请求 abort，但不保留清理
+观察句柄。取消 `BuildSession::run()` 后，session 保留清理所有权，可通过
+`wait_cancelled_cleanup()` 恢复观察；`BuildFailure` 是构建失败时返回的句柄，不是取消结果。
+取消借用的 shutdown wait 会把活跃 wait 和 deadline 保留在句柄中；之后再次 poll `wait()`
+会恢复该状态，不重复已完成动作。
+图验证、同步工厂与回调、单次阻塞的 future poll，以及 Immediate 请求、Drop、abandon
+或总时限到期所执行的同步批量 abort 都不可抢占。这些调度点不提供硬实时延迟保证。
+
 ## 类型化同步工厂
 
 `register_injected_factory` 和 `register_injected_managed_factory` 接收显式参数元组。

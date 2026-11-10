@@ -202,6 +202,13 @@ async fn build_message_length() -> Result<(), Box<dyn Error>> {
 `build_message_length()` 成功时查询结果为 `5`。若工厂在返回 `Managed<T>` 前已产生外部副作用，
 容器尚未接管这些副作用，工厂仍需自行处理。
 
+即使每个工厂都立即完成，异步构建也可能在批次之间返回 `Pending`。应用提供的执行器必须
+持续驱动 future 并遵守其 waker。取消普通 `build_async()` 会停止后续工厂，并对容器已接管的
+资源尽力同步请求 abort，但不会保留清理观察句柄；取消 `BuildSession::run()` 后，session
+仍保留清理所有权，可通过 `wait_cancelled_cleanup()` 恢复观察。`BuildFailure` 是构建失败时
+返回的观察句柄，不是 future 取消的结果。图验证、同步工厂回调和单次阻塞的工厂 future poll
+都不能被中断。小图仍可能在一次 poll 内完成。
+
 ## 选择定义与构建范围
 
 启用默认 feature 时，可以用 `#[Component]`、`#[Service]`、`#[Repository]` 声明

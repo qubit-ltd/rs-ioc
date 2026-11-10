@@ -1021,6 +1021,11 @@ impl ContainerBuilder {
     /// # Returns
     ///
     /// A future that resolves to the owner of the selected component graph.
+    /// It may return `Pending` between batches of completed bindings, even if
+    /// each factory completes immediately; the executor must continue polling
+    /// and honor its waker. Graph validation, synchronous factories, and a
+    /// single blocking factory-future poll cannot be preempted. Small graphs
+    /// may complete in one poll.
     ///
     /// # Errors
     ///
@@ -1121,7 +1126,9 @@ impl ContainerBuilder {
     /// Returns [`BuildFailure`] with its [`BuildError`] cause for invalid
     /// graphs, missing managed wait policy, or factory failures. The
     /// failure owns deferred managed cleanup; construction never waits for
-    /// rollback.
+    /// rollback. Like [`Self::build_async`], the future may return `Pending`
+    /// between batches, while validation and a single blocking poll remain
+    /// non-preemptible.
     pub async fn build_all_async(self) -> Result<Application, BuildFailure> {
         self.prepare_async(true)?.run_async().await
     }
