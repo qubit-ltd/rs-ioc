@@ -95,8 +95,11 @@ impl Application {
     ///
     /// # Parameters
     ///
-    /// * `mode` - selects whether abort requests begin immediately or when
-    ///   shutdown waiting is first polled.
+    /// * `mode` - `Immediate` requests abort for all unfinished entries before
+    ///   returning. `Graceful` begins ordered graceful requests when the
+    ///   returned handle's wait is polled; unsupported or failed graceful
+    ///   requests fall back to abort. See [`ShutdownHandle`] and
+    ///   [`ShutdownMode`] for lifecycle details.
     ///
     /// # Returns
     ///
