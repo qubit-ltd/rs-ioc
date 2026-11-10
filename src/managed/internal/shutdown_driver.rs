@@ -25,6 +25,7 @@ use super::wait::start_wait;
 use crate::ApplicationContext;
 use crate::ApplicationState;
 use crate::BindingKey;
+use crate::cooperative::BATCH_SIZE;
 use crate::managed::CleanupEntry;
 use crate::managed::CleanupError;
 use crate::managed::CleanupJournal;
@@ -181,6 +182,7 @@ impl ShutdownDriver {
         if let Some(report) = &self.report {
             return Poll::Ready(report.clone());
         }
+        let mut remaining = BATCH_SIZE;
         if self.active.is_none() {
             while self.cursor > 0
                 && matches!(
@@ -189,6 +191,10 @@ impl ShutdownDriver {
                 )
             {
                 self.cursor -= 1;
+                remaining -= 1;
+                if remaining == 0 {
+                    break;
+                }
             }
             if self.cursor == 0 {
                 return Poll::Ready(self.finish());
@@ -208,6 +214,16 @@ impl ShutdownDriver {
             }
         }
         loop {
+            if remaining == 0 {
+                if self.active.is_none() && self.cursor == 0 {
+                    return Poll::Ready(self.finish());
+                }
+                if self.poll_overall_deadline(context).is_ready() {
+                    return Poll::Ready(self.expire_overall());
+                }
+                context.waker().wake_by_ref();
+                return Poll::Pending;
+            }
             if self.active.is_none() {
                 if self.cursor == 0 {
                     return Poll::Ready(self.finish());
@@ -215,10 +231,20 @@ impl ShutdownDriver {
                 if self.poll_overall_deadline(context).is_ready() {
                     return Poll::Ready(self.expire_overall());
                 }
+                remaining -= 1;
                 if !self.start_next() {
                     continue;
                 }
             }
+
+            if remaining == 0 {
+                if self.poll_overall_deadline(context).is_ready() {
+                    return Poll::Ready(self.expire_overall());
+                }
+                context.waker().wake_by_ref();
+                return Poll::Pending;
+            }
+            remaining -= 1;
 
             let mut active = self
                 .active
