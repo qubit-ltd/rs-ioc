@@ -71,6 +71,7 @@ pub mod build_context;
 pub mod builder;
 #[cfg(feature = "config")]
 pub mod config;
+mod cooperative;
 pub mod definition;
 pub mod dependency;
 pub mod error;

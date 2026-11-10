@@ -22,6 +22,8 @@ use crate::binding::ManagedProduct;
 use crate::binding::PendingBinding;
 use crate::binding::PendingBindingKind;
 use crate::build_context::BuildContext;
+use crate::cooperative::BATCH_SIZE;
+use crate::cooperative::yield_once;
 use crate::error::BuildError;
 use crate::error::BuildFailure;
 use crate::error::FactoryError;
@@ -61,7 +63,10 @@ type Product = (ErasedInstance, Option<CleanupAction>);
 ///
 /// One [`BuiltBinding`] per selected binding, in definition then binding
 /// position order; an empty selection yields an empty vector.
-fn published_bindings(graph: &ValidatedGraph, selected: &HashSet<BindingLocation>) -> Vec<BuiltBinding> {
+fn published_bindings(
+    graph: &ValidatedGraph,
+    selected: &HashSet<BindingLocation>,
+) -> Vec<BuiltBinding> {
     graph
         .definitions
         .iter()
@@ -139,7 +144,11 @@ impl Construction {
         let selected: HashSet<_> = graph.order.iter().copied().collect();
         let bindings = published_bindings(&graph, &selected);
         let diagnostics = graph.diagnostics;
-        let sources = graph.definitions.iter().map(|definition| definition.source).collect();
+        let sources = graph
+            .definitions
+            .iter()
+            .map(|definition| definition.source)
+            .collect();
         let actions = graph
             .definitions
             .into_iter()
@@ -185,7 +194,8 @@ impl Construction {
         for location in std::mem::take(&mut self.order) {
             let (key, source, kind) = self.take_binding(location);
             let product = match kind {
-                PendingBindingKind::AsyncFactory(_) | PendingBindingKind::ManagedAsyncFactory(_) => {
+                PendingBindingKind::AsyncFactory(_)
+                | PendingBindingKind::ManagedAsyncFactory(_) => {
                     Err(Self::async_required(&key, source))
                 }
                 immediate => self.immediate_product(location, &key, source, immediate),
@@ -231,7 +241,9 @@ impl Construction {
     /// owner. Returns the attributed factory error without moving cleanup.
     /// Cancelling the borrowing future drops the current factory first.
     pub(crate) async fn construct_async(&mut self) -> Result<(), BuildError> {
-        for location in std::mem::take(&mut self.order) {
+        let mut order = std::mem::take(&mut self.order).into_iter().peekable();
+        let mut completed_in_batch = 0;
+        while let Some(location) = order.next() {
             let (key, source, kind) = self.take_binding(location);
             let product = match kind {
                 PendingBindingKind::AsyncFactory(factory) => {
@@ -247,7 +259,14 @@ impl Construction {
                 immediate => self.immediate_product(location, &key, source, immediate),
             };
             match product {
-                Ok(product) => self.accept(key, source, product),
+                Ok(product) => {
+                    self.accept(key, source, product);
+                    completed_in_batch += 1;
+                    if completed_in_batch == BATCH_SIZE && order.peek().is_some() {
+                        yield_once().await;
+                        completed_in_batch = 0;
+                    }
+                }
                 Err(error) => return Err(error),
             }
         }
@@ -366,7 +385,10 @@ impl Construction {
     ///
     /// Panics when the location has no pending action, which graph validation
     /// prevents by ordering every selected binding exactly once.
-    fn take_binding(&mut self, location: BindingLocation) -> (BindingKey, DefinitionSource, PendingBindingKind) {
+    fn take_binding(
+        &mut self,
+        location: BindingLocation,
+    ) -> (BindingKey, DefinitionSource, PendingBindingKind) {
         let binding = self.actions[location.definition][location.binding]
             .take()
             .expect("validated binding runs exactly once");
@@ -534,7 +556,9 @@ impl Construction {
                 key,
                 source,
                 location,
-                FactoryError::new(std::io::Error::other("alias projection target type mismatch")),
+                FactoryError::new(std::io::Error::other(
+                    "alias projection target type mismatch",
+                )),
             )
         })
     }
