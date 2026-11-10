@@ -74,12 +74,12 @@ impl<T: ?Sized + Send + Sync + 'static> Managed<T> {
     /// The stop callback runs at most once during shutdown, rollback,
     /// cancellation, or drop before ownership transfer. A successful return
     /// means the component has terminated; there is no later wait action.
-    /// During graceful shutdown, an optional graceful callback runs first as
-    /// a request, then this stop callback confirms termination. Rollback,
-    /// cancellation, and drop before ownership transfer call only the stop
-    /// callback. All callbacks run synchronously, and a wait deadline cannot
-    /// preempt them; use this constructor only when direct closure is
-    /// appropriate for those paths.
+    /// During graceful shutdown, this stop callback confirms termination; this
+    /// constructor does not configure a graceful callback. Immediate shutdown,
+    /// rollback, cancellation, and drop before ownership transfer call only
+    /// this stop callback. It runs synchronously, and a wait deadline cannot
+    /// preempt it; use this constructor only when direct closure is appropriate
+    /// for those paths.
     ///
     /// # Type Parameters
     ///
