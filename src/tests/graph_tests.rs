@@ -44,7 +44,12 @@ fn instance<T: Send + Sync + 'static>(
     let id = id.map(|text| BindingId::parse(text).expect("test ID is valid"));
     let key = BindingKey::of::<T>(id);
     let binding = PendingBinding::instance(key, Arc::new(value), primary, order);
-    PendingDefinition::new(source(item), profile.map(str::to_owned), dependencies, binding)
+    PendingDefinition::new(
+        source(item),
+        profile.map(str::to_owned),
+        dependencies,
+        binding,
+    )
 }
 
 /// Returns the item names in construction order, including aliases.
@@ -71,8 +76,11 @@ fn test_graph_required_zero_one_and_many_candidates() {
             if path == vec![BindingKey::of::<A>(None)]
     ));
 
-    let one = ValidatedGraph::validate(vec![consumer(), instance("B", B, vec![], None, false, 0, None)], &[])
-        .expect("one candidate resolves");
+    let one = ValidatedGraph::validate(
+        vec![consumer(), instance("B", B, vec![], None, false, 0, None)],
+        &[],
+    )
+    .expect("one candidate resolves");
     assert_eq!(selected_key(&one), Some(&BindingKey::of::<B>(None)));
 
     let many = ValidatedGraph::validate(
@@ -124,7 +132,15 @@ fn test_graph_primary_selects_unique_and_rejects_multiple_without_request() {
 fn test_graph_id_is_exact_and_ignores_primary() {
     let graph = ValidatedGraph::validate(
         vec![
-            instance("A", A, vec![Dependency::with_id::<B>("target")], None, false, 0, None),
+            instance(
+                "A",
+                A,
+                vec![Dependency::with_id::<B>("target")],
+                None,
+                false,
+                0,
+                None,
+            ),
             instance("B1", B, vec![], Some("other"), true, 0, None),
             instance("B2", B, vec![], Some("target"), false, 0, None),
         ],
@@ -140,7 +156,15 @@ fn test_graph_id_is_exact_and_ignores_primary() {
 
     let missing = ValidatedGraph::validate(
         vec![
-            instance("A", A, vec![Dependency::with_id::<B>("absent")], None, false, 0, None),
+            instance(
+                "A",
+                A,
+                vec![Dependency::with_id::<B>("absent")],
+                None,
+                false,
+                0,
+                None,
+            ),
             instance("B", B, vec![], Some("other"), true, 0, None),
         ],
         &[],
@@ -163,7 +187,11 @@ fn test_graph_optional_and_all_allow_empty_and_add_matched_edges() {
         &[],
     )
     .expect("empty optional and collection are valid");
-    assert!(empty.resolved[0].iter().all(|request| request.keys.is_empty()));
+    assert!(
+        empty.resolved[0]
+            .iter()
+            .all(|request| request.keys.is_empty())
+    );
 
     let graph = ValidatedGraph::validate(
         vec![
@@ -224,16 +252,32 @@ fn test_graph_reachable_and_all_active_resolve_the_same_reachable_requests() {
             instance("named", B, vec![], Some("named"), false, 0, None),
             instance("z", C, vec![], Some("z"), false, 1, None),
             instance("a", C, vec![], Some("a"), false, -1, None),
-            instance("target", String::from("target"), vec![], Some("target"), false, 0, None),
+            instance(
+                "target",
+                String::from("target"),
+                vec![],
+                Some("target"),
+                false,
+                0,
+                None,
+            ),
         ]
     };
     let roots = [Dependency::of::<A>()];
-    let reachable =
-        ValidatedGraph::validate_roots_with_scope(definitions(), &[], Some(&roots), ValidationScope::Reachable)
-            .expect("reachable graph validates");
-    let all_active =
-        ValidatedGraph::validate_roots_with_scope(definitions(), &[], Some(&roots), ValidationScope::AllActive)
-            .expect("all-active graph validates");
+    let reachable = ValidatedGraph::validate_roots_with_scope(
+        definitions(),
+        &[],
+        Some(&roots),
+        ValidationScope::Reachable,
+    )
+    .expect("reachable graph validates");
+    let all_active = ValidatedGraph::validate_roots_with_scope(
+        definitions(),
+        &[],
+        Some(&roots),
+        ValidationScope::AllActive,
+    )
+    .expect("all-active graph validates");
 
     let ordered_keys = |graph: &ValidatedGraph| {
         graph
@@ -247,13 +291,19 @@ fn test_graph_reachable_and_all_active_resolve_the_same_reachable_requests() {
             .collect::<Vec<_>>()
     };
     assert_eq!(ordered_keys(&reachable), ordered_keys(&all_active));
-    assert!(ordered_keys(&reachable).contains(&BindingKey::of::<String>(Some(
-        BindingId::parse("alias").expect("valid ID"),
-    ))));
+    assert!(
+        ordered_keys(&reachable).contains(&BindingKey::of::<String>(Some(
+            BindingId::parse("alias").expect("valid ID"),
+        )))
+    );
     assert_eq!(reachable.resolved.len(), all_active.resolved.len());
-    for (reachable_requests, all_active_requests) in reachable.resolved.iter().zip(&all_active.resolved) {
+    for (reachable_requests, all_active_requests) in
+        reachable.resolved.iter().zip(&all_active.resolved)
+    {
         assert_eq!(reachable_requests.len(), all_active_requests.len());
-        for (reachable_request, all_active_request) in reachable_requests.iter().zip(all_active_requests) {
+        for (reachable_request, all_active_request) in
+            reachable_requests.iter().zip(all_active_requests)
+        {
             assert_eq!(reachable_request.request, all_active_request.request);
             assert_eq!(reachable_request.keys, all_active_request.keys);
         }
@@ -267,7 +317,9 @@ fn test_graph_reachable_and_all_active_resolve_the_same_reachable_requests() {
             vec![BindingKey::of::<B>(Some(
                 BindingId::parse("primary").expect("valid ID")
             ))],
-            vec![BindingKey::of::<B>(Some(BindingId::parse("named").expect("valid ID")))],
+            vec![BindingKey::of::<B>(Some(
+                BindingId::parse("named").expect("valid ID")
+            ))],
             vec![
                 BindingKey::of::<C>(Some(BindingId::parse("a").expect("valid ID"))),
                 BindingKey::of::<C>(Some(BindingId::parse("z").expect("valid ID"))),
@@ -322,7 +374,15 @@ fn test_graph_reachable_and_all_active_preserve_dependency_error_details() {
                 None,
             ),
             instance("first candidate", B, vec![], Some("first"), false, 0, None),
-            instance("second candidate", B, vec![], Some("second"), false, 0, None),
+            instance(
+                "second candidate",
+                B,
+                vec![],
+                Some("second"),
+                false,
+                0,
+                None,
+            ),
         ],
         &[],
         Some(&roots),
@@ -362,7 +422,10 @@ fn test_graph_profile_filter_defaults_and_explicit_selection() {
         (None, &["prod"], true),
     ];
     for (profile, active_profiles, expected) in cases {
-        let active_profiles: Vec<_> = active_profiles.iter().map(|profile| (*profile).to_owned()).collect();
+        let active_profiles: Vec<_> = active_profiles
+            .iter()
+            .map(|profile| (*profile).to_owned())
+            .collect();
         let graph = ValidatedGraph::validate(
             vec![instance("profiled", B, vec![], None, false, 0, profile)],
             &active_profiles,
@@ -384,7 +447,8 @@ fn test_graph_profiles_filter_before_duplicate_check() {
             instance("test", B, vec![], None, false, 0, Some("test")),
         ]
     };
-    let one = ValidatedGraph::validate(definitions(), &["prod".to_owned()]).expect("inactive duplicate is ignored");
+    let one = ValidatedGraph::validate(definitions(), &["prod".to_owned()])
+        .expect("inactive duplicate is ignored");
     assert_eq!(ordered_names(&one), vec!["prod"]);
     let both = ValidatedGraph::validate(definitions(), &["prod".to_owned(), "test".to_owned()]);
     assert!(matches!(
@@ -596,7 +660,15 @@ fn test_graph_missing_sibling_is_reported_before_descendant_failure() {
                 0,
                 None,
             ),
-            instance("B", B, vec![Dependency::with_id::<C>("missing")], None, false, 0, None),
+            instance(
+                "B",
+                B,
+                vec![Dependency::with_id::<C>("missing")],
+                None,
+                false,
+                0,
+                None,
+            ),
         ],
         &[],
     );
@@ -698,10 +770,11 @@ fn test_graph_ready_bindings_use_registration_order() {
 fn test_graph_validation_does_not_call_factories() {
     let calls = Arc::new(AtomicUsize::new(0));
     let factory_calls = Arc::clone(&calls);
-    let factory = PendingBinding::sync_factory::<B, _>(BindingKey::of::<B>(None), false, 0, move |_| {
-        factory_calls.fetch_add(1, Ordering::SeqCst);
-        Ok(Arc::new(B))
-    });
+    let factory =
+        PendingBinding::sync_factory::<B, _>(BindingKey::of::<B>(None), false, 0, move |_| {
+            factory_calls.fetch_add(1, Ordering::SeqCst);
+            Ok(Arc::new(B))
+        });
     let definition = PendingDefinition::new(source("B"), None, vec![], factory);
     ValidatedGraph::validate(vec![definition], &[]).expect("factory graph validates");
     assert_eq!(calls.load(Ordering::SeqCst), 0);
@@ -714,7 +787,11 @@ fn test_graph_root_exact_duplicates_are_ambiguous_in_registration_order() {
         instance("second", B, vec![], Some("exact"), false, 0, None),
     ];
     let key = BindingKey::of::<B>(Some(BindingId::parse("exact").expect("valid ID")));
-    let result = ValidatedGraph::validate_roots(definitions, &[], Some(&[Dependency::with_id::<B>("exact")]));
+    let result = ValidatedGraph::validate_roots(
+        definitions,
+        &[],
+        Some(&[Dependency::with_id::<B>("exact")]),
+    );
     assert!(matches!(
         result,
         Err(BuildError::AmbiguousRoot { candidates, .. })
@@ -769,7 +846,15 @@ fn test_graph_root_reports_dependency_exact_ambiguity_with_full_path() {
     let result = ValidatedGraph::validate_roots(
         vec![
             instance("A", A, vec![Dependency::of::<B>()], None, false, 0, None),
-            instance("B", B, vec![Dependency::with_id::<C>("exact")], None, false, 0, None),
+            instance(
+                "B",
+                B,
+                vec![Dependency::with_id::<C>("exact")],
+                None,
+                false,
+                0,
+                None,
+            ),
             instance("first", C, vec![], Some("exact"), false, 0, None),
             instance("second", C, vec![], Some("exact"), false, 0, None),
         ],
@@ -808,15 +893,25 @@ fn test_graph_missing_root_candidates_keep_registration_order() {
 fn test_graph_selected_duplicate_primaries_retain_source_order() {
     let result = ValidatedGraph::validate_roots(
         vec![
-            instance("root", A, vec![Dependency::all::<B>()], None, false, 0, None),
+            instance(
+                "root",
+                A,
+                vec![Dependency::all::<B>()],
+                None,
+                false,
+                0,
+                None,
+            ),
             instance("z", B, vec![], Some("z"), true, 0, None),
             instance("a", B, vec![], Some("a"), true, 0, None),
         ],
         &[],
         Some(&[Dependency::of::<A>()]),
     );
-    assert!(matches!(result, Err(BuildError::MultiplePrimaryBindings { candidates })
-        if candidates.iter().map(|(_, source)| source.item).collect::<Vec<_>>() == vec!["z", "a"]));
+    assert!(
+        matches!(result, Err(BuildError::MultiplePrimaryBindings { candidates })
+        if candidates.iter().map(|(_, source)| source.item).collect::<Vec<_>>() == vec!["z", "a"])
+    );
 }
 
 #[test]
@@ -834,7 +929,15 @@ fn test_graph_alias_target_uses_first_duplicate_before_reachability_check() {
         vec![
             root,
             instance("first", B, vec![], Some("target"), false, 0, None),
-            instance("second", B, vec![Dependency::of::<C>()], Some("target"), false, 0, None),
+            instance(
+                "second",
+                B,
+                vec![Dependency::of::<C>()],
+                Some("target"),
+                false,
+                0,
+                None,
+            ),
         ],
         &[],
         Some(&[Dependency::of::<A>()]),
@@ -850,7 +953,10 @@ fn test_graph_alias_root_closes_all_members_and_dependencies() {
     let mut definition = instance(
         "aliases",
         42u32,
-        vec![Dependency::optional_with_id::<B>("absent"), Dependency::all::<C>()],
+        vec![
+            Dependency::optional_with_id::<B>("absent"),
+            Dependency::all::<C>(),
+        ],
         None,
         false,
         0,
@@ -858,7 +964,9 @@ fn test_graph_alias_root_closes_all_members_and_dependencies() {
     );
     for index in 0..ALIAS_COUNT {
         definition.add_alias(PendingBinding::alias::<u32, u32, _>(
-            BindingKey::of::<u32>(Some(BindingId::parse(&format!("alias.n{index}")).expect("valid ID"))),
+            BindingKey::of::<u32>(Some(
+                BindingId::parse(&format!("alias.n{index}")).expect("valid ID"),
+            )),
             target.clone(),
             false,
             0,
@@ -872,7 +980,11 @@ fn test_graph_alias_root_closes_all_members_and_dependencies() {
     )
     .expect("alias root selects every definition member");
     assert_eq!(graph.order.len(), ALIAS_COUNT + 1);
-    assert!(graph.resolved[0].iter().all(|request| request.keys.is_empty()));
+    assert!(
+        graph.resolved[0]
+            .iter()
+            .all(|request| request.keys.is_empty())
+    );
     assert_eq!(graph.order[0].binding, 0);
 }
 
@@ -901,7 +1013,15 @@ fn test_graph_root_cycle_keeps_complete_root_prefix() {
 
 #[test]
 fn test_graph_alias_reachable_duplicate_target_is_rejected() {
-    let mut root = instance("root", A, vec![Dependency::all::<B>()], None, false, 0, None);
+    let mut root = instance(
+        "root",
+        A,
+        vec![Dependency::all::<B>()],
+        None,
+        false,
+        0,
+        None,
+    );
     let target = BindingKey::of::<B>(Some(BindingId::parse("target").expect("valid ID")));
     root.add_alias(PendingBinding::alias::<B, B, _>(
         BindingKey::of::<B>(Some(BindingId::parse("alias").expect("valid ID"))),
@@ -928,7 +1048,15 @@ fn test_graph_alias_reachable_duplicate_target_is_rejected() {
 
 #[test]
 fn test_graph_alias_root_still_checks_concrete_member_dependency_edges() {
-    let mut definition = instance("member", A, vec![Dependency::of::<B>()], None, false, 0, None);
+    let mut definition = instance(
+        "member",
+        A,
+        vec![Dependency::of::<B>()],
+        None,
+        false,
+        0,
+        None,
+    );
     let alias = BindingKey::of::<A>(Some(BindingId::parse("alias").expect("valid ID")));
     definition.add_alias(PendingBinding::alias::<A, A, _>(
         alias.clone(),
@@ -937,7 +1065,11 @@ fn test_graph_alias_root_still_checks_concrete_member_dependency_edges() {
         0,
         |value| value,
     ));
-    let result = ValidatedGraph::validate_roots(vec![definition], &[], Some(&[Dependency::with_id::<A>("alias")]));
+    let result = ValidatedGraph::validate_roots(
+        vec![definition],
+        &[],
+        Some(&[Dependency::with_id::<A>("alias")]),
+    );
     assert!(matches!(
         result,
         Err(BuildError::MissingDependency { path, definition, .. })
@@ -949,10 +1081,20 @@ fn test_graph_alias_root_still_checks_concrete_member_dependency_edges() {
 fn test_graph_build_all_large_alias_definition_keeps_member_dependency_closure() {
     const ALIAS_COUNT: usize = 10_000;
     let target = BindingKey::of::<A>(None);
-    let mut definition = instance("members", A, vec![Dependency::of::<B>()], None, false, 0, None);
+    let mut definition = instance(
+        "members",
+        A,
+        vec![Dependency::of::<B>()],
+        None,
+        false,
+        0,
+        None,
+    );
     for index in 0..ALIAS_COUNT {
         definition.add_alias(PendingBinding::alias::<A, A, _>(
-            BindingKey::of::<A>(Some(BindingId::parse(&format!("alias.n{index}")).expect("valid ID"))),
+            BindingKey::of::<A>(Some(
+                BindingId::parse(&format!("alias.n{index}")).expect("valid ID"),
+            )),
             target.clone(),
             false,
             0,
@@ -962,14 +1104,25 @@ fn test_graph_build_all_large_alias_definition_keeps_member_dependency_closure()
     let graph = ValidatedGraph::validate(
         vec![
             definition,
-            instance("dependency", B, vec![Dependency::of::<C>()], None, false, 0, None),
+            instance(
+                "dependency",
+                B,
+                vec![Dependency::of::<C>()],
+                None,
+                false,
+                0,
+                None,
+            ),
             instance("transitive", C, vec![], None, false, 0, None),
         ],
         &[],
     )
     .expect("all alias members retain concrete and transitive dependency edges");
     assert_eq!(graph.order.len(), ALIAS_COUNT + 3);
-    assert_eq!(&ordered_names(&graph)[..3], &["transitive", "dependency", "members"]);
+    assert_eq!(
+        &ordered_names(&graph)[..3],
+        &["transitive", "dependency", "members"]
+    );
     assert_eq!(graph.resolved[0][0].keys, vec![BindingKey::of::<B>(None)]);
     assert_eq!(graph.resolved[1][0].keys, vec![BindingKey::of::<C>(None)]);
 }

@@ -26,7 +26,10 @@ impl Drop for RunGuard<'_> {
     fn drop(&mut self) {
         if matches!(self.session.state, SessionState::Running) {
             self.session.state = SessionState::Cancelled;
-            self.session.cleanup = self.construction.take().and_then(Construction::into_cleanup);
+            self.session.cleanup = self
+                .construction
+                .take()
+                .and_then(Construction::into_cleanup);
         }
     }
 }

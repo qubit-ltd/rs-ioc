@@ -104,7 +104,11 @@ impl BuildSession {
             session: self,
             construction: None,
         };
-        let builder = guard.session.builder.take().expect("ready session owns its builder");
+        let builder = guard
+            .session
+            .builder
+            .take()
+            .expect("ready session owns its builder");
         match builder.prepare_async(guard.session.all) {
             Ok(construction) => guard.construction = Some(construction),
             Err(failure) => {

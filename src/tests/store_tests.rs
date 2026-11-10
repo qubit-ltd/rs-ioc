@@ -42,7 +42,14 @@ impl Counter for Greeting {
     }
 }
 
-const SOURCE: DefinitionSource = DefinitionSource::new("qubit-ioc", "store_tests", "store_tests.rs", 1, 1, "Greeting");
+const SOURCE: DefinitionSource = DefinitionSource::new(
+    "qubit-ioc",
+    "store_tests",
+    "store_tests.rs",
+    1,
+    1,
+    "Greeting",
+);
 
 /// Projects `value` through an alias binding, returning `None` for a binding
 /// that is not an alias.
@@ -96,11 +103,13 @@ fn test_store_aliases_share_concrete_allocation() {
         0,
         |value| value,
     );
-    let concrete_erased = store.get_erased(&concrete_key).expect("concrete binding should exist");
-    let greeter_value =
-        project_alias(&greeter, concrete_erased).expect("greeter alias should project from concrete value");
-    let counter_value =
-        project_alias(&counter, concrete_erased).expect("counter alias should project from concrete value");
+    let concrete_erased = store
+        .get_erased(&concrete_key)
+        .expect("concrete binding should exist");
+    let greeter_value = project_alias(&greeter, concrete_erased)
+        .expect("greeter alias should project from concrete value");
+    let counter_value = project_alias(&counter, concrete_erased)
+        .expect("counter alias should project from concrete value");
     store.insert_erased(greeter_key.clone(), greeter_value);
     store.insert_erased(counter_key.clone(), counter_value);
 
@@ -119,8 +128,14 @@ fn test_store_aliases_share_concrete_allocation() {
         ),
         "inserting aliases must not replace the concrete binding"
     );
-    assert_eq!(Arc::as_ptr(&concrete) as *const (), Arc::as_ptr(&greet) as *const ());
-    assert_eq!(Arc::as_ptr(&concrete) as *const (), Arc::as_ptr(&count) as *const ());
+    assert_eq!(
+        Arc::as_ptr(&concrete) as *const (),
+        Arc::as_ptr(&greet) as *const ()
+    );
+    assert_eq!(
+        Arc::as_ptr(&concrete) as *const (),
+        Arc::as_ptr(&count) as *const ()
+    );
     assert_eq!(greet.greet(), "hello");
     assert_eq!(count.count(), 1);
 }
@@ -175,7 +190,13 @@ fn test_definition_first_binding_must_be_concrete() {
         SOURCE,
         None,
         Vec::new(),
-        PendingBinding::alias::<Greeting, dyn Greeter, _>(alias_key.clone(), concrete_key, false, 0, |value| value),
+        PendingBinding::alias::<Greeting, dyn Greeter, _>(
+            alias_key.clone(),
+            concrete_key,
+            false,
+            0,
+            |value| value,
+        ),
     );
     let mut staged = Vec::new();
 
@@ -199,7 +220,12 @@ fn test_definition_empty_binding_list_rejected() {
         SOURCE,
         None,
         Vec::new(),
-        PendingBinding::instance(BindingKey::of::<Greeting>(None), Arc::new(Greeting), false, 0),
+        PendingBinding::instance(
+            BindingKey::of::<Greeting>(None),
+            Arc::new(Greeting),
+            false,
+            0,
+        ),
     );
     definition.bindings.clear();
     let mut staged = Vec::new();
@@ -211,7 +237,10 @@ fn test_definition_empty_binding_list_rejected() {
         error,
         RegistrationError::EmptyDefinition { definition } if definition == SOURCE
     ));
-    assert!(staged.is_empty(), "an empty definition must not enter the staging area");
+    assert!(
+        staged.is_empty(),
+        "an empty definition must not enter the staging area"
+    );
 }
 
 /// Rejects a second concrete binding rather than silently staging two
@@ -227,7 +256,12 @@ fn test_definition_following_binding_must_be_alias() {
         PendingBinding::instance(concrete_key, Arc::new(Greeting), false, 0),
     );
     let second: Arc<dyn Greeter> = Arc::new(Greeting);
-    definition.add_alias(PendingBinding::instance(second_key.clone(), second, false, 0));
+    definition.add_alias(PendingBinding::instance(
+        second_key.clone(),
+        second,
+        false,
+        0,
+    ));
     let mut staged = Vec::new();
 
     let error = definition

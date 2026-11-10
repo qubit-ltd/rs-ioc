@@ -41,7 +41,10 @@ impl BindingIndex {
                 .entry(node.key.type_id())
                 .or_insert_with(Vec::new)
                 .push(position);
-            by_key.entry(node.key.clone()).or_insert_with(Vec::new).push(position);
+            by_key
+                .entry(node.key.clone())
+                .or_insert_with(Vec::new)
+                .push(position);
         }
         Self { by_key, by_type }
     }

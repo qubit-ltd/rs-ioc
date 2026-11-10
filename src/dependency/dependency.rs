@@ -49,7 +49,9 @@ impl PartialEq for Dependency {
     ///
     /// `true` when both requests have the same type, ID, and cardinality.
     fn eq(&self, other: &Self) -> bool {
-        self.type_id == other.type_id && self.id == other.id && self.cardinality == other.cardinality
+        self.type_id == other.type_id
+            && self.id == other.id
+            && self.cardinality == other.cardinality
     }
 }
 

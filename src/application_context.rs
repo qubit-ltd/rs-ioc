@@ -118,7 +118,10 @@ impl ApplicationContext {
     /// `Some` contains the active definition source and replaced sources;
     /// `None` means no active binding has the exact key.
     #[inline]
-    pub fn binding_sources(&self, key: &BindingKey) -> Option<(DefinitionSource, &[DefinitionSource])> {
+    pub fn binding_sources(
+        &self,
+        key: &BindingKey,
+    ) -> Option<(DefinitionSource, &[DefinitionSource])> {
         self.inner
             .query_index
             .by_key(key)
@@ -178,7 +181,10 @@ impl ApplicationContext {
     /// [`ResolveError::MissingComponent`] when no binding matches the exact
     /// ID.
     #[must_use = "handle the component lookup result"]
-    pub fn get_by_id<T: ?Sized + Send + Sync + 'static>(&self, id: &str) -> Result<Arc<T>, ResolveError> {
+    pub fn get_by_id<T: ?Sized + Send + Sync + 'static>(
+        &self,
+        id: &str,
+    ) -> Result<Arc<T>, ResolveError> {
         let request = BindingKey::of::<T>(Some(BindingId::parse(id)?));
         if let Some(index) = self.inner.query_index.by_key(&request) {
             return Ok(self.read::<T>(&self.inner.bindings[index].key));
@@ -205,7 +211,9 @@ impl ApplicationContext {
     ///
     /// Returns [`ResolveError`] when multiple non-primary candidates remain.
     #[must_use = "handle the optional component lookup result"]
-    pub fn try_get<T: ?Sized + Send + Sync + 'static>(&self) -> Result<Option<Arc<T>>, ResolveError> {
+    pub fn try_get<T: ?Sized + Send + Sync + 'static>(
+        &self,
+    ) -> Result<Option<Arc<T>>, ResolveError> {
         if let Some(index) = self.inner.query_index.selected(TypeId::of::<T>()) {
             return Ok(Some(self.read::<T>(&self.inner.bindings[index].key)));
         }
@@ -305,7 +313,8 @@ impl ApplicationContext {
                     .iter()
                     .filter_map(|&index| {
                         let binding = &self.inner.bindings[index];
-                        (request.id().is_none() || binding.key.id() == request.id()).then(|| binding.key.clone())
+                        (request.id().is_none() || binding.key.id() == request.id())
+                            .then(|| binding.key.clone())
                     })
                     .collect(),
             }),

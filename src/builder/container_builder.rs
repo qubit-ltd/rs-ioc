@@ -245,7 +245,12 @@ impl ContainerBuilder {
         value: Arc<T>,
         options: BindingOptions,
     ) -> Result<(), RegistrationError> {
-        self.register_definition(Definition::<T>::builder().binding(options).instance(value).build()?)
+        self.register_definition(
+            Definition::<T>::builder()
+                .binding(options)
+                .instance(value)
+                .build()?,
+        )
     }
 
     /// Stages a one-shot synchronous factory with default binding options.
@@ -270,7 +275,11 @@ impl ContainerBuilder {
     ///
     /// Returns [`RegistrationError`] for invalid requests or default options.
     #[track_caller]
-    pub fn register_factory<T, F>(&mut self, dependencies: &[Dependency], factory: F) -> Result<(), RegistrationError>
+    pub fn register_factory<T, F>(
+        &mut self,
+        dependencies: &[Dependency],
+        factory: F,
+    ) -> Result<(), RegistrationError>
     where
         T: ?Sized + Send + Sync + 'static,
         F: FnOnce(BuildContext) -> Result<Arc<T>, FactoryError> + Send + 'static,
@@ -306,7 +315,10 @@ impl ContainerBuilder {
     /// Returns [`RegistrationError`] for invalid generated requests or binding
     /// options. Missing and ambiguous requests are returned later by `build`.
     #[track_caller]
-    pub fn register_injected_factory<T, A, F>(&mut self, factory: F) -> Result<(), RegistrationError>
+    pub fn register_injected_factory<T, A, F>(
+        &mut self,
+        factory: F,
+    ) -> Result<(), RegistrationError>
     where
         T: ?Sized + Send + Sync + 'static,
         A: FactoryArgs,
@@ -349,7 +361,10 @@ impl ContainerBuilder {
     /// Returns [`RegistrationError`] for invalid generated requests or binding
     /// options. Missing and ambiguous dependencies are reported later by build.
     #[track_caller]
-    pub fn register_injected_async_factory<T, A, F>(&mut self, factory: F) -> Result<(), RegistrationError>
+    pub fn register_injected_async_factory<T, A, F>(
+        &mut self,
+        factory: F,
+    ) -> Result<(), RegistrationError>
     where
         T: ?Sized + Send + Sync + 'static,
         A: FactoryArgs,
@@ -474,7 +489,10 @@ impl ContainerBuilder {
     /// Returns [`RegistrationError`] for invalid generated requests or binding
     /// options. Graph resolution errors are returned later by `build`.
     #[track_caller]
-    pub fn register_injected_managed_factory<T, A, F>(&mut self, factory: F) -> Result<(), RegistrationError>
+    pub fn register_injected_managed_factory<T, A, F>(
+        &mut self,
+        factory: F,
+    ) -> Result<(), RegistrationError>
     where
         T: ?Sized + Send + Sync + 'static,
         A: FactoryArgs,
@@ -683,18 +701,23 @@ impl ContainerBuilder {
     /// Returns [`RegistrationError`] for invalid generated requests or binding
     /// options. Missing and ambiguous dependencies are reported later by build.
     #[track_caller]
-    pub fn register_injected_managed_async_factory<T, A, F>(&mut self, factory: F) -> Result<(), RegistrationError>
+    pub fn register_injected_managed_async_factory<T, A, F>(
+        &mut self,
+        factory: F,
+    ) -> Result<(), RegistrationError>
     where
         T: ?Sized + Send + Sync + 'static,
         A: FactoryArgs,
         F: FnOnce(A) -> ManagedFactoryFuture<T> + Send + 'static,
     {
         let dependencies = A::dependencies();
-        self.register_managed_async_factory::<T, _>(&dependencies, move |context| {
-            match A::resolve(&context).map_err(FactoryError::new) {
-                Ok(arguments) => factory(arguments),
-                Err(error) => Box::pin(async move { Err(error) }),
-            }
+        self.register_managed_async_factory::<T, _>(&dependencies, move |context| match A::resolve(
+            &context,
+        )
+        .map_err(FactoryError::new)
+        {
+            Ok(arguments) => factory(arguments),
+            Err(error) => Box::pin(async move { Err(error) }),
         })
     }
 
@@ -823,7 +846,11 @@ impl ContainerBuilder {
     ///
     /// Returns [`RegistrationError`] if the callback fails, stages other than
     /// one definition, or does not declare `anchor` exactly once.
-    pub fn replace_definition<F>(&mut self, anchor: BindingKey, definition: F) -> Result<(), RegistrationError>
+    pub fn replace_definition<F>(
+        &mut self,
+        anchor: BindingKey,
+        definition: F,
+    ) -> Result<(), RegistrationError>
     where
         F: FnOnce(&mut Self) -> Result<(), RegistrationError>,
     {
@@ -883,7 +910,10 @@ impl ContainerBuilder {
                 });
             }
         }
-        self.active_profiles = profiles.iter().map(|profile| (*profile).to_owned()).collect();
+        self.active_profiles = profiles
+            .iter()
+            .map(|profile| (*profile).to_owned())
+            .collect();
         Ok(self)
     }
 
@@ -910,7 +940,8 @@ impl ContainerBuilder {
         let policy = self.wait_policy.take();
         let scope = self.validation_scope;
         let (definitions, profiles, roots) = self.prepare_definitions()?;
-        let graph = ValidatedGraph::validate_roots_with_scope(definitions, &profiles, Some(&roots), scope)?;
+        let graph =
+            ValidatedGraph::validate_roots_with_scope(definitions, &profiles, Some(&roots), scope)?;
         let policy = Self::selected_wait_policy(&graph, policy)?;
         graph.require_sync()?;
         Construction::new(graph, policy).run_sync()
@@ -1128,7 +1159,10 @@ impl ContainerBuilder {
     /// # Parameters
     ///
     /// * `definition` — Complete validated definition to append atomically.
-    pub(crate) fn stage_definition(&mut self, definition: PendingDefinition) -> Result<(), RegistrationError> {
+    pub(crate) fn stage_definition(
+        &mut self,
+        definition: PendingDefinition,
+    ) -> Result<(), RegistrationError> {
         definition.stage_into(&mut self.definitions)
     }
 
@@ -1150,11 +1184,15 @@ impl ContainerBuilder {
     ///
     /// Returns [`BuildError::MissingWaitPolicy`] when managed bindings are
     /// selected without an explicit policy.
-    fn selected_wait_policy(graph: &ValidatedGraph, policy: Option<WaitPolicy>) -> Result<WaitPolicy, BuildError> {
+    fn selected_wait_policy(
+        graph: &ValidatedGraph,
+        policy: Option<WaitPolicy>,
+    ) -> Result<WaitPolicy, BuildError> {
         let has_managed = graph.order.iter().any(|location| {
             matches!(
                 &graph.definitions[location.definition].bindings[location.binding].kind,
-                PendingBindingKind::ManagedSyncFactory(_) | PendingBindingKind::ManagedAsyncFactory(_)
+                PendingBindingKind::ManagedSyncFactory(_)
+                    | PendingBindingKind::ManagedAsyncFactory(_)
             )
         });
         match policy {
@@ -1186,7 +1224,12 @@ impl ContainerBuilder {
     ) -> Vec<(usize, DefinitionSource)> {
         active
             .iter()
-            .filter(|(_, definition)| definition.bindings.iter().any(|binding| binding.key == *anchor))
+            .filter(|(_, definition)| {
+                definition
+                    .bindings
+                    .iter()
+                    .any(|binding| binding.key == *anchor)
+            })
             .map(|(index, definition)| (*index, definition.source))
             .collect()
     }
@@ -1204,7 +1247,9 @@ impl ContainerBuilder {
         let mut active: Vec<_> = definitions
             .into_iter()
             .enumerate()
-            .filter(|(_, definition)| profile_is_active(definition.profile.as_deref(), &active_profiles))
+            .filter(|(_, definition)| {
+                profile_is_active(definition.profile.as_deref(), &active_profiles)
+            })
             .collect();
         for replacement in replacements {
             let occurrences = Self::anchor_occurrences(&active, &replacement.anchor);
@@ -1273,7 +1318,9 @@ impl ContainerBuilder {
         Ok((
             active
                 .into_iter()
-                .filter_map(|(_, definition)| (!definition.bindings.is_empty()).then_some(definition))
+                .filter_map(|(_, definition)| {
+                    (!definition.bindings.is_empty()).then_some(definition)
+                })
                 .collect(),
             active_profiles,
             roots,

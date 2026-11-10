@@ -171,7 +171,8 @@ pub(in crate::graph) fn close_definitions(
         definition_expanded[node.location.definition] = true;
         for &member in &nodes_by_definition[node.location.definition] {
             let member_location = nodes[member].location;
-            if diagnostics.record_from(member_location, PathOrigin::DefinitionMember(node.location)) {
+            if diagnostics.record_from(member_location, PathOrigin::DefinitionMember(node.location))
+            {
                 reachable[member] = true;
                 queue.push_back(member);
             }
@@ -259,13 +260,27 @@ pub(in crate::graph) fn build_all_seeds(nodes: &[Node], edges: &[Vec<Edge>]) -> 
     for (index, incoming) in has_incoming.iter().copied().enumerate() {
         if !incoming {
             seeds.push(index);
-            mark_build_all_closure(index, nodes, edges, &members, &mut selected, &mut definition_expanded);
+            mark_build_all_closure(
+                index,
+                nodes,
+                edges,
+                &members,
+                &mut selected,
+                &mut definition_expanded,
+            );
         }
     }
     for index in 0..selected.len() {
         if !selected[index] {
             seeds.push(index);
-            mark_build_all_closure(index, nodes, edges, &members, &mut selected, &mut definition_expanded);
+            mark_build_all_closure(
+                index,
+                nodes,
+                edges,
+                &members,
+                &mut selected,
+                &mut definition_expanded,
+            );
         }
     }
     seeds
@@ -367,7 +382,9 @@ pub(in crate::graph) fn flatten(definitions: &[PendingDefinition]) -> Vec<Node> 
 ///
 /// A map from each unique exact binding key to its node position.
 #[allow(clippy::result_large_err)]
-pub(in crate::graph) fn exact_keys(nodes: &[Node]) -> Result<HashMap<BindingKey, usize>, BuildError> {
+pub(in crate::graph) fn exact_keys(
+    nodes: &[Node],
+) -> Result<HashMap<BindingKey, usize>, BuildError> {
     let mut by_key = HashMap::with_capacity(nodes.len());
     for (index, node) in nodes.iter().enumerate() {
         if let Some(first_index) = by_key.insert(node.key.clone(), index) {
@@ -405,7 +422,9 @@ pub(in crate::graph) fn validate_primary(nodes: &[Node]) -> Result<(), BuildErro
         if node.primary && !seen.insert(node.key.type_id()) {
             let candidates = nodes
                 .iter()
-                .filter(|candidate| candidate.primary && candidate.key.type_id() == node.key.type_id())
+                .filter(|candidate| {
+                    candidate.primary && candidate.key.type_id() == node.key.type_id()
+                })
                 .map(|candidate| (candidate.key.clone(), candidate.source))
                 .collect();
             return Err(BuildError::MultiplePrimaryBindings { candidates });
@@ -444,7 +463,10 @@ fn resolve_definition_dependencies(
         };
         match select(request, candidates_for(request, index), nodes) {
             Ok(selected) => {
-                dependency.keys = selected.iter().map(|&position| nodes[position].key.clone()).collect();
+                dependency.keys = selected
+                    .iter()
+                    .map(|&position| nodes[position].key.clone())
+                    .collect();
                 edges.extend(selected.into_iter().map(Edge::Target));
             }
             Err(problem) => edges.push(problem),
@@ -533,11 +555,15 @@ pub(in crate::graph) fn resolve_reachable_edges(
     seeds: &[usize],
 ) -> (Vec<Vec<Edge>>, Vec<Vec<ResolvedDependency>>) {
     let mut edges = vec![Vec::new(); nodes.len()];
-    let mut resolved = (0..definitions.len()).map(|_| Vec::new()).collect::<Vec<_>>();
+    let mut resolved = (0..definitions.len())
+        .map(|_| Vec::new())
+        .collect::<Vec<_>>();
     let mut visited = vec![false; nodes.len()];
     let mut expanded = vec![false; definitions.len()];
     let mut resolved_initialized = vec![false; definitions.len()];
-    let mut dependency_edges = (0..definitions.len()).map(|_| None).collect::<Vec<Option<Vec<Edge>>>>();
+    let mut dependency_edges = (0..definitions.len())
+        .map(|_| None)
+        .collect::<Vec<Option<Vec<Edge>>>>();
     // `flatten` lays each definition's bindings out contiguously, so retain
     // just its range instead of allocating one node-index vector per
     // definition.
@@ -571,7 +597,8 @@ pub(in crate::graph) fn resolve_reachable_edges(
             });
         } else {
             if !resolved_initialized[di] {
-                let (definition_edges, requests) = resolve_definition_dependencies(&definitions[di], nodes, index);
+                let (definition_edges, requests) =
+                    resolve_definition_dependencies(&definitions[di], nodes, index);
                 resolved[di] = requests;
                 dependency_edges[di] = Some(definition_edges);
                 resolved_initialized[di] = true;
@@ -663,7 +690,11 @@ fn select(request: &Dependency, candidates: &[usize], nodes: &[Node]) -> Result<
             many.iter().map(|&index| nodes[index].key.clone()).collect(),
         )),
         many => {
-            let primary: Vec<_> = many.iter().copied().filter(|&index| nodes[index].primary).collect();
+            let primary: Vec<_> = many
+                .iter()
+                .copied()
+                .filter(|&index| nodes[index].primary)
+                .collect();
             match primary.as_slice() {
                 [one] => Ok(vec![*one]),
                 _ => Err(Edge::AmbiguousDependency(
@@ -744,9 +775,11 @@ pub(in crate::graph) fn detect_errors_and_cycles(
                             stack.push((*target, 0));
                         }
                     }
-                } else if let Some(problem) =
-                    edge_problem(edge, &nodes[*index], diagnostics.path_to(nodes[*index].location))
-                {
+                } else if let Some(problem) = edge_problem(
+                    edge,
+                    &nodes[*index],
+                    diagnostics.path_to(nodes[*index].location),
+                ) {
                     return Err(problem);
                 }
             }

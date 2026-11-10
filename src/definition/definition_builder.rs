@@ -168,7 +168,12 @@ impl<T: ?Sized + Send + Sync + 'static> DefinitionBuilder<T> {
     /// The same builder staged as a shared instance.
     #[must_use]
     pub fn instance(mut self, value: Arc<T>) -> Self {
-        self.concrete = Some(PendingBinding::instance(BindingKey::of::<T>(None), value, false, 0));
+        self.concrete = Some(PendingBinding::instance(
+            BindingKey::of::<T>(None),
+            value,
+            false,
+            0,
+        ));
         self
     }
 
@@ -371,13 +376,16 @@ impl<T: ?Sized + Send + Sync + 'static> DefinitionBuilder<T> {
     pub fn build(self) -> Result<Definition<T>, RegistrationError> {
         let (key, profile) = validate_options::<T>(&self.options, self.source)?;
         validate_dependencies(&self.dependencies, self.source)?;
-        let mut concrete = self.concrete.ok_or(RegistrationError::MissingDefinitionFactory {
-            definition: self.source,
-        })?;
+        let mut concrete = self
+            .concrete
+            .ok_or(RegistrationError::MissingDefinitionFactory {
+                definition: self.source,
+            })?;
         concrete.key = key.clone();
         concrete.primary = self.options.primary;
         concrete.order = self.options.order;
-        let mut pending = PendingDefinition::new(self.source, profile.clone(), self.dependencies, concrete);
+        let mut pending =
+            PendingDefinition::new(self.source, profile.clone(), self.dependencies, concrete);
         for alias in self.aliases {
             let mut binding = alias.binding;
             // The interface type is already encoded in the staged alias key.

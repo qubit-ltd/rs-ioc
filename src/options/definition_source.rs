@@ -77,6 +77,10 @@ impl Display for DefinitionSource {
     ///
     /// `formatter` is the destination for the source location text.
     fn fmt(&self, formatter: &mut Formatter<'_>) -> Result {
-        write!(formatter, "{}:{}:{} ({})", self.file, self.line, self.column, self.item)
+        write!(
+            formatter,
+            "{}:{}:{} ({})",
+            self.file, self.line, self.column, self.item
+        )
     }
 }

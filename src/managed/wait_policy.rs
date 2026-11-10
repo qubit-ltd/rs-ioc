@@ -122,7 +122,12 @@ impl WaitPolicy {
     ///
     /// A bounded policy with per-component and whole-shutdown deadlines.
     #[must_use]
-    pub fn bounded_with_total<F>(grace: Duration, termination: Duration, total: Duration, timer: F) -> Self
+    pub fn bounded_with_total<F>(
+        grace: Duration,
+        termination: Duration,
+        total: Duration,
+        timer: F,
+    ) -> Self
     where
         F: Fn(Duration) -> DeadlineFuture + Send + Sync + 'static,
     {

@@ -198,7 +198,12 @@ impl<T: ?Sized + Send + Sync + 'static> Managed<T> {
     /// # Returns
     ///
     /// A managed component with an explicit asynchronous termination wait.
-    pub fn asynchronous_with_graceful<F, G, W>(value: Arc<T>, abort: F, graceful: G, wait: W) -> Self
+    pub fn asynchronous_with_graceful<F, G, W>(
+        value: Arc<T>,
+        abort: F,
+        graceful: G,
+        wait: W,
+    ) -> Self
     where
         F: FnOnce(Arc<T>) -> Result<(), CleanupError> + Send + 'static,
         G: FnOnce(Arc<T>) -> Result<(), CleanupError> + Send + 'static,
@@ -299,7 +304,12 @@ impl<T: ?Sized + Send + Sync + 'static> Managed<T> {
     /// Request and wait errors are retained in the final shutdown report. If
     /// no request produced a ticket, waiting reports that condition rather than
     /// panicking.
-    pub fn asynchronous_with_graceful_ticket<K, A, G, W>(value: Arc<T>, abort: A, graceful: G, wait: W) -> Self
+    pub fn asynchronous_with_graceful_ticket<K, A, G, W>(
+        value: Arc<T>,
+        abort: A,
+        graceful: G,
+        wait: W,
+    ) -> Self
     where
         K: Send + 'static,
         A: FnOnce(Arc<T>) -> Result<K, CleanupError> + Send + 'static,
@@ -318,9 +328,15 @@ impl<T: ?Sized + Send + Sync + 'static> Managed<T> {
     ///
     /// The erased component instance and its associated cleanup action.
     pub(crate) fn into_parts(mut self) -> (ErasedInstance, CleanupAction) {
-        let value = self.value.take().expect("managed value has not been transferred");
+        let value = self
+            .value
+            .take()
+            .expect("managed value has not been transferred");
         let stop_value = Arc::clone(&value);
-        let stop = self.stop.take().expect("managed abort has not been transferred");
+        let stop = self
+            .stop
+            .take()
+            .expect("managed abort has not been transferred");
         let erased_stop = Box::new(move || stop(stop_value));
         let graceful = self.graceful.take().map(|request| {
             let graceful_value = Arc::clone(&value);

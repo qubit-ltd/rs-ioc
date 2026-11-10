@@ -72,7 +72,11 @@ impl Application {
     /// # Returns
     ///
     /// An application that owns the context, cleanup journal, and wait policy.
-    pub(crate) fn new(context: ApplicationContext, cleanup: CleanupJournal, policy: WaitPolicy) -> Self {
+    pub(crate) fn new(
+        context: ApplicationContext,
+        cleanup: CleanupJournal,
+        policy: WaitPolicy,
+    ) -> Self {
         Self {
             context,
             cleanup: Some(cleanup),

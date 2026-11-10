@@ -199,7 +199,10 @@ impl ShutdownDriver {
             match catch_unwind(AssertUnwindSafe(|| self.policy.overall_deadline())) {
                 Ok(deadline) => self.overall_deadline = deadline,
                 Err(payload) => {
-                    self.overall_failure = Some(Arc::new(panic_cleanup_error("overall deadline factory", payload)));
+                    self.overall_failure = Some(Arc::new(panic_cleanup_error(
+                        "overall deadline factory",
+                        payload,
+                    )));
                     return Poll::Ready(self.expire_overall());
                 }
             }
@@ -217,7 +220,10 @@ impl ShutdownDriver {
                 }
             }
 
-            let mut active = self.active.take().expect("active wait installed before polling");
+            let mut active = self
+                .active
+                .take()
+                .expect("active wait installed before polling");
             match poll_wait_once(&mut active.future, context) {
                 Poll::Ready(Ok(())) => {
                     self.complete_entry(active.index);
@@ -280,7 +286,10 @@ impl ShutdownDriver {
                 Poll::Ready(())
             }
             Err(payload) => {
-                self.overall_failure = Some(Arc::new(panic_cleanup_error("overall deadline future", payload)));
+                self.overall_failure = Some(Arc::new(panic_cleanup_error(
+                    "overall deadline future",
+                    payload,
+                )));
                 Poll::Ready(())
             }
         }
@@ -313,13 +322,19 @@ impl ShutdownDriver {
     fn start_next(&mut self) -> bool {
         self.cursor -= 1;
         let index = self.cursor;
-        if matches!(self.entries[index].state, EntryState::Done | EntryState::Incomplete) {
+        if matches!(
+            self.entries[index].state,
+            EntryState::Done | EntryState::Incomplete
+        ) {
             return false;
         }
         if self.mode == ShutdownMode::Graceful {
             self.request_graceful(index);
         }
-        if matches!(self.entries[index].state, EntryState::Done | EntryState::Incomplete) {
+        if matches!(
+            self.entries[index].state,
+            EntryState::Done | EntryState::Incomplete
+        ) {
             return false;
         }
         let Some(wait) = self.entries[index].action.wait.take() else {
@@ -407,7 +422,10 @@ impl ShutdownDriver {
         self.fail(
             index,
             phase,
-            CleanupError::new(Error::new(ErrorKind::TimedOut, "component shutdown deadline expired")),
+            CleanupError::new(Error::new(
+                ErrorKind::TimedOut,
+                "component shutdown deadline expired",
+            )),
         );
         self.abort_entry(index);
         if phase == ShutdownPhase::GracefulWait {
@@ -463,8 +481,8 @@ impl ShutdownDriver {
         let succeeded = self.request(index, ShutdownPhase::Abort, abort);
         // A consumed wait may still be active or may have just failed. Only
         // Constructed entries can prove synchronous termination from no wait.
-        let had_wait =
-            self.entries[index].action.wait.is_some() || self.entries[index].state == EntryState::GracefulRequested;
+        let had_wait = self.entries[index].action.wait.is_some()
+            || self.entries[index].state == EntryState::GracefulRequested;
         self.entries[index].state = if had_wait {
             EntryState::AbortRequested
         } else if succeeded {
