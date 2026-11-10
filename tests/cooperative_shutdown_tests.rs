@@ -40,10 +40,7 @@ impl Wake for CountWake {
     }
 }
 
-fn immediate_shutdown_builder(
-    count: usize,
-    observed: Arc<Mutex<Vec<(char, usize)>>>,
-) -> ContainerBuilder {
+fn immediate_shutdown_builder(count: usize, observed: Arc<Mutex<Vec<(char, usize)>>>) -> ContainerBuilder {
     let mut builder = ContainerBuilder::new().wait_policy(WaitPolicy::unbounded());
     for index in 0..count {
         let graceful = Arc::clone(&observed);
@@ -79,10 +76,7 @@ fn immediate_shutdown_builder(
     builder
 }
 
-fn synchronous_shutdown_builder(
-    count: usize,
-    observed: Arc<Mutex<Vec<usize>>>,
-) -> ContainerBuilder {
+fn synchronous_shutdown_builder(count: usize, observed: Arc<Mutex<Vec<usize>>>) -> ContainerBuilder {
     let mut builder = ContainerBuilder::new().wait_policy(WaitPolicy::unbounded());
     for index in 0..count {
         let observed = Arc::clone(&observed);
@@ -246,10 +240,7 @@ fn test_wait_error_does_not_stop_later_shutdown_entries() {
         }
     }
     assert!(result.expect("bounded shutdown completes").is_err());
-    assert_eq!(
-        *observed.lock().expect("log"),
-        (0..COUNT).rev().collect::<Vec<_>>()
-    );
+    assert_eq!(*observed.lock().expect("log"), (0..COUNT).rev().collect::<Vec<_>>());
 }
 
 #[test]
@@ -270,10 +261,7 @@ fn test_empty_and_batch_boundary_shutdowns_only_yield_when_work_remains() {
             assert!(poll.is_ready(), "{count} entries should finish in one poll");
             assert_eq!(wake_counter.0.load(Ordering::SeqCst), 0);
         } else {
-            assert!(
-                poll.is_pending(),
-                "65 entries should yield after the first batch"
-            );
+            assert!(poll.is_pending(), "65 entries should yield after the first batch");
             assert_eq!(wake_counter.0.load(Ordering::SeqCst), 1);
             assert!(wait.as_mut().poll(&mut context).is_ready());
         }
@@ -295,8 +283,7 @@ fn test_cancelling_at_batch_boundary_retains_active_wait_and_deadlines() {
     let abort_calls = Arc::new(AtomicUsize::new(0));
     let observed_abort = Arc::clone(&abort_calls);
     let sync_stops = Arc::new(AtomicUsize::new(0));
-    let mut builder = ContainerBuilder::new()
-        .wait_policy(timers.policy_with_total(std::time::Duration::from_secs(30)));
+    let mut builder = ContainerBuilder::new().wait_policy(timers.policy_with_total(std::time::Duration::from_secs(30)));
     builder
         .register_managed_factory_with::<usize, _>(
             &[],
@@ -366,10 +353,7 @@ fn test_cancelling_at_batch_boundary_retains_active_wait_and_deadlines() {
     assert_eq!(wait_starts.load(Ordering::SeqCst), 1);
     assert_eq!(
         timers.durations(),
-        [
-            std::time::Duration::from_secs(30),
-            std::time::Duration::from_secs(13),
-        ]
+        [std::time::Duration::from_secs(30), std::time::Duration::from_secs(13),]
     );
     drop(borrowed_wait);
 
@@ -414,8 +398,7 @@ fn test_ready_overall_deadline_wins_at_batch_yield_boundary() {
     let trigger_timers = timers.clone();
     let graceful_calls = Arc::new(AtomicUsize::new(0));
     let abort_calls = Arc::new(AtomicUsize::new(0));
-    let mut builder = ContainerBuilder::new()
-        .wait_policy(timers.policy_with_total(std::time::Duration::from_secs(30)));
+    let mut builder = ContainerBuilder::new().wait_policy(timers.policy_with_total(std::time::Duration::from_secs(30)));
     for index in 0..COUNT {
         let trigger_timers = trigger_timers.clone();
         let graceful_calls = Arc::clone(&graceful_calls);
@@ -468,4 +451,66 @@ fn test_ready_overall_deadline_wins_at_batch_yield_boundary() {
     // The timer wakes its registered task once; the driver must not also
     // issue the cooperative self-wake after the deadline is already ready.
     assert_eq!(wake_counter.0.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn test_newly_started_ready_wait_wins_before_overall_deadline_at_batch_boundary() {
+    let timers = Timers::default();
+    let trigger_timers = timers.clone();
+    let graceful_calls = Arc::new(AtomicUsize::new(0));
+    let ready_wait_polls = Arc::new(AtomicUsize::new(0));
+    let mut builder = ContainerBuilder::new().wait_policy(timers.policy_with_total(std::time::Duration::from_secs(30)));
+    for index in 0..65 {
+        let trigger_timers = trigger_timers.clone();
+        let graceful_calls = Arc::clone(&graceful_calls);
+        let ready_wait_polls = Arc::clone(&ready_wait_polls);
+        builder
+            .register_managed_factory_with::<usize, _>(
+                &[],
+                BindingOptions {
+                    id: Some(format!("resource.n{index}")),
+                    ..BindingOptions::default()
+                },
+                move |_| {
+                    if index == 1 {
+                        Ok(Managed::asynchronous_with_graceful(
+                            Arc::new(index),
+                            |_| Ok(()),
+                            move |_| {
+                                graceful_calls.fetch_add(1, Ordering::SeqCst);
+                                trigger_timers.trigger(0);
+                                Ok(())
+                            },
+                            move |_| {
+                                let ready_wait_polls = Arc::clone(&ready_wait_polls);
+                                Box::pin(std::future::poll_fn(move |_| {
+                                    ready_wait_polls.fetch_add(1, Ordering::SeqCst);
+                                    Poll::Ready(Ok(()))
+                                }))
+                            },
+                        ))
+                    } else {
+                        Ok(Managed::synchronous_with_graceful(
+                            Arc::new(index),
+                            |_| Ok(()),
+                            move |_| {
+                                graceful_calls.fetch_add(1, Ordering::SeqCst);
+                                Ok(())
+                            },
+                        ))
+                    }
+                },
+            )
+            .expect("register component");
+    }
+
+    let application = builder.build_all().expect("build components");
+    let mut shutdown = application.begin_shutdown(ShutdownMode::Graceful);
+    let mut wait = Box::pin(shutdown.wait());
+    let result = support::shutdown_timer::ready(wait.as_mut());
+
+    let error = result.expect_err("overall deadline should be reported");
+    assert!(error.report().overall_failure().is_some());
+    assert_eq!(graceful_calls.load(Ordering::SeqCst), 64);
+    assert_eq!(ready_wait_polls.load(Ordering::SeqCst), 1);
 }
