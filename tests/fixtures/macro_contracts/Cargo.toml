@@ -14,7 +14,7 @@ config = ["type/config"]
 value_input = ["type/config"]
 
 [dependencies]
-"type" = { package = "qubit-ioc", path = "../../..", default-features = false, features = ["macros"] }
+"type" = { package = "qubit-ioc", path = "../../../", default-features = false, features = ["macros"] , version = "^0.4" }
 
 [dev-dependencies]
 trybuild = "1.0"

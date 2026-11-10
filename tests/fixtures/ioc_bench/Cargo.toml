@@ -8,4 +8,4 @@ publish = false
 
 # Standalone workload fixture: no benchmark framework or async runtime needed.
 [dependencies]
-qubit-ioc = { path = "../../../", default-features = false }
+qubit-ioc = { path = "../../../", default-features = false , version = "^0.4" }

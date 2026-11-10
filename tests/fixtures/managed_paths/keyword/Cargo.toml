@@ -7,5 +7,5 @@ publish = false
 [workspace]
 
 [dependencies]
-"type" = { package = "qubit-ioc", path = "../../../../", version = "0.3.0" }
+"type" = { package = "qubit-ioc", path = "../../../../", version = "^0.4" }
 tokio = { version = "1.53", features = ["rt", "time"] }

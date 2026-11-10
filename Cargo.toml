@@ -56,12 +56,12 @@ config = ["dep:qubit-config", "dep:serde"]
 
 [dependencies]
 thiserror = "^2.0"
-qubit-ioc-macros = { path = "macros", version = "0.3.0", optional = true }
-qubit-config = { path = "../rs-config", version = "^0.15", optional = true }
 serde = { version = "^1.0", optional = true }
+qubit-ioc-macros = { path = "macros", version = "^0.3", optional = true }
+qubit-config = { path = "../rs-config", version = "^0.15", optional = true }
 
 [dev-dependencies]
 serde = { version = "^1.0", features = ["derive"] }
 trybuild = "^1.0"
-qubit-spi = "^0.14"
 tokio = { version = "^1.54", features = ["rt", "sync", "time"] }
+qubit-spi = "^0.14"

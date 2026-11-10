@@ -5,6 +5,6 @@ edition = "2024"
 publish = false
 
 [dependencies]
-qubit-ioc = { path = "../../../../" }
-qubit-ioc-fixture-contracts = { path = "../contracts" }
+qubit-ioc = { path = "../../../../", version = "^0.4" }
+qubit-ioc-fixture-contracts = { path = "../contracts", version = "^0.0" }
 serde = { version = "1.0", features = ["derive"] }
