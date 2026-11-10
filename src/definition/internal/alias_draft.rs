@@ -31,10 +31,7 @@ use crate::options::DefinitionSource;
 /// the definition's final concrete profile. A `RegistrationError` means the
 /// options were rejected, tagged with the definition's source.
 pub(in crate::definition) type AliasValidator =
-    fn(
-        &BindingOptions,
-        DefinitionSource,
-    ) -> Result<(BindingKey, Option<String>), RegistrationError>;
+    fn(&BindingOptions, DefinitionSource) -> Result<(BindingKey, Option<String>), RegistrationError>;
 
 /// Keeps alias options until the concrete profile and key are final.
 ///

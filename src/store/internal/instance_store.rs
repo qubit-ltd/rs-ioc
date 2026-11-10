@@ -41,10 +41,7 @@ impl InstanceStore {
     /// holds an `Arc<T>`, otherwise `None` - both for an unknown key and for a
     /// key whose erased value holds a different concrete type.
     #[inline]
-    pub(crate) fn get<T: ?Sized + Send + Sync + 'static>(
-        &self,
-        key: &BindingKey,
-    ) -> Option<Arc<T>> {
+    pub(crate) fn get<T: ?Sized + Send + Sync + 'static>(&self, key: &BindingKey) -> Option<Arc<T>> {
         self.get_erased(key)?.downcast_ref::<Arc<T>>().cloned()
     }
 

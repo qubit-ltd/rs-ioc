@@ -87,12 +87,9 @@ impl PendingDefinition {
                 });
             }
         }
-        let concrete = self
-            .bindings
-            .first()
-            .ok_or(RegistrationError::EmptyDefinition {
-                definition: self.source,
-            })?;
+        let concrete = self.bindings.first().ok_or(RegistrationError::EmptyDefinition {
+            definition: self.source,
+        })?;
         if matches!(concrete.kind, PendingBindingKind::Alias { .. }) {
             return Err(RegistrationError::InvalidConcreteBinding {
                 key: concrete.key.clone(),

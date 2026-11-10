@@ -22,9 +22,7 @@ macro_rules! require_config {
 #[macro_export]
 macro_rules! require_config {
     ($($tokens:tt)*) => {
-        compile_error!(
-            "qubit-ioc: #[value] and #[ConfigurationProperties] require the `config` feature"
-        );
+        compile_error!("qubit-ioc: #[value] and #[ConfigurationProperties] require the `config` feature");
     };
 }
 

@@ -50,8 +50,7 @@ pub(crate) use internal::profile::profile_is_active;
 ///     Box::pin(async { Ok(Arc::new(42)) })
 /// }
 /// ```
-pub type FactoryFuture<T> =
-    Pin<Box<dyn Future<Output = Result<Arc<T>, FactoryError>> + Send + 'static>>;
+pub type FactoryFuture<T> = Pin<Box<dyn Future<Output = Result<Arc<T>, FactoryError>> + Send + 'static>>;
 
 /// A sendable factory future whose product is already type-erased.
 ///
@@ -73,8 +72,7 @@ pub(crate) type ErasedFactoryFuture =
 /// `'static` lets the container hold the factory past the registration call.
 /// Returning `Ok` yields the erased component, returning `Err` a
 /// [`FactoryError`].
-pub(crate) type SyncFactory =
-    Box<dyn FnOnce(BuildContext) -> Result<ErasedInstance, FactoryError> + Send + 'static>;
+pub(crate) type SyncFactory = Box<dyn FnOnce(BuildContext) -> Result<ErasedInstance, FactoryError> + Send + 'static>;
 
 /// A one-shot asynchronous factory invoked during construction.
 ///
@@ -83,8 +81,7 @@ pub(crate) type SyncFactory =
 /// it on the async executor, keeping a slow factory off the building thread.
 /// The `FnOnce` and `'static` bounds mirror [`SyncFactory`], so configuration
 /// may still be consumed once per build while the future stays movable.
-pub(crate) type AsyncFactory =
-    Box<dyn FnOnce(BuildContext) -> ErasedFactoryFuture + Send + 'static>;
+pub(crate) type AsyncFactory = Box<dyn FnOnce(BuildContext) -> ErasedFactoryFuture + Send + 'static>;
 
 /// The erased component value paired with the cleanup action it registered.
 ///
@@ -120,8 +117,7 @@ pub(crate) type ErasedManagedFactoryFuture =
 /// [`ErasedManagedFactoryFuture`] carries the value together with its
 /// [`CleanupAction`], so shutdown is scheduled for the same component that the
 /// future built.
-pub(crate) type ManagedAsyncFactory =
-    Box<dyn FnOnce(BuildContext) -> ErasedManagedFactoryFuture + Send + 'static>;
+pub(crate) type ManagedAsyncFactory = Box<dyn FnOnce(BuildContext) -> ErasedManagedFactoryFuture + Send + 'static>;
 
 /// Projects an already built concrete `Arc` to an interface `Arc`.
 ///
@@ -132,5 +128,4 @@ pub(crate) type ManagedAsyncFactory =
 /// which the container surfaces as a binding failure rather than a panic. It is
 /// `Send + Sync` because one projector is shared by every resolution of that
 /// binding, so implementations must stay cheap and must not block.
-pub(crate) type AliasProjector =
-    Box<dyn Fn(&ErasedInstance) -> Option<ErasedInstance> + Send + Sync + 'static>;
+pub(crate) type AliasProjector = Box<dyn Fn(&ErasedInstance) -> Option<ErasedInstance> + Send + Sync + 'static>;

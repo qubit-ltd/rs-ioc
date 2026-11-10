@@ -107,16 +107,8 @@ impl BindingKey {
     /// `type_name` for diagnostic output without revalidating the identifier.
     #[must_use]
     #[inline]
-    pub(crate) fn from_parts(
-        type_id: TypeId,
-        type_name: &'static str,
-        id: Option<BindingId>,
-    ) -> Self {
-        Self {
-            type_id,
-            type_name,
-            id,
-        }
+    pub(crate) fn from_parts(type_id: TypeId, type_name: &'static str, id: Option<BindingId>) -> Self {
+        Self { type_id, type_name, id }
     }
 
     /// Returns the Rust type identity used for equality.

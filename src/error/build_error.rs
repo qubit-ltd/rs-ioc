@@ -105,9 +105,7 @@ pub enum BuildError {
         path: Vec<BindingKey>,
     },
     /// Several bindings satisfy a single request without a unique primary.
-    #[error(
-        "ambiguous dependency {dependency:?} for {definition}; candidates: {candidates:?}; path: {path:?}"
-    )]
+    #[error("ambiguous dependency {dependency:?} for {definition}; candidates: {candidates:?}; path: {path:?}")]
     AmbiguousBinding {
         /// Ambiguous request.
         dependency: Dependency,
@@ -152,9 +150,7 @@ pub enum BuildError {
         error: FactoryError,
     },
     /// A configuration read failed during construction.
-    #[error(
-        "configuration read at {definition} for {target} from `{path_key}`; path: {path:?}: {error}"
-    )]
+    #[error("configuration read at {definition} for {target} from `{path_key}`; path: {path:?}: {error}")]
     ConfigReadFailed {
         /// Definition containing the read.
         definition: DefinitionSource,

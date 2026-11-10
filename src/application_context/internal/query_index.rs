@@ -123,9 +123,7 @@ impl QueryIndex {
     #[inline]
     #[must_use]
     pub(crate) fn selected(&self, type_id: TypeId) -> Option<usize> {
-        self.by_type
-            .get(&type_id)
-            .and_then(|positions| positions.selected)
+        self.by_type.get(&type_id).and_then(|positions| positions.selected)
     }
 
     /// Returns active binding positions for one Rust type in collection order.
@@ -181,11 +179,7 @@ mod tests {
 
     #[test]
     fn test_collection_positions_use_collection_order_without_changing_registration_order() {
-        let bindings = [
-            binding("zeta", 1),
-            binding("alpha", 1),
-            binding("middle", 0),
-        ];
+        let bindings = [binding("zeta", 1), binding("alpha", 1), binding("middle", 0)];
         let index = QueryIndex::new(&bindings);
 
         assert_eq!(index.by_type(TypeId::of::<u8>()), [0, 1, 2]);
@@ -195,28 +189,16 @@ mod tests {
     #[test]
     fn test_selected_returns_only_unambiguous_default_binding() {
         let single = [binding("single", 0)];
-        assert_eq!(
-            QueryIndex::new(&single).selected(TypeId::of::<u8>()),
-            Some(0)
-        );
+        assert_eq!(QueryIndex::new(&single).selected(TypeId::of::<u8>()), Some(0));
 
         let unique_primary = [binding("first", 0), primary_binding("second", 0)];
-        assert_eq!(
-            QueryIndex::new(&unique_primary).selected(TypeId::of::<u8>()),
-            Some(1)
-        );
+        assert_eq!(QueryIndex::new(&unique_primary).selected(TypeId::of::<u8>()), Some(1));
 
         let no_primary = [binding("first", 0), binding("second", 0)];
-        assert_eq!(
-            QueryIndex::new(&no_primary).selected(TypeId::of::<u8>()),
-            None
-        );
+        assert_eq!(QueryIndex::new(&no_primary).selected(TypeId::of::<u8>()), None);
 
         let multiple_primaries = [primary_binding("first", 0), primary_binding("second", 0)];
-        assert_eq!(
-            QueryIndex::new(&multiple_primaries).selected(TypeId::of::<u8>()),
-            None
-        );
+        assert_eq!(QueryIndex::new(&multiple_primaries).selected(TypeId::of::<u8>()), None);
         assert_eq!(QueryIndex::new(&[]).selected(TypeId::of::<u8>()), None);
     }
 

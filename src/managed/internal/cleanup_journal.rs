@@ -62,12 +62,7 @@ impl CleanupJournal {
     /// * `key` - Runtime type and optional identifier for the component.
     /// * `definition` - Source location of its registration.
     /// * `action` - Stop, graceful-request, and wait callbacks it owns.
-    pub(crate) fn push(
-        &mut self,
-        key: BindingKey,
-        definition: DefinitionSource,
-        action: CleanupAction,
-    ) {
+    pub(crate) fn push(&mut self, key: BindingKey, definition: DefinitionSource, action: CleanupAction) {
         self.entries.push(CleanupEntry {
             key,
             definition,

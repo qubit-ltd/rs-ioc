@@ -117,12 +117,7 @@ impl ValidatedGraph {
         active_profiles: &[String],
         roots: Option<&[Dependency]>,
     ) -> Result<Self, BuildError> {
-        Self::validate_roots_with_scope(
-            definitions,
-            active_profiles,
-            roots,
-            ValidationScope::Reachable,
-        )
+        Self::validate_roots_with_scope(definitions, active_profiles, roots, ValidationScope::Reachable)
     }
 
     /// Validates the requested roots, optionally checking every active
@@ -163,9 +158,7 @@ impl ValidatedGraph {
         }
         let index = BindingIndex::new(&nodes);
         let reachable_seeds = if scope == ValidationScope::Reachable {
-            roots
-                .map(|roots| select_roots(roots, &nodes, &index))
-                .transpose()?
+            roots.map(|roots| select_roots(roots, &nodes, &index)).transpose()?
         } else {
             None
         };
@@ -178,8 +171,7 @@ impl ValidatedGraph {
             exact_keys(&nodes)?;
             validate_primary(&nodes)?;
             let all_seeds = build_all_seeds(&nodes, &edges);
-            let (all_reachable, all_paths) =
-                close_definitions(&definitions, &nodes, &edges, &all_seeds)?;
+            let (all_reachable, all_paths) = close_definitions(&definitions, &nodes, &edges, &all_seeds)?;
             detect_errors_and_cycles(&nodes, &edges, &all_reachable, &all_paths)?;
         }
         let seeds = if let Some(seeds) = reachable_seeds {

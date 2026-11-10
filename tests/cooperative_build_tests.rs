@@ -50,10 +50,7 @@ impl Wake for CountWake {
 }
 
 fn ready<F: Future>(future: F) -> F::Output {
-    match Box::pin(future)
-        .as_mut()
-        .poll(&mut Context::from_waker(Waker::noop()))
-    {
+    match Box::pin(future).as_mut().poll(&mut Context::from_waker(Waker::noop())) {
         Poll::Ready(value) => value,
         Poll::Pending => panic!("expected ready future"),
     }
@@ -147,11 +144,7 @@ fn test_build_yields_to_a_competing_future_before_all_bindings_complete() {
     let mut build = Box::pin(builder.build_all_async());
     let mut competitor = Box::pin(std::future::poll_fn(move |_| {
         let polls = observed_polls.fetch_add(1, Ordering::SeqCst) + 1;
-        if polls == 1 {
-            Poll::Pending
-        } else {
-            Poll::Ready(())
-        }
+        if polls == 1 { Poll::Pending } else { Poll::Ready(()) }
     }));
     let waker = Waker::noop();
     let mut context = Context::from_waker(waker);
@@ -193,16 +186,10 @@ fn test_empty_and_batch_boundary_builds_only_yield_when_more_work_remains() {
         let poll = build.as_mut().poll(&mut context);
 
         if count <= 64 {
-            assert!(
-                poll.is_ready(),
-                "{count} bindings should complete in one poll"
-            );
+            assert!(poll.is_ready(), "{count} bindings should complete in one poll");
             assert_eq!(wake_counter.0.load(Ordering::SeqCst), 0);
         } else {
-            assert!(
-                poll.is_pending(),
-                "65 bindings should yield after the first batch"
-            );
+            assert!(poll.is_pending(), "65 bindings should yield after the first batch");
             assert_eq!(wake_counter.0.load(Ordering::SeqCst), 1);
             assert!(build.as_mut().poll(&mut context).is_ready());
         }
@@ -221,11 +208,7 @@ fn test_factory_failure_after_a_yield_stops_the_remaining_order() {
                 id: Some("service.failure".to_owned()),
                 ..BindingOptions::default()
             },
-            |_| {
-                Box::pin(async {
-                    Err(FactoryError::new(std::io::Error::other("expected failure")))
-                })
-            },
+            |_| Box::pin(async { Err(FactoryError::new(std::io::Error::other("expected failure"))) }),
         )
         .expect("register failing factory");
     let mut build = Box::pin(builder.build_all_async());
@@ -284,10 +267,7 @@ fn test_sync_async_and_alias_bindings_construct_once_and_remain_queryable() {
 
     let application = ready(builder.build_all_async()).expect("build mixed graph");
     let context = application.context();
-    assert_eq!(
-        context.get::<String>().expect("sync value").as_str(),
-        "sync"
-    );
+    assert_eq!(context.get::<String>().expect("sync value").as_str(), "sync");
     assert_eq!(*context.get::<u8>().expect("async value"), 8);
     assert_eq!(context.get::<dyn Projected>().expect("alias").value(), 17);
     assert_eq!(concrete_calls.load(Ordering::SeqCst), 1);
@@ -329,10 +309,7 @@ fn test_cancelled_build_session_aborts_completed_batch_once_and_cleanup_is_obser
     assert!(wake_counter.0.load(Ordering::SeqCst) > 0);
     drop(run);
     assert_eq!(aborts.load(Ordering::SeqCst), 64);
-    assert!(matches!(
-        ready(session.run()),
-        Err(BuildSessionError::Cancelled)
-    ));
+    assert!(matches!(ready(session.run()), Err(BuildSessionError::Cancelled)));
     assert!(
         ready(session.wait_cancelled_cleanup())
             .expect("cleanup report")

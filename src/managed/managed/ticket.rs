@@ -24,8 +24,7 @@ use crate::managed::CleanupFuture;
 ///   `Arc`.
 /// - `K` is the ticket returned on success and later passed to the wait
 ///   callback.
-pub(super) type TicketRequest<T, K> =
-    Box<dyn FnOnce(Arc<T>) -> Result<K, CleanupError> + Send + 'static>;
+pub(super) type TicketRequest<T, K> = Box<dyn FnOnce(Arc<T>) -> Result<K, CleanupError> + Send + 'static>;
 
 /// Stores a request ticket or returns it for disposal when waiting already
 /// began. Any replaced ticket is dropped by the caller after the lock is
@@ -41,9 +40,7 @@ pub(super) type TicketRequest<T, K> =
 /// the ticket produced by a request.
 fn store<K>(state: &Mutex<TicketState<K>>, ticket: K) {
     let discarded = {
-        let mut state = state
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut state = state.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         if state.wait_started {
             Some(ticket)
         } else {
@@ -64,9 +61,7 @@ fn store<K>(state: &Mutex<TicketState<K>>, ticket: K) {
 ///
 /// `state` tracks whether waiting started and any pending ticket.
 fn take<K>(state: &Mutex<TicketState<K>>) -> Option<K> {
-    let mut state = state
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut state = state.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     state.wait_started = true;
     state.pending.take()
 }
@@ -94,12 +89,7 @@ fn take<K>(state: &Mutex<TicketState<K>>) -> Option<K> {
 ///
 /// A `Managed<T>` whose cleanup actions coordinate request tickets with the
 /// wait callback.
-pub(super) fn adapt<T, K, A, W>(
-    value: Arc<T>,
-    abort: A,
-    graceful: Option<TicketRequest<T, K>>,
-    wait: W,
-) -> Managed<T>
+pub(super) fn adapt<T, K, A, W>(value: Arc<T>, abort: A, graceful: Option<TicketRequest<T, K>>, wait: W) -> Managed<T>
 where
     T: ?Sized + Send + Sync + 'static,
     K: Send + 'static,

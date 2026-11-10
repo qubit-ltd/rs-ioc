@@ -75,18 +75,14 @@ impl Timers {
     /// Supplies distinct grace and termination budgets with one gate per call.
     pub fn policy(&self) -> WaitPolicy {
         let timers = self.clone();
-        WaitPolicy::bounded(
-            Duration::from_secs(13),
-            Duration::from_secs(7),
-            move |duration| {
-                let gate = Gate::default();
-                timers.calls.lock().expect("timers lock").push(TimerCall {
-                    duration,
-                    gate: gate.clone(),
-                });
-                Box::pin(gate)
-            },
-        )
+        WaitPolicy::bounded(Duration::from_secs(13), Duration::from_secs(7), move |duration| {
+            let gate = Gate::default();
+            timers.calls.lock().expect("timers lock").push(TimerCall {
+                duration,
+                gate: gate.clone(),
+            });
+            Box::pin(gate)
+        })
     }
 
     /// Supplies graceful, termination, and overall budgets through one gate
@@ -129,9 +125,7 @@ impl Timers {
 // Dropping this borrowed future models cancellation; the handle must retain its
 // work.
 pub fn poll_once<F: Future>(future: F) -> Poll<F::Output> {
-    pin!(future)
-        .as_mut()
-        .poll(&mut Context::from_waker(Waker::noop()))
+    pin!(future).as_mut().poll(&mut Context::from_waker(Waker::noop()))
 }
 
 /// Extracts a synchronously available outcome without introducing a runtime.

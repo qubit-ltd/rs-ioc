@@ -83,11 +83,7 @@ impl FactoryError {
     /// Returns a wrapper that additionally carries `Some` read context with
     /// the copied key and target.
     #[cfg(feature = "config")]
-    pub(crate) fn config_read<E: Error + Send + Sync + 'static>(
-        source: E,
-        path_key: &str,
-        target: &str,
-    ) -> Self {
+    pub(crate) fn config_read<E: Error + Send + Sync + 'static>(source: E, path_key: &str, target: &str) -> Self {
         Self {
             source: Box::new(source),
             config_read: Some(ConfigReadContext {

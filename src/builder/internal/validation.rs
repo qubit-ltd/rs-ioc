@@ -177,8 +177,7 @@ pub(crate) fn validate_dependencies(
     let mut seen = HashSet::with_capacity(dependencies.len());
     for dependency in dependencies {
         if let Some(id) = dependency.id() {
-            BindingId::parse(id)
-                .map_err(|error| RegistrationError::InvalidBindingId { error, definition })?;
+            BindingId::parse(id).map_err(|error| RegistrationError::InvalidBindingId { error, definition })?;
         }
         if !seen.insert(dependency) {
             return Err(RegistrationError::DuplicateDependency {

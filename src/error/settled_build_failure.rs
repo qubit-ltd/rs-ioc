@@ -60,10 +60,7 @@ impl SettledBuildFailure {
     /// `cause` is the construction error. `cleanup_report` is the completed
     /// rollback observation, if cleanup was owned.
     pub(crate) fn new(cause: BuildError, cleanup_report: Option<ShutdownReport>) -> Self {
-        Self {
-            cause,
-            cleanup_report,
-        }
+        Self { cause, cleanup_report }
     }
 
     /// Returns the original graph, configuration, or factory error.

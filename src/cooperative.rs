@@ -7,7 +7,8 @@
 // =============================================================================
 //! Private cooperative scheduling helpers for long-running operations.
 
-/// Maximum number of completed work items before an asynchronous operation yields.
+/// Maximum number of completed work items before an asynchronous operation
+/// yields.
 pub(crate) const BATCH_SIZE: usize = 64;
 
 /// Yields once to the executor, then completes when polled again.

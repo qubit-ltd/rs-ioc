@@ -63,11 +63,7 @@ pub fn get_value<T: FromConfig>(config: &Config, path: &str) -> Result<T, Factor
 /// Returns [`FactoryError`] with `path` and `target` context when the path is
 /// absent or conversion fails.
 #[doc(hidden)]
-pub fn get_value_for<T: FromConfig>(
-    config: &Config,
-    path: &str,
-    target: &str,
-) -> Result<T, FactoryError> {
+pub fn get_value_for<T: FromConfig>(config: &Config, path: &str, target: &str) -> Result<T, FactoryError> {
     config
         .get::<T>(path)
         .map_err(|error| FactoryError::config_read(error, path, target))
@@ -107,10 +103,7 @@ pub fn get_value_for<T: FromConfig>(
 /// Returns [`FactoryError`] when the subtree is absent or cannot be
 /// deserialized as `T`. Unknown-field behavior and diagnostic path guarantees
 /// follow the target's Serde deserializer as described above.
-pub fn deserialize_properties<T: DeserializeOwned>(
-    config: &Config,
-    prefix: &str,
-) -> Result<T, FactoryError> {
+pub fn deserialize_properties<T: DeserializeOwned>(config: &Config, prefix: &str) -> Result<T, FactoryError> {
     config.deserialize::<T>(prefix).map_err(FactoryError::new)
 }
 

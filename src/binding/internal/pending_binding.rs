@@ -151,12 +151,7 @@ impl PendingBinding {
     /// The staged binding carries an erasing future. Construction and any
     /// [`FactoryError`] are not observable here: they appear only when the
     /// graph first polls that future while building asynchronously.
-    pub(crate) fn async_factory<T, F>(
-        key: BindingKey,
-        primary: bool,
-        order: i32,
-        factory: F,
-    ) -> Self
+    pub(crate) fn async_factory<T, F>(key: BindingKey, primary: bool, order: i32, factory: F) -> Self
     where
         T: ?Sized + Send + Sync + 'static,
         F: FnOnce(BuildContext) -> FactoryFuture<T> + Send + 'static,
@@ -203,12 +198,7 @@ impl PendingBinding {
     ///   Sync + 'static`.
     /// * `F` — Sendable one-shot factory returning a managed instance or a
     ///   deferred factory error.
-    pub(crate) fn managed_sync_factory<T, F>(
-        key: BindingKey,
-        primary: bool,
-        order: i32,
-        factory: F,
-    ) -> Self
+    pub(crate) fn managed_sync_factory<T, F>(key: BindingKey, primary: bool, order: i32, factory: F) -> Self
     where
         T: ?Sized + Send + Sync + 'static,
         F: FnOnce(BuildContext) -> Result<Managed<T>, FactoryError> + Send + 'static,
@@ -253,12 +243,7 @@ impl PendingBinding {
     /// The staged binding carries an erasing future. Construction and any
     /// [`FactoryError`] are not observable here: they appear only when the
     /// graph first polls that future while building asynchronously.
-    pub(crate) fn managed_async_factory<T, F>(
-        key: BindingKey,
-        primary: bool,
-        order: i32,
-        factory: F,
-    ) -> Self
+    pub(crate) fn managed_async_factory<T, F>(key: BindingKey, primary: bool, order: i32, factory: F) -> Self
     where
         T: ?Sized + Send + Sync + 'static,
         F: FnOnce(BuildContext) -> ManagedFactoryFuture<T> + Send + 'static,
@@ -308,13 +293,7 @@ impl PendingBinding {
     ///   be `Send + Sync + 'static`.
     /// * `F` — Shared projection from the concrete `Arc<T>` to the alias
     ///   `Arc<U>`.
-    pub(crate) fn alias<T, U, F>(
-        key: BindingKey,
-        target: BindingKey,
-        primary: bool,
-        order: i32,
-        project: F,
-    ) -> Self
+    pub(crate) fn alias<T, U, F>(key: BindingKey, target: BindingKey, primary: bool, order: i32, project: F) -> Self
     where
         T: ?Sized + Send + Sync + 'static,
         U: ?Sized + Send + Sync + 'static,
