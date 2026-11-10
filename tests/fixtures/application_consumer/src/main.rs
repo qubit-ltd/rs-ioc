@@ -36,9 +36,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     let result = runtime.block_on(services.spawn_io(async { Ok::<u8, io::Error>(43) })?)?;
     assert_eq!(result, 43);
     // This blocking legacy operation belongs to the caller, never Managed abort.
-    bus.shutdown(EventBusShutdownMode::Graceful {
+    let event_bus_report = bus.shutdown(EventBusShutdownMode::Graceful {
         timeout: Duration::from_secs(5),
     })?;
+    assert_eq!(
+        event_bus_report.outcome,
+        qubit_event_bus::spi::ShutdownOutcome::Complete,
+        "{event_bus_report:?}"
+    );
     services.shutdown();
     runtime.block_on(services.await_termination());
     let mut shutdown = application.begin_shutdown(ShutdownMode::Immediate);

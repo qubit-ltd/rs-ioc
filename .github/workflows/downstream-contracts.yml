@@ -29,7 +29,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
           repository: qubit-ltd/rs-config
-          ref: 68a331501cdd7911964dd2399e6fc0aee39f8527
+          ref: 98efea94b2d5b83c9f26f230d75e6cde202e1931
           path: rs-config
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:

@@ -12,14 +12,17 @@ Both wrappers explicitly name their library `ioc_application_consumer`.
 | --- | --- | --- |
 | rs-execution-services | c04d5d112dbf0717d44bfd9786109f84ae3cc214 | Original consumer and execution services 0.10.0 |
 | rs-event-bus | f19afc39f82b402b9793a34b8b0f0f23d2364dfe | Historical EventBus 0.15.0 |
-| rs-config | 68a331501cdd7911964dd2399e6fc0aee39f8527 | Recorded checkout; IoC resolves locked crates.io qubit-config 0.14.3 |
+| rs-config | 98efea94b2d5b83c9f26f230d75e6cde202e1931 | qubit-config 0.15.0 required by the current IoC manifest |
 | rs-fs-registry | d3a6cacbc05bea970175db9cf6211680aa39c87c | Historical registry 0.7.2 |
 | rs-ioc | Revision under test | Current Application/BuildFailure API |
 
 The original lane declared/locked EventBus 0.17.0 despite pinning a repository
-whose package is 0.15.0. This fixture corrects its constraint to 0.15 and changes
-only that package version in the historical lock; all other locked registry
-versions/checksums are retained. It does not upgrade the historical checkout.
+whose package is 0.15.0. This fixture adapts its constraint and lockfile to use
+the pinned package. The workflow also pins a local `rs-fs-registry` checkout at
+0.7.2, while this fixture had required and locked 0.8.0. Its path dependency
+constraint and lockfile now resolve against that pinned historical package and
+its compatible dependency set. These compatibility adaptations do not upgrade
+the historical consumer source or sibling checkout revisions.
 
 ## Ownership adaptation and coverage
 
