@@ -195,6 +195,163 @@ fn test_graph_optional_and_all_allow_empty_and_add_matched_edges() {
 }
 
 #[test]
+fn test_graph_reachable_and_all_active_resolve_the_same_reachable_requests() {
+    let definitions = || {
+        let mut root = instance(
+            "A",
+            A,
+            vec![
+                Dependency::of::<B>(),
+                Dependency::with_id::<B>("named"),
+                Dependency::all::<C>(),
+                Dependency::optional::<u32>(),
+            ],
+            None,
+            false,
+            0,
+            None,
+        );
+        root.add_alias(PendingBinding::alias::<String, String, _>(
+            BindingKey::of::<String>(Some(BindingId::parse("alias").expect("valid ID"))),
+            BindingKey::of::<String>(Some(BindingId::parse("target").expect("valid ID"))),
+            false,
+            0,
+            |value| value,
+        ));
+        vec![
+            root,
+            instance("primary", B, vec![], Some("primary"), true, 0, None),
+            instance("named", B, vec![], Some("named"), false, 0, None),
+            instance("z", C, vec![], Some("z"), false, 1, None),
+            instance("a", C, vec![], Some("a"), false, -1, None),
+            instance("target", String::from("target"), vec![], Some("target"), false, 0, None),
+        ]
+    };
+    let roots = [Dependency::of::<A>()];
+    let reachable =
+        ValidatedGraph::validate_roots_with_scope(definitions(), &[], Some(&roots), ValidationScope::Reachable)
+            .expect("reachable graph validates");
+    let all_active =
+        ValidatedGraph::validate_roots_with_scope(definitions(), &[], Some(&roots), ValidationScope::AllActive)
+            .expect("all-active graph validates");
+
+    let ordered_keys = |graph: &ValidatedGraph| {
+        graph
+            .order
+            .iter()
+            .map(|location| {
+                graph.definitions[location.definition].bindings[location.binding]
+                    .key
+                    .clone()
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(ordered_keys(&reachable), ordered_keys(&all_active));
+    assert!(ordered_keys(&reachable).contains(&BindingKey::of::<String>(Some(
+        BindingId::parse("alias").expect("valid ID"),
+    ))));
+    assert_eq!(reachable.resolved.len(), all_active.resolved.len());
+    for (reachable_requests, all_active_requests) in reachable.resolved.iter().zip(&all_active.resolved) {
+        assert_eq!(reachable_requests.len(), all_active_requests.len());
+        for (reachable_request, all_active_request) in reachable_requests.iter().zip(all_active_requests) {
+            assert_eq!(reachable_request.request, all_active_request.request);
+            assert_eq!(reachable_request.keys, all_active_request.keys);
+        }
+    }
+    assert_eq!(
+        reachable.resolved[0]
+            .iter()
+            .map(|request| request.keys.clone())
+            .collect::<Vec<_>>(),
+        vec![
+            vec![BindingKey::of::<B>(Some(
+                BindingId::parse("primary").expect("valid ID")
+            ))],
+            vec![BindingKey::of::<B>(Some(BindingId::parse("named").expect("valid ID")))],
+            vec![
+                BindingKey::of::<C>(Some(BindingId::parse("a").expect("valid ID"))),
+                BindingKey::of::<C>(Some(BindingId::parse("z").expect("valid ID"))),
+            ],
+            vec![],
+        ]
+    );
+}
+
+#[test]
+fn test_graph_reachable_and_all_active_preserve_dependency_error_details() {
+    let roots = [Dependency::of::<A>()];
+    let missing_request = Dependency::with_id::<B>("missing");
+    let missing_error = |scope| match ValidatedGraph::validate_roots_with_scope(
+        vec![instance(
+            "missing consumer",
+            A,
+            vec![missing_request.clone()],
+            None,
+            false,
+            0,
+            None,
+        )],
+        &[],
+        Some(&roots),
+        scope,
+    ) {
+        Err(BuildError::MissingDependency {
+            dependency,
+            definition,
+            path,
+        }) => (dependency, definition, path),
+        _ => panic!("expected a missing dependency"),
+    };
+    let reachable_missing = missing_error(ValidationScope::Reachable);
+    let all_active_missing = missing_error(ValidationScope::AllActive);
+    assert_eq!(reachable_missing, all_active_missing);
+    assert_eq!(reachable_missing.0, missing_request);
+    assert_eq!(reachable_missing.1, source("missing consumer"));
+    assert_eq!(reachable_missing.2, vec![BindingKey::of::<A>(None)]);
+
+    let ambiguous_request = Dependency::of::<B>();
+    let ambiguous_error = |scope| match ValidatedGraph::validate_roots_with_scope(
+        vec![
+            instance(
+                "ambiguous consumer",
+                A,
+                vec![ambiguous_request.clone()],
+                None,
+                false,
+                0,
+                None,
+            ),
+            instance("first candidate", B, vec![], Some("first"), false, 0, None),
+            instance("second candidate", B, vec![], Some("second"), false, 0, None),
+        ],
+        &[],
+        Some(&roots),
+        scope,
+    ) {
+        Err(BuildError::AmbiguousBinding {
+            dependency,
+            definition,
+            candidates,
+            path,
+        }) => (dependency, definition, candidates, path),
+        _ => panic!("expected an ambiguous dependency"),
+    };
+    let reachable_ambiguous = ambiguous_error(ValidationScope::Reachable);
+    let all_active_ambiguous = ambiguous_error(ValidationScope::AllActive);
+    assert_eq!(reachable_ambiguous, all_active_ambiguous);
+    assert_eq!(reachable_ambiguous.0, ambiguous_request);
+    assert_eq!(reachable_ambiguous.1, source("ambiguous consumer"));
+    assert_eq!(
+        reachable_ambiguous.2,
+        vec![
+            BindingKey::of::<B>(Some(BindingId::parse("first").expect("valid ID"))),
+            BindingKey::of::<B>(Some(BindingId::parse("second").expect("valid ID"))),
+        ]
+    );
+    assert_eq!(reachable_ambiguous.3, vec![BindingKey::of::<A>(None)]);
+}
+
+#[test]
 fn test_graph_profile_filter_defaults_and_explicit_selection() {
     let cases: [(Option<&str>, &[&str], bool); 6] = [
         (None, &[], true),
