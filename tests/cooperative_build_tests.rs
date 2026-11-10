@@ -137,6 +137,51 @@ fn test_immediately_ready_build_yields_after_one_batch_and_preserves_order() {
 }
 
 #[test]
+fn test_build_yields_to_a_competing_future_before_all_bindings_complete() {
+    const BINDING_COUNT: usize = 257;
+
+    let build_calls = Arc::new(AtomicUsize::new(0));
+    let builder = immediate_builder(BINDING_COUNT, Arc::clone(&build_calls));
+    let competitor_polls = Arc::new(AtomicUsize::new(0));
+    let observed_polls = Arc::clone(&competitor_polls);
+    let mut build = Box::pin(builder.build_all_async());
+    let mut competitor = Box::pin(std::future::poll_fn(move |_| {
+        let polls = observed_polls.fetch_add(1, Ordering::SeqCst) + 1;
+        if polls == 1 {
+            Poll::Pending
+        } else {
+            Poll::Ready(())
+        }
+    }));
+    let waker = Waker::noop();
+    let mut context = Context::from_waker(waker);
+
+    assert!(build.as_mut().poll(&mut context).is_pending());
+    assert_eq!(build_calls.load(Ordering::SeqCst), 64);
+    assert!(competitor.as_mut().poll(&mut context).is_pending());
+    assert!(build_calls.load(Ordering::SeqCst) < BINDING_COUNT);
+
+    assert!(build.as_mut().poll(&mut context).is_pending());
+    assert_eq!(build_calls.load(Ordering::SeqCst), 128);
+    assert!(competitor.as_mut().poll(&mut context).is_ready());
+    assert_eq!(competitor_polls.load(Ordering::SeqCst), 2);
+    assert!(build_calls.load(Ordering::SeqCst) < BINDING_COUNT);
+
+    let mut result = None;
+    for _ in 0..8 {
+        if let Poll::Ready(value) = build.as_mut().poll(&mut context) {
+            result = Some(value);
+            break;
+        }
+    }
+    let application = result
+        .expect("bounded polling completes the build")
+        .expect("build succeeds");
+    assert_eq!(build_calls.load(Ordering::SeqCst), BINDING_COUNT);
+    drop(application);
+}
+
+#[test]
 fn test_empty_and_batch_boundary_builds_only_yield_when_more_work_remains() {
     for count in [0, 1, 63, 64, 65] {
         let calls = Arc::new(AtomicUsize::new(0));
