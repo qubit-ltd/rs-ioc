@@ -8,14 +8,27 @@ on:
 permissions:
   contents: read
 
+defaults:
+  run:
+    working-directory: rs-ioc
+
 jobs:
   macro-package:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          path: rs-ioc
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          repository: qubit-ltd/rs-config
+          ref: 98efea94b2d5b83c9f26f230d75e6cde202e1931
+          path: rs-config
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
         with:
           toolchain: 1.94
+      - name: Validate sibling dependency manifests
+        run: test -f ../rs-config/Cargo.toml && cargo +1.94.0 metadata --locked --no-deps --format-version 1 > /dev/null
       - name: Test proc macro crate directly
         run: cargo +1.94.0 test -p qubit-ioc-macros --locked
 
@@ -23,9 +36,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          path: rs-ioc
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          repository: qubit-ltd/rs-config
+          ref: 98efea94b2d5b83c9f26f230d75e6cde202e1931
+          path: rs-config
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
         with:
           toolchain: 1.94
+      - name: Validate sibling dependency manifests
+        run: test -f ../rs-config/Cargo.toml && cargo +1.94.0 metadata --locked --no-deps --format-version 1 > /dev/null
       - name: Test proc macro coverage gate
         run: python3 -m unittest discover -s .infra/tools/tests -p 'test_check_macro_coverage.py' -v
       - name: Install cargo-llvm-cov
@@ -49,7 +71,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: qubit-ioc-macros-coverage
-          path: target/qubit-ioc-macros-coverage.json
+          path: rs-ioc/target/qubit-ioc-macros-coverage.json
           retention-days: 14
           if-no-files-found: error
 
@@ -63,9 +85,18 @@ jobs:
       CONSUMER_FEATURES: ${{ matrix.consumer-features }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          path: rs-ioc
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          repository: qubit-ltd/rs-config
+          ref: 98efea94b2d5b83c9f26f230d75e6cde202e1931
+          path: rs-config
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
         with:
           toolchain: 1.94
+      - name: Validate sibling dependency manifests
+        run: test -f ../rs-config/Cargo.toml && cargo +1.94.0 metadata --locked --no-deps --format-version 1 > /dev/null
       - name: Test consumer without optional features
         if: env.CONSUMER_FEATURES == ''
         run: cargo +1.94.0 test --manifest-path tests/fixtures/macro_contracts/Cargo.toml --locked
@@ -83,9 +114,18 @@ jobs:
         path-kind: [canonical, renamed, keyword]
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          path: rs-ioc
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          repository: qubit-ltd/rs-config
+          ref: 98efea94b2d5b83c9f26f230d75e6cde202e1931
+          path: rs-config
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
         with:
           toolchain: 1.94
+      - name: Validate sibling dependency manifests
+        run: test -f ../rs-config/Cargo.toml && cargo +1.94.0 metadata --locked --no-deps --format-version 1 > /dev/null
       - name: Test managed paths
         run: cargo +1.94.0 test --manifest-path tests/fixtures/managed_paths/${{ matrix.path-kind }}/Cargo.toml --locked
 
@@ -93,9 +133,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          path: rs-ioc
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          repository: qubit-ltd/rs-config
+          ref: 98efea94b2d5b83c9f26f230d75e6cde202e1931
+          path: rs-config
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
         with:
           toolchain: 1.94
+      - name: Validate sibling dependency manifests
+        run: test -f ../rs-config/Cargo.toml && cargo +1.94.0 metadata --locked --no-deps --format-version 1 > /dev/null
       - name: Document version checker unit tests
         run: python3 -m unittest discover -s .infra/tools/tests -p 'test_check_doc_versions.py' -v
       - name: Check documented package versions
