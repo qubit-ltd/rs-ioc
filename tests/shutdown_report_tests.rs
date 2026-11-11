@@ -11,6 +11,7 @@ mod support;
 use std::error::Error;
 use std::future::poll_fn;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
@@ -258,6 +259,75 @@ fn test_graceful_request_error_aborts_then_waits_with_termination_budget() {
     assert!(error.report().is_complete());
     assert!(error.report().fallbacks().is_empty());
     assert_eq!(tail.load(Ordering::SeqCst), 2);
+}
+
+#[test]
+fn test_graceful_request_failure_only_aborts_current_component() {
+    let actions = Arc::new(Mutex::new(Vec::new()));
+    let consumer_abort_actions = Arc::clone(&actions);
+    let consumer_graceful_actions = Arc::clone(&actions);
+    let consumer_wait_actions = Arc::clone(&actions);
+    let dependency_abort_actions = Arc::clone(&actions);
+    let dependency_graceful_actions = Arc::clone(&actions);
+    let dependency_wait_actions = Arc::clone(&actions);
+    let mut builder = ContainerBuilder::new().wait_policy(WaitPolicy::unbounded());
+    builder
+        .register_managed_factory::<u32, _>(&[], move |_| {
+            Ok(Managed::asynchronous_with_graceful(
+                Arc::new(1),
+                move |_| {
+                    dependency_abort_actions.lock().unwrap().push("dependency_abort");
+                    Ok(())
+                },
+                move |_| {
+                    dependency_graceful_actions.lock().unwrap().push("dependency_graceful");
+                    Ok(())
+                },
+                move |_| {
+                    dependency_wait_actions.lock().unwrap().push("dependency_wait");
+                    Box::pin(async { Ok(()) })
+                },
+            ))
+        })
+        .expect("register dependency");
+    builder
+        .register_managed_factory::<u64, _>(&[Dependency::of::<u32>()], move |_| {
+            Ok(Managed::asynchronous_with_graceful(
+                Arc::new(2),
+                move |_| {
+                    consumer_abort_actions.lock().unwrap().push("consumer_abort");
+                    Ok(())
+                },
+                move |_| {
+                    consumer_graceful_actions.lock().unwrap().push("consumer_graceful");
+                    Err(CleanupError::new(std::io::Error::other("request rejected")))
+                },
+                move |_| {
+                    consumer_wait_actions.lock().unwrap().push("consumer_wait");
+                    Box::pin(async { Ok(()) })
+                },
+            ))
+        })
+        .expect("register consumer");
+    let application = builder.build_all().expect("build application");
+
+    let error = ready(application.begin_shutdown(ShutdownMode::Graceful).wait()).expect_err("graceful request failure");
+    assert_eq!(
+        *actions.lock().unwrap(),
+        [
+            "consumer_graceful",
+            "consumer_abort",
+            "consumer_wait",
+            "dependency_graceful",
+            "dependency_wait",
+        ]
+    );
+    assert_eq!(error.report().mode(), ShutdownMode::Graceful);
+    assert!(error.report().is_complete());
+    assert!(!error.report().is_success());
+    assert_eq!(error.report().failures().len(), 1);
+    assert_eq!(error.report().failures()[0].key, BindingKey::of::<u64>(None));
+    assert_eq!(error.report().failures()[0].phase, ShutdownPhase::RequestGraceful);
 }
 
 #[test]

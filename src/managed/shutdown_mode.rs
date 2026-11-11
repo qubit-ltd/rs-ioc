@@ -9,8 +9,10 @@
 
 /// Selects dependency-preserving graceful shutdown or immediate cancellation.
 ///
-/// The requested mode is retained by the resulting report even when a failing
-/// graceful request upgrades the shutdown to immediate cancellation.
+/// The resulting report retains the requested mode. A failed graceful request
+/// falls back to abort for that component; other components continue graceful
+/// shutdown. Calling `ShutdownHandle::abort()` explicitly upgrades unfinished
+/// shutdown work to immediate cancellation.
 ///
 /// # Examples
 ///
