@@ -121,6 +121,40 @@ The container provides application-wide shared instances. It does not provide pr
 
 Read the [English user guide](doc/user_guide.md) or [中文用户手册](doc/user_guide.zh_CN.md). For shutdown details, see the [English lifecycle guide](doc/lifecycle.md), [中文生命周期指南](doc/lifecycle.zh_CN.md), [English managed adapter guide](doc/managed-adapters.md), and [中文托管资源适配指南](doc/managed-adapters.zh_CN.md). Run `cargo doc --no-deps --open` in this checkout to browse the public API.
 
+## Source checkout prerequisites
+
+Installing the published crate from crates.io is unchanged. Building this
+source checkout uses a Cargo path dependency on the sibling `rs-config`
+repository, so clone both repositories under the same parent directory:
+
+```text
+ioc-source/
+├── rs-ioc/
+└── rs-config/
+```
+
+The `rs-config` revision below is pinned by the IoC contract workflow. These
+commands create fresh clones and check out that dependency revision:
+
+```bash
+mkdir ioc-source
+cd ioc-source
+git clone https://github.com/qubit-ltd/rs-ioc.git rs-ioc
+git clone https://github.com/qubit-ltd/rs-config.git rs-config
+git -C rs-config checkout --detach 98efea94b2d5b83c9f26f230d75e6cde202e1931
+cd rs-ioc
+cargo +1.94.0 metadata --locked --no-deps --format-version 1
+```
+
+If you already have sibling checkouts, verify their layout and the
+`rs-config` revision. Do not overwrite or switch an existing checkout with
+uncommitted changes; use a fresh clone for these commands. To validate a
+specific IoC revision, check out that revision in a fresh `rs-ioc` clone.
+Successful metadata output confirms the manifests load; it does not mean the
+tests passed. The sibling repositories shown here are the prerequisites for
+this workspace, not the complete dependency set of the `rs-execution-services`
+consumer fixture.
+
 ## Testing
 
 ```bash

@@ -84,6 +84,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 从[中文用户手册](doc/user_guide.zh_CN.md)了解安装、构建、诊断和关闭流程，也可阅读[English user guide](doc/user_guide.md)。生命周期和资源适配的详细约定见[生命周期指南](doc/lifecycle.zh_CN.md)、[托管资源适配指南](doc/managed-adapters.zh_CN.md)及其[英文版](doc/managed-adapters.md)。在源码目录运行 `cargo doc --no-deps --open` 查看公开 API 文档；其他可运行示例位于[`examples`](examples/)。
 
+## 源码 checkout 准备
+
+从 crates.io 安装已发布的 crate 不受影响。直接构建本源码 checkout 时，Cargo
+会通过 path 依赖查找相邻的 `rs-config` 仓库，因此需要把两个仓库放在同一父目录下：
+
+```text
+ioc-source/
+├── rs-ioc/
+└── rs-config/
+```
+
+下面固定的 `rs-config` revision 与 IoC 契约工作流一致。命令会新建两个 clone，
+并在依赖仓库中检出该 revision：
+
+```bash
+mkdir ioc-source
+cd ioc-source
+git clone https://github.com/qubit-ltd/rs-ioc.git rs-ioc
+git clone https://github.com/qubit-ltd/rs-config.git rs-config
+git -C rs-config checkout --detach 98efea94b2d5b83c9f26f230d75e6cde202e1931
+cd rs-ioc
+cargo +1.94.0 metadata --locked --no-deps --format-version 1
+```
+
+如果已有并列 checkout，请先核对目录布局和 `rs-config` revision。不要覆盖或切换带有
+未提交修改的现有仓库；上述命令应在新 clone 中执行。要验证某个特定 IoC revision，
+请在新的 `rs-ioc` clone 中检出该 revision。metadata 成功只表示 Cargo 能加载清单，
+不代表测试通过。这里列出的两个 sibling 仓库是本 workspace 的源码准备条件，
+并非 `rs-execution-services` 消费者夹具的全部依赖。
+
 ## 测试
 
 ```bash

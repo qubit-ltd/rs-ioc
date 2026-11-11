@@ -64,6 +64,9 @@ facade 使用宏，由其依赖声明选择宏包；两个包不要求版本号�
 
 ## 测试
 
+执行 `cd ..` 和下面的检查前，也要按[源码 checkout 准备说明](../README.zh_CN.md#源码-checkout-准备)
+准备相邻的 `rs-config` checkout。
+
 以下 workspace 检查需从仓库根目录执行。若当前目录为 `macros`，请先运行
 `cd ..` 切换到上一级：
 

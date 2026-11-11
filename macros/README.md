@@ -74,6 +74,9 @@ packages do not need identical version numbers.
 
 ## Testing
 
+Before running `cd ..` and the checks below, prepare the sibling `rs-config`
+checkout described in the [source checkout prerequisites](../README.md#source-checkout-prerequisites).
+
 Run these workspace checks from the repository root. If your shell is in
 `macros`, first change to its parent directory with `cd ..`:
 
