@@ -17,6 +17,10 @@ use crate::key::BindingKey;
 use crate::options::DefinitionSource;
 use crate::store::ErasedInstance;
 
+mod resolved_requests;
+
+use resolved_requests::ResolvedRequests;
+
 /// Gives one factory access only to the requests it declared at registration.
 ///
 /// # Examples
@@ -42,8 +46,8 @@ pub struct BuildContext {
     values: HashMap<BindingKey, ErasedInstance>,
     /// Definition whose factory is currently running.
     source: DefinitionSource,
-    /// Requests and keys declared and resolved before construction.
-    resolved: Vec<ResolvedDependency>,
+    /// Exact requests and their keys declared and resolved before construction.
+    resolved: ResolvedRequests,
 }
 
 // BuildAccessError preserves the rejected request and its definition source.
@@ -66,10 +70,12 @@ impl BuildContext {
         source: DefinitionSource,
         resolved: Vec<ResolvedDependency>,
     ) -> Self {
+        let requests = ResolvedRequests::new(resolved);
+
         Self {
             values,
             source,
-            resolved,
+            resolved: requests,
         }
     }
 
@@ -204,7 +210,7 @@ impl BuildContext {
         Ok(keys.iter().map(|key| self.read::<T>(key)).collect())
     }
 
-    /// Finds only the exact request whose keys were fixed during graph
+    /// Finds only the exact declared request whose keys were fixed during graph
     /// validation.
     ///
     /// # Parameters
@@ -220,14 +226,17 @@ impl BuildContext {
     /// Returns [`BuildAccessError::UndeclaredDependency`] when the factory did
     /// not declare this exact request.
     fn keys_for(&self, request: &Dependency) -> Result<&[BindingKey], BuildAccessError> {
-        self.resolved
-            .iter()
-            .find(|entry| &entry.request == request)
-            .map(|entry| entry.keys.as_slice())
-            .ok_or_else(|| BuildAccessError::UndeclaredDependency {
-                definition: self.source,
-                dependency: request.clone(),
-            })
+        let keys = match &self.resolved {
+            ResolvedRequests::Linear(entries) => entries
+                .iter()
+                .find(|entry| &entry.request == request)
+                .map(|entry| entry.keys.as_slice()),
+            ResolvedRequests::Indexed(entries) => entries.get(request).map(Vec::as_slice),
+        };
+        keys.ok_or_else(|| BuildAccessError::UndeclaredDependency {
+            definition: self.source,
+            dependency: request.clone(),
+        })
     }
 
     /// Clones a graph-guaranteed value from this factory's dependency snapshot.

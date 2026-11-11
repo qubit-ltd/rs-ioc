@@ -19,7 +19,7 @@ use qubit_ioc::BindingOptions;
 use qubit_ioc::ContainerBuilder;
 use qubit_ioc::Dependency;
 
-pub(super) const SIZES: [usize; 8] = [1, 2, 4, 8, 16, 64, 256, 1_024];
+pub(super) const SIZES: [usize; 9] = [1, 2, 4, 8, 16, 32, 64, 256, 1_024];
 const SAMPLES: usize = 5;
 
 /// Builds and verifies each independent-request workload without timing it.
