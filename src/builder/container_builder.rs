@@ -987,7 +987,8 @@ impl ContainerBuilder {
     ///
     /// Settled rollback observation applies to ordinary returned build
     /// failures; it does not catch panics or guarantee rollback waiting during
-    /// unwinding. See [`Self::build_all`] for panic and unwind-cleanup behavior.
+    /// unwinding. See [`Self::build_all`] for panic and unwind-cleanup
+    /// behavior.
     pub async fn build_all_settled(self) -> Result<Application, SettledBuildFailure> {
         match self.build_all() {
             Ok(application) => Ok(application),
@@ -1106,7 +1107,8 @@ impl ContainerBuilder {
     ///
     /// Settled rollback observation applies to ordinary returned build
     /// failures; it does not catch panics or guarantee rollback waiting during
-    /// unwinding. See [`Self::build_async`] for panic and unwind-cleanup behavior.
+    /// unwinding. See [`Self::build_async`] for panic and unwind-cleanup
+    /// behavior.
     pub async fn build_async_settled(self) -> Result<Application, SettledBuildFailure> {
         match self.build_async().await {
             Ok(application) => Ok(application),
@@ -1150,7 +1152,8 @@ impl ContainerBuilder {
     ///
     /// Settled rollback observation applies to ordinary returned build
     /// failures; it does not catch panics or guarantee rollback waiting during
-    /// unwinding. See [`Self::build_all_async`] for panic and unwind-cleanup behavior.
+    /// unwinding. See [`Self::build_all_async`] for panic and unwind-cleanup
+    /// behavior.
     pub async fn build_all_async_settled(self) -> Result<Application, SettledBuildFailure> {
         match self.build_all_async().await {
             Ok(application) => Ok(application),
