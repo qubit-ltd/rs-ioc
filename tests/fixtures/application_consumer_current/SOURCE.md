@@ -1,7 +1,7 @@
 # Current downstream consumer
 
 This wrapper compiles the current sibling `rs-execution-services` consumer's
-library, binary, and four public integration-test files. It uses the explicit
+library, binary, and five public integration-test files. It uses the explicit
 library name `ioc_application_consumer`; consumer source is not copied into this
 historical fixture. Both consumers disable `qubit-ioc` default features, and the
 current lane checks that the resolved direct feature set remains empty.
@@ -18,9 +18,10 @@ revision passed.
 This wrapper lockfile is aligned with the current lane's pinned sibling
 manifests and registry versions; keep it synchronized when those pins change.
 
-The wrapper registers four external integration-test targets, which must be
-present and all their tests must be discovered and run. Zero-test unit targets
-are expected. Run the feature-isolation check and locked wrapper commands from
+The wrapper registers five external integration-test targets, including the
+mixed execution-domain rollback suite with six regression tests. Every target
+must be present and all its tests must be discovered and run. Zero-test unit
+targets are expected. Run the feature-isolation check and locked wrapper commands from
 the `rs-ioc` checkout:
 
 ```sh

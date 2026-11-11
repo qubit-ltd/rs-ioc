@@ -41,6 +41,11 @@ path = "../../../../rs-execution-services/tests/fixtures/ioc_application_consume
 name = "shutdown_policy_tests"
 path = "../../../../rs-execution-services/tests/fixtures/ioc_application_consumer/tests/shutdown_policy_tests.rs"
 
+[[test]]
+name = "mixed_domain_rollback_tests"
+path = "../../../../rs-execution-services/tests/fixtures/ioc_application_consumer/tests/mixed_domain_rollback_tests.rs"
+
 [patch.crates-io]
 qubit-fs-registry = { path = "../../../../rs-fs-registry" }
 qubit-fs = { path = "../../../../rs-fs" }
+qubit-executor = { path = "../../../../rs-executor" }

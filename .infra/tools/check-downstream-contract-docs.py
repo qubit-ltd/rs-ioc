@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Check consistency between current downstream manifests and their source notes."""
+"""Check consistency between current downstream manifests and their source notes.
+
+Different version requirements normalize only when both are stable versions with
+one to three decimal components, an optional leading caret, and no leading
+zeroes (except for the component ``0``). Other differing forms remain strict
+mismatches; identical strings always match.
+"""
 
 import argparse
 import re
@@ -24,6 +30,39 @@ VERSION_STATEMENT_RE = re.compile(
     re.IGNORECASE,
 )
 MARKDOWN_LINK_RE = re.compile(r"(?<!!)\[[^\]]*\]\(([^)]+)\)")
+STABLE_VERSION_REQUIREMENT_RE = re.compile(r"\^?(0|[1-9][0-9]*)(?:\.(0|[1-9][0-9]*))?(?:\.(0|[1-9][0-9]*))?\Z")
+
+
+def equivalent_version_requirements(left: str, right: str) -> bool:
+    """Compare identical requirements or equivalent bounded stable caret forms.
+
+    Differing strings normalize only for stable one-to-three-component decimal
+    forms, optionally prefixed by ``^``, with no leading zeroes except ``0``.
+    All other differing forms remain mismatches.
+    """
+    if left == right:
+        return True
+
+    def bounds(requirement):
+        match = STABLE_VERSION_REQUIREMENT_RE.fullmatch(requirement)
+        if match is None:
+            return None
+        explicit = [int(part) for part in match.groups() if part is not None]
+        lower = tuple(explicit + [0] * (3 - len(explicit)))
+        upper = list(lower)
+        first_nonzero = next((index for index, value in enumerate(explicit) if value != 0), None)
+        if first_nonzero is None:
+            # Zero versions use the precision of the written requirement.
+            upper[len(explicit) - 1] += 1
+        else:
+            upper[first_nonzero] += 1
+            for index in range(first_nonzero + 1, 3):
+                upper[index] = 0
+        return lower, tuple(upper)
+
+    left_bounds = bounds(left)
+    right_bounds = bounds(right)
+    return left_bounds is not None and left_bounds == right_bounds
 
 
 def _read_manifest(path, errors):
@@ -34,6 +73,72 @@ def _read_manifest(path, errors):
     except (tomllib.TOMLDecodeError, UnicodeError) as error:
         errors.append(f"{path}: cannot parse TOML: {error}")
     return None
+
+
+def _test_targets(manifest_path, manifest, errors, label):
+    """Return Cargo test target names mapped to normalized source paths."""
+    package = manifest.get("package", {})
+    if not isinstance(package, dict):
+        errors.append(f"{manifest_path}: [package] must be a table")
+        package = {}
+    targets = []
+    if package.get("autotests", True) is not False:
+        tests_dir = manifest_path.parent / "tests"
+        if tests_dir.is_dir():
+            try:
+                targets.extend((path.stem, path) for path in sorted(tests_dir.glob("*.rs")))
+                targets.extend((path.parent.name, path) for path in sorted(tests_dir.glob("*/main.rs")))
+            except OSError as error:
+                errors.append(f"{manifest_path}: cannot discover {label} test targets: {error}")
+
+    explicit = manifest.get("test", [])
+    if not isinstance(explicit, list):
+        errors.append(f"{manifest_path}: [[test]] entries must be tables")
+        explicit = []
+    for index, entry in enumerate(explicit):
+        if not isinstance(entry, dict):
+            errors.append(f"{manifest_path}: [[test]] entry {index + 1} must be a table")
+            continue
+        name = entry.get("name")
+        path = entry.get("path")
+        if not isinstance(name, str) or not name:
+            errors.append(f"{manifest_path}: [[test]] entry {index + 1} has no valid name")
+            continue
+        if path is None:
+            path = f"tests/{name}.rs"
+        elif not isinstance(path, str) or not path:
+            errors.append(f"{manifest_path}: [[test]] target {name!r} has no valid path")
+            continue
+        targets.append((name, manifest_path.parent / path))
+
+    by_name = {}
+    for name, path in targets:
+        normalized = path.resolve()
+        by_name.setdefault(name, []).append(normalized)
+        if not normalized.is_file():
+            errors.append(f"{manifest_path}: {label} test target {name!r} source does not exist: {normalized}")
+    for name, paths in by_name.items():
+        if len(paths) > 1:
+            rendered = ", ".join(str(path) for path in paths)
+            errors.append(f"{manifest_path}: duplicate {label} test target name {name!r}: {rendered}")
+    return {name: paths[0] for name, paths in by_name.items() if len(paths) == 1}
+
+
+def _check_test_targets(overlay_path, overlay, native_path, native, errors):
+    if overlay is None or native is None:
+        return
+    overlay_targets = _test_targets(overlay_path, overlay, errors, "wrapper")
+    native_targets = _test_targets(native_path, native, errors, "native")
+    for name in sorted(native_targets.keys() - overlay_targets.keys()):
+        errors.append(f"wrapper is missing native test target {name!r} at {native_targets[name]}")
+    for name in sorted(overlay_targets.keys() - native_targets.keys()):
+        errors.append(f"wrapper has extra test target {name!r} at {overlay_targets[name]}")
+    for name in sorted(native_targets.keys() & overlay_targets.keys()):
+        if native_targets[name] != overlay_targets[name]:
+            errors.append(
+                f"test target {name!r} source route mismatch: native={native_targets[name]}, "
+                f"wrapper={overlay_targets[name]}"
+            )
 
 
 def _markdown_targets(source_text, source_path):
@@ -56,6 +161,7 @@ def check(root: Path, source: Path, overlay: Path, native: Path) -> list[str]:
     errors = []
     overlay_data = _read_manifest(overlay, errors)
     native_data = _read_manifest(native, errors)
+    _check_test_targets(overlay, overlay_data, native, native_data, errors)
     versions = {}
 
     for path, manifest in ((overlay, overlay_data), (native, native_data)):
@@ -76,7 +182,7 @@ def check(root: Path, source: Path, overlay: Path, native: Path) -> list[str]:
             versions.setdefault(name, {})[path] = str(value)
 
     for name, observed in versions.items():
-        if len(observed) == 2 and len(set(observed.values())) != 1:
+        if len(observed) == 2 and not equivalent_version_requirements(*observed.values()):
             details = ", ".join(f"{path}={value!r}" for path, value in observed.items())
             errors.append(f"dependency {name} version mismatch: {details}")
 

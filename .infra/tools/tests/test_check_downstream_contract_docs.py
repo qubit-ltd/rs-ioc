@@ -26,7 +26,14 @@ class CheckDownstreamContractDocsTests(unittest.TestCase):
         self.overlay.parent.mkdir(parents=True)
         self.native.parent.mkdir(parents=True)
         self.overlay.write_text(self.manifest("0.20.1"), encoding="utf-8")
-        self.native.write_text(self.manifest("0.20.1"), encoding="utf-8")
+        self.native.write_text(self.manifest("0.20.1") + '\n[package]\nautotests = true\n', encoding="utf-8")
+        (self.native.parent / "tests").mkdir()
+        (self.native.parent / "tests" / "smoke.rs").write_text("#[test] fn smoke() {}\n", encoding="utf-8")
+        self.overlay.write_text(
+            self.manifest("0.20.1")
+            + '\n[[test]]\nname = "smoke"\npath = "../native/tests/smoke.rs"\n',
+            encoding="utf-8",
+        )
         self.source.write_text(
             "See [workflow](.github/workflows/downstream-contracts.yml) and "
             "[manifest](overlay/Cargo.toml).\n",
@@ -46,6 +53,10 @@ class CheckDownstreamContractDocsTests(unittest.TestCase):
 
     def run_check(self):
         return checker.check(self.root, self.source, self.overlay, self.native)
+
+    def set_event_bus_versions(self, overlay_version, native_version):
+        for path, version in ((self.overlay, overlay_version), (self.native, native_version)):
+            path.write_text(self.manifest(version), encoding="utf-8")
 
     def test_normal_checkout_finds_sibling_manifest(self):
         checkout_parent = self.root / "checkout-parent"
@@ -86,6 +97,109 @@ class CheckDownstreamContractDocsTests(unittest.TestCase):
     def test_matching_manifests_and_relative_links_pass(self):
         self.assertEqual([], self.run_check())
 
+    def test_native_test_target_must_be_registered_in_wrapper(self):
+        (self.native.parent / "tests" / "mixed_domain_rollback_tests.rs").write_text("", encoding="utf-8")
+
+        errors = self.run_check()
+
+        self.assertTrue(any("mixed_domain_rollback_tests" in error and "tests/" in error for error in errors))
+
+        self.overlay.write_text(
+            self.manifest("0.20.1")
+            + '\n[[test]]\nname = "smoke"\npath = "../native/tests/smoke.rs"\n'
+            + '\n[[test]]\nname = "mixed_domain_rollback_tests"\n'
+            + 'path = "../native/tests/mixed_domain_rollback_tests.rs"\n',
+            encoding="utf-8",
+        )
+        self.assertEqual([], self.run_check())
+
+    def test_discovery_rules_and_target_errors(self):
+        tests_dir = self.native.parent / "tests"
+        (tests_dir / "group").mkdir()
+        (tests_dir / "group" / "main.rs").write_text("", encoding="utf-8")
+        (tests_dir / "support").mkdir()
+        (tests_dir / "support" / "helper.rs").write_text("", encoding="utf-8")
+        self.overlay.write_text(
+            self.manifest("0.20.1")
+            + '\n[[test]]\nname = "smoke"\npath = "../native/tests/smoke.rs"\n'
+            + '\n[[test]]\nname = "group"\npath = "../native/tests/group/main.rs"\n',
+            encoding="utf-8",
+        )
+        self.assertEqual([], self.run_check())
+
+        self.overlay.write_text(
+            self.manifest("0.20.1")
+            + '\n[[test]]\nname = "smoke"\npath = "../native/tests/missing.rs"\n',
+            encoding="utf-8",
+        )
+        errors = self.run_check()
+        self.assertTrue(any("source does not exist" in error for error in errors))
+        self.assertTrue(any("missing native test target 'group'" in error for error in errors))
+
+        self.overlay.write_text(
+            self.manifest("0.20.1")
+            + '\n[[test]]\nname = "smoke"\npath = "../native/tests/smoke.rs"\n'
+            + '\n[[test]]\nname = "smoke"\npath = "../native/tests/group/main.rs"\n',
+            encoding="utf-8",
+        )
+        self.assertTrue(any("duplicate wrapper test target name 'smoke'" in error for error in self.run_check()))
+
+        self.overlay.write_text(
+            self.manifest("0.20.1")
+            + '\n[[test]]\nname = "smoke"\npath = "../native/tests/group/main.rs"\n'
+            + '\n[[test]]\nname = "group"\npath = "../native/tests/group/main.rs"\n',
+            encoding="utf-8",
+        )
+        self.assertTrue(any("source route mismatch" in error for error in self.run_check()))
+
+        self.overlay.write_text(
+            self.manifest("0.20.1")
+            + '\n[[test]]\nname = "smoke"\npath = "../native/tests/smoke.rs"\n'
+            + '\n[[test]]\nname = "wrapper_only"\npath = "../native/tests/smoke.rs"\n',
+            encoding="utf-8",
+        )
+        self.assertTrue(any("extra test target 'wrapper_only'" in error for error in self.run_check()))
+
+    def test_autotests_false_disables_discovery_but_keeps_explicit_targets(self):
+        self.native.write_text(self.manifest("0.20.1") + '\n[package]\nautotests = false\n', encoding="utf-8")
+        self.overlay.write_text(self.manifest("0.20.1"), encoding="utf-8")
+        self.assertEqual([], self.run_check())
+
+        self.native.write_text(
+            self.manifest("0.20.1")
+            + '\n[package]\nautotests = false\n'
+            + '\n[[test]]\nname = "smoke"\npath = "tests/smoke.rs"\n',
+            encoding="utf-8",
+        )
+        self.overlay.write_text(
+            self.manifest("0.20.1")
+            + '\n[[test]]\nname = "smoke"\npath = "../native/tests/smoke.rs"\n',
+            encoding="utf-8",
+        )
+        self.assertEqual([], self.run_check())
+
+    def test_explicit_targets_without_paths_use_cargo_inferred_test_paths(self):
+        (self.overlay.parent / "tests").mkdir()
+        (self.overlay.parent / "tests" / "smoke.rs").symlink_to(self.native.parent / "tests" / "smoke.rs")
+        self.native.write_text(
+            self.manifest("0.20.1")
+            + '\n[package]\nautotests = false\n'
+            + '\n[[test]]\nname = "smoke"\n',
+            encoding="utf-8",
+        )
+        self.overlay.write_text(
+            self.manifest("0.20.1")
+            + '\n[package]\nautotests = false\n'
+            + '\n[[test]]\nname = "smoke"\n',
+            encoding="utf-8",
+        )
+
+        self.assertEqual([], self.run_check())
+
+        (self.overlay.parent / "tests" / "smoke.rs").unlink()
+        errors = self.run_check()
+        self.assertTrue(any("wrapper test target 'smoke' source does not exist" in error for error in errors))
+
     def test_mismatched_event_bus_version_reports_both_values(self):
         self.native.write_text(self.manifest("0.20.0"), encoding="utf-8")
 
@@ -93,6 +207,63 @@ class CheckDownstreamContractDocsTests(unittest.TestCase):
 
         self.assertTrue(any("qubit-event-bus" in error for error in errors))
         self.assertTrue(any("0.20.1" in error and "0.20.0" in error for error in errors))
+
+    def test_equivalent_version_requirements_pass_through_run_check(self):
+        equivalent_pairs = (
+            ("0.21", "^0.21"),
+            ("0.4.0", "^0.4"),
+            ("1", "^1.0.0"),
+            ("0.0", "^0.0"),
+        )
+        for overlay_version, native_version in equivalent_pairs:
+            with self.subTest(overlay=overlay_version, native=native_version):
+                self.set_event_bus_versions(overlay_version, native_version)
+                self.assertFalse(
+                    any("qubit-event-bus version mismatch" in error for error in self.run_check())
+                )
+
+    def test_different_version_ranges_fail_through_run_check(self):
+        different_pairs = (
+            ("0", "0.0"),
+            ("0.0", "0.0.0"),
+            ("0.0.3", "0.0.4"),
+            ("0.4", "^0.4.1"),
+            ("0.20", "0.21"),
+        )
+        for overlay_version, native_version in different_pairs:
+            with self.subTest(overlay=overlay_version, native=native_version):
+                self.set_event_bus_versions(overlay_version, native_version)
+                errors = self.run_check()
+                self.assertTrue(any("qubit-event-bus version mismatch" in error for error in errors))
+
+    def test_complex_requirement_must_match_exactly(self):
+        requirement = ">=0.4, <0.5"
+        self.set_event_bus_versions(requirement, requirement)
+        self.assertFalse(any("qubit-event-bus version mismatch" in error for error in self.run_check()))
+        self.set_event_bus_versions(requirement, ">=0.4.0, <0.5")
+        self.assertTrue(any("qubit-event-bus version mismatch" in error for error in self.run_check()))
+
+    def test_unsupported_requirement_forms_are_only_equal_when_identical(self):
+        rejected_pairs = (
+            ("~0.4", "^0.4"),
+            ("0.4.0-alpha", "0.4.0"),
+            ("0.4.*", "0.4"),
+            ("0.4", "0.4.0+build"),
+            ("01.2", "1.2"),
+            ("0.4 trailing", "0.4"),
+        )
+        for overlay_version, native_version in rejected_pairs:
+            with self.subTest(overlay=overlay_version, native=native_version):
+                self.set_event_bus_versions(overlay_version, native_version)
+                errors = self.run_check()
+                self.assertTrue(any("qubit-event-bus version mismatch" in error for error in errors))
+
+        for requirement in ("~0.4", "0.4.0-alpha", "0.4.*", "0.4.0+build", "01.2"):
+            with self.subTest(requirement=requirement):
+                self.set_event_bus_versions(requirement, requirement)
+                self.assertFalse(
+                    any("qubit-event-bus version mismatch" in error for error in self.run_check())
+                )
 
     def test_quoted_direct_package_versions_are_rejected(self):
         for index, dependency in enumerate(DEPENDENCIES):

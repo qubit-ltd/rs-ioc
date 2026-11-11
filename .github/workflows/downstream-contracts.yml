@@ -71,8 +71,26 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
           repository: qubit-ltd/rs-execution-services
-          ref: cdf305ac72e437f6d3019b86dd44ad199ecdb374
+          ref: 324fa630c47bcdda7b870623bd7fedd026f77f35
           path: rs-execution-services
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          repository: qubit-ltd/rs-executor
+          ref: b33909095faa7812cb4634834b87b755657a1061
+          path: rs-executor
+          fetch-depth: 0
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          repository: qubit-ltd/rs-rayon-executor
+          ref: 826512f485bbec121a5be08528b8dc2b7de287fd
+          path: rs-rayon-executor
+          fetch-depth: 0
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          repository: qubit-ltd/rs-tokio-executor
+          ref: e392b563a82bf73fc8d7d2dbcdfd14268f91a2a8
+          path: rs-tokio-executor
+          fetch-depth: 0
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
           repository: qubit-ltd/rs-event-bus
@@ -81,7 +99,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
           repository: qubit-ltd/rs-config
-          ref: 2958c1d1f1f3e1ac257a26bbad10be740b373fd4
+          ref: a80fba0a9eeeb985cc77286ea70f7a5edd337da2
           path: rs-config
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
@@ -126,6 +144,9 @@ jobs:
         run: |
           git -C rs-ioc rev-parse HEAD
           git -C rs-execution-services rev-parse HEAD
+          git -C rs-executor rev-parse HEAD
+          git -C rs-rayon-executor rev-parse HEAD
+          git -C rs-tokio-executor rev-parse HEAD
           git -C rs-event-bus rev-parse HEAD
           git -C rs-config rev-parse HEAD
           git -C rs-fs-registry rev-parse HEAD
