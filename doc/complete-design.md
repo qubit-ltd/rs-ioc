@@ -129,11 +129,13 @@ dependencies, duplicate active keys, primary selection, and cycles. Neither a
 factory nor an alias projector runs until the complete selected graph validates
 and, for synchronous construction, the async preflight passes.
 Absent optional requests resolve to `None`, and absent collection requests to
-an empty vector; matching requests still participate in validation. Factories
-run serially with dependencies before consumers, preserving registration and
-declaration order for ties. Dependency edges determine correctness; registration
-order affects only independent definitions and therefore their stable reverse
-shutdown order. A failure never publishes a partial context.
+an empty vector; matching requests still participate in validation. Factories run serially with dependencies before consumers. Among currently ready
+bindings, the binding registered first is constructed first; bindings within one
+definition follow their declaration positions. The order of requests in a
+factory's dependency list does not override this tie-breaker. Reverse shutdown
+follows the resulting construction order. If one component must precede
+another, express that requirement as a dependency. A failure never publishes a
+partial context.
 
 Manual synchronous factories may accept typed tuples from zero to eight
 arguments. `Arc<T>`, `Option<Arc<T>>`, and `Vec<Arc<T>>` map to required,
