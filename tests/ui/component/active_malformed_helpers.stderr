@@ -1,0 +1,59 @@
+error: invalid `id`: each dot-separated segment must match [A-Za-z][A-Za-z0-9_]*
+  --> tests/ui/component/active_malformed_helpers.rs:17:19
+   |
+17 |     #[inject(id = "bad-id")]
+   |                   ^^^^^^^^
+
+error: duplicate or conflicting `inject` attribute
+  --> tests/ui/component/active_malformed_helpers.rs:21:5
+   |
+21 |     #[inject]
+   |     ^
+
+error: expected string literal
+  --> tests/ui/component/active_malformed_helpers.rs:24:19
+   |
+24 |     #[inject(id = 1)]
+   |                   ^
+
+error: expected string literal
+  --> tests/ui/component/active_malformed_helpers.rs:27:13
+   |
+27 |     #[value(1)]
+   |             ^
+
+error: `value` cannot be combined with `inject` or another `value`
+  --> tests/ui/component/active_malformed_helpers.rs:31:5
+   |
+31 |     #[value("ignored")]
+   |     ^
+
+error: invalid `id`: each dot-separated segment must match [A-Za-z][A-Za-z0-9_]*
+  --> tests/ui/component/active_malformed_helpers.rs:38:19
+   |
+38 |     #[inject(id = "bad-id")]
+   |                   ^^^^^^^^
+
+error: duplicate or conflicting `inject` attribute
+  --> tests/ui/component/active_malformed_helpers.rs:42:5
+   |
+42 |     #[inject]
+   |     ^
+
+error: expected string literal
+  --> tests/ui/component/active_malformed_helpers.rs:45:19
+   |
+45 |     #[inject(id = 1)]
+   |                   ^
+
+error: expected string literal
+  --> tests/ui/component/active_malformed_helpers.rs:48:13
+   |
+48 |     #[value(1)]
+   |             ^
+
+error: `value` cannot be combined with `inject` or another `value`
+  --> tests/ui/component/active_malformed_helpers.rs:52:5
+   |
+52 |     #[value("ignored")]
+   |     ^

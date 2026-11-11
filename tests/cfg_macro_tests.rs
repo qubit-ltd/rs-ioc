@@ -10,6 +10,16 @@
 use trybuild::TestCases;
 
 #[test]
+fn test_inactive_malformed_helpers_preserve_conditions() {
+    TestCases::new().pass("tests/ui/component/pass/inactive_malformed_helpers.rs");
+}
+
+#[test]
+fn test_active_malformed_helpers_keep_diagnostics() {
+    TestCases::new().compile_fail("tests/ui/component/active_malformed_helpers.rs");
+}
+
+#[test]
 fn test_cfg_attr_helper_is_rejected_with_actionable_error() {
     TestCases::new().compile_fail("tests/ui/component/cfg_attr_helper.rs");
 }

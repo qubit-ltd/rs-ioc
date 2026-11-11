@@ -47,6 +47,84 @@ fn test_component_accepts_id_and_repeated_bind() {
 }
 
 #[test]
+fn test_component_and_bean_keep_non_helper_attrs_on_deferred_errors() {
+    let parsed = declaration(
+        MacroKind::Component,
+        quote!(),
+        quote!(
+            struct Conditional {
+                #[doc = "retained"]
+                #[cfg(any())]
+                #[inject(unknown = "x")]
+                missing: Undefined,
+            }
+        ),
+    )
+    .expect("a malformed dependency behind a condition should be deferred");
+    let Declaration::Component(component) = parsed else {
+        panic!("component IR was expected");
+    };
+    assert!(component.fields[0].validation_error.is_some());
+    assert_eq!(component.fields[0].conditions.len(), 1);
+    let retained_component_attrs: Vec<_> = component
+        .item
+        .fields
+        .iter()
+        .next()
+        .unwrap()
+        .attrs
+        .iter()
+        .map(|attribute| attribute.meta.to_token_stream().to_string())
+        .collect();
+    assert_eq!(retained_component_attrs, ["doc = \"retained\"", "cfg (any ())"]);
+
+    let parsed = declaration(
+        MacroKind::Bean,
+        quote!(),
+        quote!(
+            fn create(
+                #[doc = "retained"]
+                #[cfg_attr(all(), cfg(any()))]
+                #[inject(unknown = "x")]
+                missing: Undefined,
+            ) -> u32 {
+                1
+            }
+        ),
+    )
+    .expect("a malformed bean dependency behind a condition should be deferred");
+    let Declaration::Bean(bean) = parsed else {
+        panic!("bean IR was expected");
+    };
+    assert!(bean.params[0].validation_error.is_some());
+    assert_eq!(bean.params[0].conditions.len(), 1);
+    let syn::FnArg::Typed(parameter) = bean.item.sig.inputs.first().unwrap() else {
+        panic!("typed parameter was expected");
+    };
+    let retained_parameter_attrs: Vec<_> = parameter
+        .attrs
+        .iter()
+        .map(|attribute| attribute.meta.to_token_stream().to_string())
+        .collect();
+    assert_eq!(
+        retained_parameter_attrs,
+        ["doc = \"retained\"", "cfg_attr (all () , cfg (any ()))"]
+    );
+
+    declaration(
+        MacroKind::Component,
+        quote!(),
+        quote!(
+            struct Invalid {
+                #[inject(id = "bad-id")]
+                missing: Arc<Undefined>,
+            }
+        ),
+    )
+    .expect_err("an unconditional malformed helper should still be rejected");
+}
+
+#[test]
 fn test_component_recognizes_standard_qualified_injection_wrappers() {
     let parsed = declaration(
         MacroKind::Service,

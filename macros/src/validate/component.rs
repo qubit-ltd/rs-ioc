@@ -143,8 +143,9 @@ pub(super) fn validate_struct(item: &ItemStruct, kind: MacroKind) -> Result<()> 
 ///
 /// # Parameters
 ///
-/// * `attributes` – mutable attribute list; on success it contains only the
-///   attributes that are not `inject` or `value`.
+/// * `attributes` – mutable attribute list; after validation it contains only
+///   the attributes that are not `inject` or `value`, including when validation
+///   returns an error.
 /// * `ty` – the declared field or parameter type, cloned into the result.
 ///
 /// # Returns
@@ -157,8 +158,11 @@ pub(super) fn dependency(attributes: &mut Vec<Attribute>, ty: &Type) -> Result<D
     let mut seen_inject = false;
     let mut seen_value = false;
     let mut helper_span = ty.span();
-    let mut retained = Vec::with_capacity(attributes.len());
-    for attribute in attributes.drain(..) {
+    let (helpers, retained): (Vec<Attribute>, Vec<Attribute>) = std::mem::take(attributes)
+        .into_iter()
+        .partition(|attribute| attribute.path().is_ident("inject") || attribute.path().is_ident("value"));
+    *attributes = retained;
+    for attribute in helpers {
         if attribute.path().is_ident("inject") {
             if seen_inject || seen_value {
                 return Err(Error::new(
@@ -204,11 +208,8 @@ pub(super) fn dependency(attributes: &mut Vec<Attribute>, ty: &Type) -> Result<D
             seen_value = true;
             helper_span = attribute.span();
             value_path = Some(attribute.parse_args::<LitStr>()?);
-        } else {
-            retained.push(attribute);
         }
     }
-    *attributes = retained;
     if let Some(path) = value_path {
         return Ok(DependencyIr {
             kind: DependencyKind::Value { path },
