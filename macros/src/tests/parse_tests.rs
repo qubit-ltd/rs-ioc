@@ -261,9 +261,62 @@ fn test_bean_rejects_nested_future_output() {
                 todo!()
             }
         ),
+        quote!(
+            fn create() -> Box<dyn core::future::Future<Output = Repository>> {
+                todo!()
+            }
+        ),
+        quote!(
+            fn create() -> Box<dyn ::std::future::Future<Output = Repository>> {
+                todo!()
+            }
+        ),
+        quote!(
+            fn create() -> Box<dyn ::core::future::Future<Output = Repository>> {
+                todo!()
+            }
+        ),
     ] {
         let error = declaration(MacroKind::Bean, quote!(), item).expect_err("nested future return is unsupported");
         assert!(error.to_string().contains("future"), "{error}");
+    }
+}
+
+#[test]
+fn test_bean_does_not_treat_future_path_names_as_future_bounds() {
+    for item in [
+        quote!(
+            fn create() -> domain::Future {
+                todo!()
+            }
+        ),
+        quote!(
+            fn create() -> Future {
+                todo!()
+            }
+        ),
+        quote!(
+            fn create() -> company::Future::Item {
+                todo!()
+            }
+        ),
+        quote!(
+            fn create() -> domain::Future<Future> {
+                todo!()
+            }
+        ),
+        quote!(
+            fn create() -> Arc<domain::Future> {
+                todo!()
+            }
+        ),
+        quote!(
+            fn create() -> Result<domain::Future, Error> {
+                todo!()
+            }
+        ),
+    ] {
+        declaration(MacroKind::Bean, quote!(), item).expect("ordinary type path names are not Future trait bounds");
     }
 }
 

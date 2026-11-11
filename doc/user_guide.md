@@ -432,6 +432,12 @@ Choose `build_async()` or `build_all_async()` and drive the returned future with
 the application's executor. Calling synchronous `build()` on a selected async definition returns `BuildFailure`
 with `BuildError::AsyncRequired` as its cause before any factory runs. The app owns executor choice and cancellation policy.
 
+Bean output validation is syntactic: a type name such as `domain::Future` does
+not by itself make an output asynchronous. The macro recognizes explicitly
+spelled `Future` trait-object bounds, including the standard `std::future::Future`
+and `core::future::Future` paths, even when nested in supported wrappers. It does
+not resolve type aliases or prove that an ordinary type implements `Future`.
+
 
 
 ## Build failures and rollback observation

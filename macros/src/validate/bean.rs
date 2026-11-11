@@ -283,9 +283,11 @@ fn result_types(ty: &Type) -> Option<(&Type, &Type)> {
 
 /// Detects syntactically visible futures inside a factory's returned value.
 ///
-/// The scan is purely syntactic: a future reached through a type alias, a
-/// qualified path that is not spelled `Future`, or an opaque associated type is
-/// not detected, so this is a conservative guard rather than a type-level
+/// The scan is purely syntactic. Ordinary type paths are inspected only through
+/// their generic type arguments; a path's name does not establish that it is a
+/// future. Trait objects are recognized only when a bound is spelled `Future`,
+/// `std::future::Future`, or `core::future::Future`. Aliases and other paths
+/// cannot be resolved, so this is a conservative guard rather than a type-level
 /// proof. A future spelled as an `async fn` return position is instead handled
 /// by the bean signature itself.
 ///
@@ -295,23 +297,24 @@ fn result_types(ty: &Type) -> Option<(&Type, &Type)> {
 #[must_use]
 fn contains_future_type(ty: &Type) -> bool {
     match ty {
-        Type::Path(path) => path.path.segments.iter().any(|segment| {
-            segment.ident == "Future"
-                || match &segment.arguments {
-                    PathArguments::AngleBracketed(args) => args.args.iter().any(|arg| match arg {
-                        GenericArgument::Type(inner) => contains_future_type(inner),
-                        GenericArgument::AssocType(assoc) => contains_future_type(&assoc.ty),
-                        _ => false,
-                    }),
-                    _ => false,
-                }
+        Type::Path(path) => path.path.segments.iter().any(|segment| match &segment.arguments {
+            PathArguments::AngleBracketed(args) => args.args.iter().any(|arg| match arg {
+                GenericArgument::Type(inner) => contains_future_type(inner),
+                GenericArgument::AssocType(assoc) => contains_future_type(&assoc.ty),
+                _ => false,
+            }),
+            _ => false,
         }),
         Type::TraitObject(object) => object.bounds.iter().any(|bound| match bound {
-            TypeParamBound::Trait(trait_bound) => trait_bound
-                .path
-                .segments
-                .iter()
-                .any(|segment| segment.ident == "Future"),
+            TypeParamBound::Trait(trait_bound) => {
+                let path = &trait_bound.path;
+                let segments = &path.segments;
+                (segments.len() == 1 && segments[0].ident == "Future" && path.leading_colon.is_none())
+                    || (segments.len() == 3
+                        && (segments[0].ident == "std" || segments[0].ident == "core")
+                        && segments[1].ident == "future"
+                        && segments[2].ident == "Future")
+            }
             _ => false,
         }),
         Type::Group(group) => contains_future_type(&group.elem),

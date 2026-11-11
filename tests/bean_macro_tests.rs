@@ -29,6 +29,29 @@ use qubit_ioc::ShutdownMode;
 use qubit_ioc::WaitPolicy;
 use qubit_ioc::bean;
 
+mod business_future_contract {
+    use qubit_ioc::ContainerBuilder;
+    use qubit_ioc::bean;
+
+    mod domain {
+        pub struct Future(pub u32);
+    }
+
+    #[bean]
+    fn business_value() -> domain::Future {
+        domain::Future(42)
+    }
+
+    #[test]
+    fn test_business_future_is_a_synchronous_component() {
+        let mut builder = ContainerBuilder::new();
+        builder.install::<BusinessValueBean>().expect("install bean");
+        builder.root::<domain::Future>();
+        let app = builder.build().expect("synchronous build");
+        assert_eq!(app.context().get::<domain::Future>().expect("business value").0, 42);
+    }
+}
+
 #[derive(Debug, PartialEq)]
 struct BareValue(u32);
 #[derive(Debug, PartialEq)]

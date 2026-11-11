@@ -374,6 +374,10 @@ cargo test --manifest-path tests/fixtures/ioc_cross_crate/Cargo.toml
 同步 `build()`，会在工厂运行前返回 `BuildFailure`，其 cause 为
 `BuildError::AsyncRequired`。执行器选择和取消策略由应用负责。
 
+bean 输出检查是语法级的：`domain::Future` 这样的类型名称本身不会让输出被判定为异步。
+宏只识别显式写出的 `Future` trait object bound，包括嵌套在支持包装类型中的
+`std::future::Future` 和 `core::future::Future` 标准路径。宏不会解析类型别名，也不会证明普通类型是否实现了 `Future`。
+
 
 
 ## 构建失败与回滚观察
