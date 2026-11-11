@@ -167,6 +167,14 @@ impl ShutdownHandle {
     /// [`ShutdownHandle::wait`], a clone of that retained report is returned
     /// unchanged and no new request is sent, so the caller always observes the
     /// first finalized outcome.
+    ///
+    /// # Panics
+    ///
+    /// Panics from destructors of user-provided wait futures, tickets, or
+    /// captured values are not caught. If such a destructor runs during
+    /// abandonment and panics, the panic propagates and may prevent the final
+    /// report or later cleanup. See [`Self::wait`] for the corresponding
+    /// destructor boundary while waiting.
     #[must_use]
     pub fn abandon(mut self) -> ShutdownReport {
         self.driver.abandon()

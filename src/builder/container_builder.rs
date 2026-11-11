@@ -903,6 +903,14 @@ impl ContainerBuilder {
     /// Returns [`BuildFailure`] with its [`BuildError`] cause for missing
     /// roots, invalid graphs, asynchronous factories, missing managed wait
     /// policy, or construction failures.
+    ///
+    /// # Panics
+    ///
+    /// Panics from user factories or alias projectors propagate instead of
+    /// becoming a [`BuildFailure`]. During unwinding, completed managed
+    /// resources receive best-effort abort requests without waiting for
+    /// rollback. Resources not yet returned by a factory remain that factory's
+    /// responsibility. This unwind cleanup does not run with `panic = "abort"`.
     pub fn build(mut self) -> Result<Application, BuildFailure> {
         if self.roots.is_empty() {
             return Err(BuildError::NoRootsSelected.into());
@@ -927,6 +935,10 @@ impl ContainerBuilder {
     /// # Errors
     ///
     /// Returns the original build cause and any completed cleanup report.
+    ///
+    /// Settled rollback observation applies to ordinary returned build
+    /// failures; it does not catch panics or guarantee rollback waiting during
+    /// unwinding. See [`Self::build`] for panic and unwind-cleanup behavior.
     pub async fn build_settled(self) -> Result<Application, SettledBuildFailure> {
         match self.build() {
             Ok(application) => Ok(application),
@@ -939,6 +951,8 @@ impl ContainerBuilder {
     ///
     /// Prefer [`Self::build`] when the application only needs a subset of
     /// discovered definitions.
+    ///
+    /// See [`Self::build`] for factory panic and unwind-cleanup behavior.
     ///
     /// # Returns
     ///
@@ -970,6 +984,10 @@ impl ContainerBuilder {
     /// # Errors
     ///
     /// Returns the original build cause and any completed cleanup report.
+    ///
+    /// Settled rollback observation applies to ordinary returned build
+    /// failures; it does not catch panics or guarantee rollback waiting during
+    /// unwinding. See [`Self::build_all`] for panic and unwind-cleanup behavior.
     pub async fn build_all_settled(self) -> Result<Application, SettledBuildFailure> {
         match self.build_all() {
             Ok(application) => Ok(application),
@@ -1002,6 +1020,15 @@ impl ContainerBuilder {
     /// roots, invalid graphs, missing managed wait policy, or factory
     /// failures. Already constructed managed resources are aborted before
     /// returning; the failure owns their deferred cleanup handle.
+    ///
+    /// # Panics
+    ///
+    /// Panics from user factories, alias projectors, or polling a user factory
+    /// future propagate instead of becoming a [`BuildFailure`]. During
+    /// unwinding, completed managed resources receive best-effort abort
+    /// requests without waiting for rollback. Resources not yet returned by a
+    /// factory remain that factory's responsibility. This unwind cleanup does
+    /// not run with `panic = "abort"`.
     pub async fn build_async(self) -> Result<Application, BuildFailure> {
         self.prepare_async(false)?.run_async().await
     }
@@ -1076,6 +1103,10 @@ impl ContainerBuilder {
     /// # Errors
     ///
     /// Returns the original build cause and any completed cleanup report.
+    ///
+    /// Settled rollback observation applies to ordinary returned build
+    /// failures; it does not catch panics or guarantee rollback waiting during
+    /// unwinding. See [`Self::build_async`] for panic and unwind-cleanup behavior.
     pub async fn build_async_settled(self) -> Result<Application, SettledBuildFailure> {
         match self.build_async().await {
             Ok(application) => Ok(application),
@@ -1098,6 +1129,8 @@ impl ContainerBuilder {
     /// rollback. Like [`Self::build_async`], the future may return `Pending`
     /// between batches, while validation and a single blocking poll remain
     /// non-preemptible.
+    ///
+    /// See [`Self::build_async`] for factory panic and unwind-cleanup behavior.
     pub async fn build_all_async(self) -> Result<Application, BuildFailure> {
         self.prepare_async(true)?.run_async().await
     }
@@ -1114,6 +1147,10 @@ impl ContainerBuilder {
     /// # Errors
     ///
     /// Returns the original build cause and any completed cleanup report.
+    ///
+    /// Settled rollback observation applies to ordinary returned build
+    /// failures; it does not catch panics or guarantee rollback waiting during
+    /// unwinding. See [`Self::build_all_async`] for panic and unwind-cleanup behavior.
     pub async fn build_all_async_settled(self) -> Result<Application, SettledBuildFailure> {
         match self.build_all_async().await {
             Ok(application) => Ok(application),
