@@ -25,8 +25,9 @@ use crate::ir::DependencyIr;
 use crate::ir::DependencyKind;
 use crate::ir::FieldIr;
 
-/// Emits the original struct, a typed factory and its linked registration
-/// entry.
+/// Emits the original struct and its `ComponentDefinition` implementation.
+/// Generated definitions require explicit installation; expansion does not
+/// register them automatically.
 ///
 /// The [`ComponentIr`] is destructured, so the caller keeps no handle on it
 /// afterwards, and the returned tokens are the original struct followed by the
@@ -335,11 +336,12 @@ fn field_expression(
     quote!(#access.map_err(#runtime::FactoryError::new)?)
 }
 
-/// Uses interface ordering metadata only on interface aliases when any exist.
+/// Encodes binding options, including selection metadata where applicable.
 ///
-/// `selection` is false for the concrete binding, which never carries
-/// interface projection ordering, and true for every generated alias so that
-/// `primary` and `order` reach the runtime binding options.
+/// When aliases exist, `selection` is false for the concrete binding and true
+/// for each alias, so only aliases receive the `primary` and `order` options.
+/// Without aliases, `selection` is true for the concrete binding, which then
+/// receives those options itself.
 ///
 /// # Parameters
 ///

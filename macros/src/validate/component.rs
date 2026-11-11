@@ -43,8 +43,8 @@ use crate::parse::parse_options;
 /// A field whose dependency request cannot be parsed is only rejected
 /// immediately when the field has no activation conditions. When it does, the
 /// failure is recorded in [`FieldIr::validation_error`] and re-reported only if
-/// the condition can actually hold at runtime, so an inactive branch never
-/// breaks the build.
+/// the corresponding `cfg` branch is enabled at compile time, so an inactive
+/// branch never breaks the build.
 ///
 /// # Parameters
 ///
