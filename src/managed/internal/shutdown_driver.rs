@@ -59,6 +59,8 @@ pub(crate) struct ShutdownDriver {
     fallbacks: Vec<BindingKey>,
     /// Whether the first wait poll has initialized the total shutdown timer.
     overall_started: bool,
+    /// Whether unfinished work existed before the first wait poll.
+    overall_needed: bool,
     /// Timer and failure for the complete shutdown budget.
     overall_deadline: Option<DeadlineFuture>,
     /// Failure produced when the complete shutdown budget expires or panics.
@@ -101,6 +103,7 @@ impl ShutdownDriver {
             failures: Vec::new(),
             fallbacks: Vec::new(),
             overall_started: false,
+            overall_needed: cursor != 0,
             overall_deadline: None,
             overall_failure: None,
             report: None,
@@ -119,12 +122,21 @@ impl ShutdownDriver {
             return;
         }
         self.mode = ShutdownMode::Immediate;
+        let active_index = self.active.as_ref().map(|active| active.index);
+        let mut overall_needed = false;
         for index in (0..self.entries.len()).rev() {
             self.abort_entry(index);
+            if Some(index) != active_index {
+                overall_needed |= !matches!(self.entries[index].state, EntryState::Done | EntryState::Incomplete);
+            }
         }
         if let Some(active) = self.active.take() {
             self.restore_active(active);
         }
+        if let Some(index) = active_index {
+            overall_needed |= !matches!(self.entries[index].state, EntryState::Done | EntryState::Incomplete);
+        }
+        self.overall_needed = overall_needed || self.active.is_some();
     }
 
     /// Returns all bindings whose termination has not been confirmed.
@@ -200,7 +212,7 @@ impl ShutdownDriver {
                 return Poll::Ready(self.finish());
             }
         }
-        if !self.overall_started {
+        if !self.overall_started && self.overall_needed {
             self.overall_started = true;
             match catch_unwind(AssertUnwindSafe(|| self.policy.overall_deadline())) {
                 Ok(deadline) => self.overall_deadline = deadline,

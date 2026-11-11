@@ -19,7 +19,9 @@ use std::task::Poll;
 use std::time::Duration;
 
 use qubit_ioc::ApplicationState;
+use qubit_ioc::BindingId;
 use qubit_ioc::BindingKey;
+use qubit_ioc::BindingOptions;
 use qubit_ioc::CleanupError;
 use qubit_ioc::ContainerBuilder;
 use qubit_ioc::Managed;
@@ -49,6 +51,219 @@ where
             ))
         })
         .expect("register managed component");
+}
+
+fn add_synchronous_resources(
+    builder: &mut ContainerBuilder,
+    count: usize,
+    stops: Arc<AtomicUsize>,
+    fail_at: Option<usize>,
+) {
+    for index in 0..count {
+        let stops = Arc::clone(&stops);
+        builder
+            .register_managed_factory_with::<usize, _>(
+                &[],
+                BindingOptions {
+                    id: Some(format!("resource.n{index}")),
+                    ..BindingOptions::default()
+                },
+                move |_| {
+                    Ok(Managed::synchronous(Arc::new(index), move |_| {
+                        stops.fetch_add(1, Ordering::SeqCst);
+                        if fail_at == Some(index) {
+                            Err(CleanupError::new(io::Error::other("expected abort failure")))
+                        } else {
+                            Ok(())
+                        }
+                    }))
+                },
+            )
+            .expect("register synchronous component");
+    }
+}
+
+#[test]
+fn test_immediate_shutdown_across_batches_does_not_create_overall_timer() {
+    for count in [63, 64, 65, 129] {
+        for timer_panics in [false, true] {
+            let timer_calls = Arc::new(AtomicUsize::new(0));
+            let observed_timer_calls = Arc::clone(&timer_calls);
+            let stops = Arc::new(AtomicUsize::new(0));
+            let mut builder = ContainerBuilder::new().wait_policy(WaitPolicy::bounded_with_total(
+                Duration::from_secs(13),
+                Duration::from_secs(7),
+                Duration::from_secs(30),
+                move |_| {
+                    observed_timer_calls.fetch_add(1, Ordering::SeqCst);
+                    if timer_panics {
+                        panic!("overall timer must not be created");
+                    }
+                    Box::pin(std::future::ready(()))
+                },
+            ));
+            add_synchronous_resources(&mut builder, count, Arc::clone(&stops), None);
+            let application = builder.build_all().expect("build components");
+            let context = application.context().clone();
+            let mut shutdown = application.begin_shutdown(ShutdownMode::Immediate);
+
+            assert!(shutdown.pending().is_empty());
+            let report = (0..count + 4)
+                .find_map(|_| match poll_once(shutdown.wait()) {
+                    Poll::Ready(result) => Some(result),
+                    Poll::Pending => None,
+                })
+                .expect("shutdown completes within bounded polls")
+                .expect("completed shutdown succeeds");
+            assert!(report.overall_failure().is_none());
+            assert_eq!(timer_calls.load(Ordering::SeqCst), 0);
+            assert_eq!(stops.load(Ordering::SeqCst), count);
+            assert_eq!(context.state(), ApplicationState::Closed);
+            assert!(ready(shutdown.wait()).expect("repeat wait succeeds").is_success());
+            assert_eq!(stops.load(Ordering::SeqCst), count);
+        }
+    }
+}
+
+#[test]
+fn test_immediate_shutdown_abort_failure_across_batches_does_not_create_overall_failure() {
+    const COUNT: usize = 129;
+    let timer_calls = Arc::new(AtomicUsize::new(0));
+    let observed_timer_calls = Arc::clone(&timer_calls);
+    let stops = Arc::new(AtomicUsize::new(0));
+    let mut builder = ContainerBuilder::new().wait_policy(WaitPolicy::bounded_with_total(
+        Duration::from_secs(13),
+        Duration::from_secs(7),
+        Duration::from_secs(30),
+        move |_| {
+            observed_timer_calls.fetch_add(1, Ordering::SeqCst);
+            Box::pin(std::future::ready(()))
+        },
+    ));
+    add_synchronous_resources(&mut builder, COUNT, Arc::clone(&stops), Some(64));
+    let application = builder.build_all().expect("build components");
+    let context = application.context().clone();
+    let mut shutdown = application.begin_shutdown(ShutdownMode::Immediate);
+
+    let error = (0..COUNT + 4)
+        .find_map(|_| match poll_once(shutdown.wait()) {
+            Poll::Ready(result) => Some(result),
+            Poll::Pending => None,
+        })
+        .expect("shutdown completes within bounded polls")
+        .expect_err("abort failure is retained");
+    assert!(error.report().overall_failure().is_none());
+    assert_eq!(
+        error.report().incomplete(),
+        [BindingKey::of::<usize>(Some(BindingId::parse("resource.n64").unwrap()))]
+    );
+    assert_eq!(error.report().failures().len(), 1);
+    assert_eq!(
+        error.report().failures()[0]
+            .error
+            .source()
+            .expect("original abort error")
+            .to_string(),
+        "expected abort failure"
+    );
+    assert_eq!(context.state(), ApplicationState::Incomplete);
+    assert_eq!(timer_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(stops.load(Ordering::SeqCst), COUNT);
+}
+
+#[test]
+fn test_graceful_abort_before_first_wait_skips_overall_timer_when_all_work_is_done() {
+    const COUNT: usize = 65;
+    let timers = Timers::default();
+    let stops = Arc::new(AtomicUsize::new(0));
+    let mut builder = ContainerBuilder::new().wait_policy(timers.policy_with_total(Duration::from_secs(30)));
+    add_synchronous_resources(&mut builder, COUNT, Arc::clone(&stops), None);
+    let application = builder.build_all().expect("build components");
+    let mut shutdown = application.begin_shutdown(ShutdownMode::Graceful);
+
+    shutdown.abort();
+    assert!(shutdown.pending().is_empty());
+    let report = (0..COUNT + 4)
+        .find_map(|_| match poll_once(shutdown.wait()) {
+            Poll::Ready(result) => Some(result),
+            Poll::Pending => None,
+        })
+        .expect("shutdown completes within bounded polls")
+        .expect("aborted shutdown succeeds");
+    assert!(report.overall_failure().is_none());
+    assert_eq!(timers.durations(), []);
+    assert_eq!(stops.load(Ordering::SeqCst), COUNT);
+}
+
+#[test]
+fn test_abort_restore_deadline_panic_does_not_restart_overall_timer() {
+    let overall_calls = Arc::new(AtomicUsize::new(0));
+    let observed_overall_calls = Arc::clone(&overall_calls);
+    let termination_calls = Arc::new(AtomicUsize::new(0));
+    let observed_termination_calls = Arc::clone(&termination_calls);
+    let mut builder = ContainerBuilder::new().wait_policy(WaitPolicy::bounded_with_total(
+        Duration::from_secs(13),
+        Duration::from_secs(7),
+        Duration::from_secs(30),
+        move |duration| {
+            if duration == Duration::from_secs(30) {
+                observed_overall_calls.fetch_add(1, Ordering::SeqCst);
+            }
+            if duration == Duration::from_secs(7) {
+                observed_termination_calls.fetch_add(1, Ordering::SeqCst);
+                panic!("termination deadline factory panicked");
+            }
+            Box::pin(std::future::pending())
+        },
+    ));
+    builder
+        .register_managed_factory::<u32, _>(&[], |_| {
+            Ok(Managed::asynchronous_with_graceful(
+                Arc::new(1),
+                |_| Ok(()),
+                |_| Ok(()),
+                |_| Box::pin(std::future::pending()),
+            ))
+        })
+        .expect("register managed component");
+    let application = builder.build_all().expect("build component");
+    let mut shutdown = application.begin_shutdown(ShutdownMode::Graceful);
+
+    assert!(poll_once(shutdown.wait()).is_pending());
+    assert_eq!(overall_calls.load(Ordering::SeqCst), 1);
+    shutdown.abort();
+    let error = ready(shutdown.wait()).expect_err("termination deadline panic is reported");
+
+    assert!(error.report().overall_failure().is_none());
+    assert_eq!(error.report().incomplete(), [BindingKey::of::<u32>(None)]);
+    assert_eq!(error.report().failures().len(), 1);
+    assert_eq!(error.report().failures()[0].phase, ShutdownPhase::Deadline);
+    assert_eq!(overall_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(termination_calls.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn test_pending_work_after_terminal_batch_still_starts_overall_timer_on_first_poll() {
+    const COUNT: usize = 65;
+    let timers = Timers::default();
+    let async_aborts = Arc::new(AtomicUsize::new(0));
+    let sync_stops = Arc::new(AtomicUsize::new(0));
+    let mut builder = ContainerBuilder::new().wait_policy(timers.policy_with_total(Duration::from_secs(30)));
+    add_pending::<u32>(&mut builder, Arc::clone(&async_aborts));
+    add_synchronous_resources(&mut builder, COUNT, Arc::clone(&sync_stops), None);
+    let application = builder.build_all().expect("build mixed components");
+    let mut shutdown = application.begin_shutdown(ShutdownMode::Immediate);
+
+    assert!(poll_once(shutdown.wait()).is_pending());
+    assert_eq!(timers.durations(), [Duration::from_secs(30)]);
+    assert!(poll_once(shutdown.wait()).is_pending());
+    assert_eq!(timers.durations(), [Duration::from_secs(30), Duration::from_secs(7)]);
+    timers.trigger(0);
+    let error = ready(shutdown.wait()).expect_err("overall deadline expires");
+    assert!(error.report().overall_failure().is_some());
+    assert_eq!(error.report().incomplete(), [BindingKey::of::<u32>(None)]);
+    assert_eq!(async_aborts.load(Ordering::SeqCst), 1);
+    assert_eq!(sync_stops.load(Ordering::SeqCst), COUNT);
 }
 
 #[test]
