@@ -181,7 +181,7 @@ bounded 集成函数，在构建失败清理和正常关闭两条路径都显式
 
 下面的完整函数通过必需的 `String` 依赖创建异步工厂，并异步构建全部活跃定义：
 
-<!-- guide-rust: id=typed_async mode=check features=none -->
+<!-- guide-rust: id=typed_async mode=run features=none -->
 ```rust
 use std::error::Error;
 use std::sync::Arc;
@@ -195,6 +195,15 @@ async fn build_message_length() -> Result<(), Box<dyn Error>> {
     )?;
     let application = builder.build_all_async().await?;
     assert_eq!(*application.context().get::<usize>()?, 5);
+    Ok(())
+}
+
+#[tokio::main(flavor = "current_thread")]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        build_message_length(),
+    ).await??;
     Ok(())
 }
 ```
@@ -384,14 +393,14 @@ bean 输出检查是语法级的：`domain::Future` 这样的类型名称本身�
 
 构建图验证失败时，工厂尚未运行，因此没有托管资源需要回滚。若某个工厂在前序托管资源已创建后失败，原始 `build()` 或 `build_async()` 会请求这些资源 abort，随即返回 `BuildFailure`；调用方可以立即处理启动失败，也可以保留该值并等待清理。只保留 `BuildError` 或 `cause()` 会丢失清理观察句柄。
 
-下面让 `Worker` 成功创建后再让 `Startup` 失败，并分别演示清理成功与清理失败。它沿用 README 的完整示例，使用 settled 构建等待正常完成的回滚观察：
+下面让 `Worker` 成功创建后再让 `Startup` 失败，并分别演示清理成功与清理失败；入口会断言失败原因为工厂失败。它沿用 README 的完整示例，使用 settled 构建等待正常完成的回滚观察：
 
-<!-- guide-rust: id=rollback mode=check features=none -->
+<!-- guide-rust: id=rollback mode=run features=none -->
 ```rust
 use std::error::Error;
 use std::sync::Arc;
 use qubit_ioc::{
-    CleanupError, ContainerBuilder, Dependency, FactoryError, Managed,
+    BuildError, CleanupError, ContainerBuilder, Dependency, FactoryError, Managed,
     SettledBuildFailure, WaitPolicy,
 };
 
@@ -420,6 +429,7 @@ async fn fail_after_worker(
         Ok(_) => unreachable!("the Startup factory always fails"),
         Err(failure) => failure,
     };
+    assert!(matches!(failure.cause(), BuildError::FactoryFailed { .. }));
     let cleanup_succeeded = failure
         .cleanup_report()
         .expect("Worker was constructed before Startup failed")
@@ -435,7 +445,16 @@ async fn show_cleanup_reports() -> Result<(), Box<dyn Error>> {
     let (failure, cleanup_succeeded) = fail_after_worker(true).await?;
     assert!(!cleanup_succeeded);
     eprintln!("build cause: {}; cleanup report: {:?}", failure.cause(), failure.cleanup_report());
-    // 检查报告后，应用仍可通过 Err(Box::new(failure)) 返回原始失败。
+    // An application can return Err(Box::new(failure)) after inspecting both.
+    Ok(())
+}
+
+#[tokio::main(flavor = "current_thread")]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        show_cleanup_reports(),
+    ).await??;
     Ok(())
 }
 ```
@@ -454,13 +473,25 @@ async fn show_cleanup_reports() -> Result<(), Box<dyn Error>> {
 下面假定 `builder` 已配置完成，`shutdown_signal` 是应用提供、输出 `()` 的关闭信号
 future；`tokio::select!` 只是 Tokio 应用的选择写法示例，`qubit-ioc` 不绑定 Tokio
 或任何其他异步执行器。
-应用负责准备 builder、关闭信号并提供 Tokio 执行器。此完整函数会由指南检查器编译；
-运行行为由现有 `BuildSession` 测试覆盖。
+应用负责准备 builder、关闭信号并提供 Tokio 执行器。下面的完整演示由指南检查器运行，应用仍负责提供执行器和关闭信号。
 
-<!-- guide-rust: id=cancellation mode=check features=none -->
+<!-- guide-rust: id=cancellation mode=run features=none -->
 ```rust
+use std::error::Error;
 use std::future::Future;
-use qubit_ioc::{BuildSessionError, ContainerBuilder, ShutdownMode};
+use std::sync::{
+    Arc,
+    atomic::{AtomicUsize, Ordering},
+};
+use tokio::sync::oneshot;
+use qubit_ioc::{
+    BuildSessionError, ContainerBuilder, Dependency, FactoryError, Managed, ShutdownMode,
+    WaitPolicy,
+};
+
+struct Worker;
+struct Startup;
+struct Later;
 
 pub async fn build_until_shutdown<F>(builder: ContainerBuilder, shutdown_signal: F)
 where
@@ -471,27 +502,82 @@ where
         result = session.run() => Some(result),
         () = shutdown_signal => None,
     };
-    let application = match outcome {
-        Some(Ok(application)) => Some(application),
+    match outcome {
+        Some(Ok(application)) => {
+            let mut shutdown = application.begin_shutdown(ShutdownMode::Graceful);
+            let _ = shutdown.wait().await;
+        }
         Some(Err(BuildSessionError::Build(mut failure))) => {
-            let report = failure.wait_cleanup().await;
-            eprintln!("build failed: {}; cleanup: {report:?}", failure.cause());
-            None
+            let _ = failure.wait_cleanup().await;
         }
-        Some(Err(other)) => {
-            eprintln!("build session state: {other}");
-            None
-        }
+        Some(Err(other)) => panic!("unexpected build session state: {other}"),
         None => {
             let report = session.wait_cancelled_cleanup().await;
-            eprintln!("startup cancelled; cleanup: {report:?}");
-            None
+            assert!(report.expect("Worker cleanup is retained").is_success());
         }
-    };
-    if let Some(application) = application {
-        let mut shutdown = application.begin_shutdown(ShutdownMode::Graceful);
-        eprintln!("shutdown: {:?}", shutdown.wait().await);
     }
+}
+
+async fn demonstrate_cancellation() -> Result<(), Box<dyn Error>> {
+    let aborts = Arc::new(AtomicUsize::new(0));
+    let waits = Arc::new(AtomicUsize::new(0));
+    let later_calls = Arc::new(AtomicUsize::new(0));
+    let (started_tx, started_rx) = oneshot::channel();
+    let mut builder = ContainerBuilder::new().wait_policy(WaitPolicy::unbounded());
+
+    let abort_count = Arc::clone(&aborts);
+    let wait_count = Arc::clone(&waits);
+    builder.register_managed_async_factory::<Worker, _>(&[], move |_| {
+        Box::pin(async move {
+            Ok(Managed::asynchronous(
+                Arc::new(Worker),
+                move |_| {
+                    abort_count.fetch_add(1, Ordering::SeqCst);
+                    Ok(())
+                },
+                move |_| Box::pin(async move {
+                    wait_count.fetch_add(1, Ordering::SeqCst);
+                    Ok(())
+                }),
+            ))
+        })
+    })?;
+
+    builder.register_managed_async_factory::<Startup, _>(
+        &[Dependency::of::<Worker>()],
+        move |_| Box::pin(async move {
+            let _ = started_tx.send(());
+            std::future::pending::<Result<Managed<Startup>, FactoryError>>().await
+        }),
+    )?;
+
+    let later_count = Arc::clone(&later_calls);
+    builder.register_factory::<Later, _>(
+        &[Dependency::of::<Startup>()],
+        move |_| {
+            later_count.fetch_add(1, Ordering::SeqCst);
+            Ok(Arc::new(Later))
+        },
+    )?;
+    builder.root::<Later>();
+
+    build_until_shutdown(builder, async move {
+        let _ = started_rx.await;
+    }).await;
+
+    assert_eq!(aborts.load(Ordering::SeqCst), 1);
+    assert_eq!(waits.load(Ordering::SeqCst), 1);
+    assert_eq!(later_calls.load(Ordering::SeqCst), 0);
+    Ok(())
+}
+
+#[tokio::main(flavor = "current_thread")]
+async fn main() -> Result<(), Box<dyn Error>> {
+    tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        demonstrate_cancellation(),
+    ).await??;
+    Ok(())
 }
 ```
 

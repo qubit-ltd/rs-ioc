@@ -15,11 +15,11 @@ SPEC.loader.exec_module(CHECKER)
 EXPECTED = {
     "manual": ("run", "none"),
     "beans": ("run", "macros"),
-    "typed_async": ("check", "none"),
+    "typed_async": ("run", "none"),
     "scope": ("run", "none"),
     "replacement": ("check", "none"),
-    "rollback": ("check", "none"),
-    "cancellation": ("check", "none"),
+    "rollback": ("run", "none"),
+    "cancellation": ("run", "none"),
 }
 
 
@@ -44,8 +44,9 @@ class ParseGuideTests(unittest.TestCase):
         parsed = CHECKER.parse_guide(Path("guide.md"), guide())
         self.assertEqual(set(parsed), set(EXPECTED))
         self.assertEqual((parsed["manual"].mode, parsed["manual"].features), ("run", "none"))
-        self.assertEqual((parsed["typed_async"].mode, parsed["typed_async"].features), ("check", "none"))
-        self.assertEqual((parsed["cancellation"].mode, parsed["cancellation"].features), ("check", "none"))
+        self.assertEqual((parsed["typed_async"].mode, parsed["typed_async"].features), ("run", "none"))
+        self.assertEqual((parsed["rollback"].mode, parsed["rollback"].features), ("run", "none"))
+        self.assertEqual((parsed["cancellation"].mode, parsed["cancellation"].features), ("run", "none"))
         self.assertEqual(parsed["manual"].code, "fn main() {}\n")
 
     def test_rejects_unmarked_rust_block_with_location(self):
@@ -289,18 +290,51 @@ class CargoCommandTests(unittest.TestCase):
         snippets = CHECKER.parse_guide(Path("guide.md"), guide())
         manifest = Path("/tmp/example/Cargo.toml")
         run = CHECKER.cargo_command(snippets["manual"], manifest)
-        check = CHECKER.cargo_command(snippets["typed_async"], manifest)
+        run_async = CHECKER.cargo_command(snippets["typed_async"], manifest)
         cancellation = CHECKER.cargo_command(snippets["cancellation"], manifest)
+        check = CHECKER.cargo_command(snippets["replacement"], manifest)
         self.assertEqual(run, ["cargo", "+1.94.0", "run", "--quiet", "--manifest-path", str(manifest)])
         self.assertEqual(check, ["cargo", "+1.94.0", "check", "--lib", "--manifest-path", str(manifest)])
-        self.assertEqual(cancellation, check)
+        self.assertEqual(run_async, run)
+        self.assertEqual(cancellation, run)
         self.assertIn('path = "' + str(CHECKER.REPOSITORY_ROOT) + '"', CHECKER._manifest(snippets["manual"]))
         self.assertIn('default-features = false', CHECKER._manifest(snippets["manual"]))
         self.assertNotIn('features = ["macros"]', CHECKER._manifest(snippets["manual"]))
         self.assertIn('features = ["macros"]', CHECKER._manifest(snippets["beans"]))
-        self.assertIn('tokio = { version = "1.53", features = ["macros", "rt"] }', CHECKER._manifest(snippets["cancellation"]))
+        expected_tokio = 'tokio = { version = "1.53", features = ["macros", "rt", "sync", "time"] }'
+        for snippet_id in ("typed_async", "rollback", "cancellation"):
+            with self.subTest(snippet_id=snippet_id):
+                self.assertIn(expected_tokio, CHECKER._manifest(snippets[snippet_id]))
         self.assertNotIn("tokio", CHECKER._manifest(snippets["manual"]))
-        self.assertNotIn("tokio", CHECKER._manifest(snippets["typed_async"]))
+        self.assertNotIn("tokio", CHECKER._manifest(snippets["replacement"]))
+
+    def test_run_writes_main_and_check_writes_library(self):
+        snippets = CHECKER.parse_guide(Path("guide.md"), guide())
+        for snippet_id in ("typed_async", "rollback", "cancellation"):
+            snippet = snippets[snippet_id]
+
+            def verify_source(command, **_kwargs):
+                manifest = Path(command[-1])
+                source = manifest.parent / "src" / "main.rs"
+                self.assertTrue(source.is_file())
+                self.assertEqual(source.read_text(encoding="utf-8"), snippet.code)
+                return subprocess.CompletedProcess(command, 0)
+
+            with self.subTest(snippet_id=snippet_id), patch.object(
+                CHECKER.subprocess, "run", side_effect=verify_source
+            ):
+                CHECKER.check_snippet(snippet)
+
+        snippet = snippets["replacement"]
+
+        def verify_library(command, **_kwargs):
+            source_dir = Path(command[-1]).parent / "src"
+            self.assertTrue((source_dir / "lib.rs").is_file())
+            self.assertFalse((source_dir / "main.rs").exists())
+            return subprocess.CompletedProcess(command, 0)
+
+        with patch.object(CHECKER.subprocess, "run", side_effect=verify_library):
+            CHECKER.check_snippet(snippet)
 
     def test_command_start_failure_has_location_and_command(self):
         snippet = CHECKER.Snippet("manual", "run", "none", None, "fn main() {}\n", 12, Path("guide.md"))
@@ -320,7 +354,7 @@ class CargoCommandTests(unittest.TestCase):
         run.assert_not_called()
 
     def test_nonzero_and_timeout_diagnostics_include_output_and_cleanup(self):
-        snippet = CHECKER.Snippet("typed_async", "check", "none", None, "pub fn example() {}\n", 23, Path("zh.md"))
+        snippet = CHECKER.Snippet("typed_async", "run", "none", None, "fn main() {}\n", 23, Path("zh.md"))
         failure = subprocess.CompletedProcess([], 101, stdout="compiler output", stderr="compiler error")
         for result, expected in (
             (failure, ("exited 101", "compiler output", "compiler error")),

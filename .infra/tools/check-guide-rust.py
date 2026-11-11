@@ -21,11 +21,11 @@ ID_PATTERN = re.compile(r"^[a-z0-9_]+$")
 EXPECTED = {
     "manual": ("run", "none"),
     "beans": ("run", "macros"),
-    "typed_async": ("check", "none"),
+    "typed_async": ("run", "none"),
     "scope": ("run", "none"),
     "replacement": ("check", "none"),
-    "rollback": ("check", "none"),
-    "cancellation": ("check", "none"),
+    "rollback": ("run", "none"),
+    "cancellation": ("run", "none"),
 }
 
 
@@ -418,7 +418,11 @@ def cargo_command(snippet: Snippet, manifest_path: Path) -> list[str]:
 
 def _manifest(snippet: Snippet) -> str:
     features = ', features = ["macros"]' if snippet.features == "macros" else ""
-    tokio = '\ntokio = { version = "1.53", features = ["macros", "rt"] }' if snippet.id == "cancellation" else ""
+    async_examples = {"typed_async", "rollback", "cancellation"}
+    tokio = (
+        '\ntokio = { version = "1.53", features = ["macros", "rt", "sync", "time"] }'
+        if snippet.id in async_examples else ""
+    )
     return (
         "[package]\nname = \"guide-example\"\nversion = \"0.0.0\"\n"
         "edition = \"2024\"\n\n[dependencies]\n"
