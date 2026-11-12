@@ -16,11 +16,11 @@ path = "../../../../rs-execution-services/tests/fixtures/ioc_application_consume
 
 [dependencies]
 qubit-ioc = { path = "../../../", version = "^0.4", default-features = false }
-qubit-execution-services = { path = "../../../../rs-execution-services", version = "^0.11" }
+qubit-execution-services = { version = "^0.11" }
 qubit-event-bus = { version = "^0.21" }
-qubit-fs-registry = { path = "../../../../rs-fs-registry", version = "^0.8" }
-qubit-fs-local = { path = "../../../../rs-fs-local", version = "^0.11", features = ["registry"] }
-qubit-fs = { path = "../../../../rs-fs", version = "^0.3" }
+qubit-fs-registry = { version = "^0.8" }
+qubit-fs-local = { version = "^0.11", features = ["registry"] }
+qubit-fs = { version = "^0.3" }
 tempfile = "3"
 thiserror = "2"
 tokio = { version = "1.53", features = ["rt-multi-thread", "time", "sync"] }

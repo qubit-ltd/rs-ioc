@@ -6,6 +6,6 @@ publish = false
 
 [dependencies]
 qubit-ioc = { path = "../../../../", version = "^0.4" }
-qubit-config = { path = "../../../../../rs-config", version = "^0.15" }
+qubit-config = { version = "^0.15" }
 qubit-ioc-fixture-contracts = { path = "../contracts", version = "^0.0" }
 qubit-ioc-fixture-providers = { path = "../providers", version = "^0.0" }
