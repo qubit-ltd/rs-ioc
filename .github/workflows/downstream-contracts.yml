@@ -140,6 +140,11 @@ jobs:
       - name: Check downstream contract documentation
         working-directory: rs-ioc
         run: python3 .infra/tools/check-downstream-contract-docs.py
+      - name: Refresh the native consumer lock for this IoC revision
+        run: >-
+          cargo +1.94.0 update
+          --manifest-path rs-execution-services/tests/fixtures/ioc_application_consumer/Cargo.toml
+          -p qubit-ioc
       - name: Record exact source revisions
         run: |
           git -C rs-ioc rev-parse HEAD
