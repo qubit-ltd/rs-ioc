@@ -2,7 +2,7 @@
 
 [中文指南](managed-adapters.zh_CN.md) · [Lifecycle guide](lifecycle.md) · [User guide](user_guide.md)
 
-This guide covers `qubit-ioc` 0.4.0. Use a managed factory when the application
+This guide covers `qubit-ioc` 0.4.2. Use a managed factory when the application
 creates a resource and must confirm its termination before stopping its
 dependencies. Register the factory during assembly; create the resource only
 when the selected graph is built. Keep the returned `Application` as the

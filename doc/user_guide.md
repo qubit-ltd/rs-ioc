@@ -2,7 +2,7 @@
 
 [中文用户手册](user_guide.zh_CN.md) · [README](../README.md)
 
-This guide is for Rust application authors using `qubit-ioc` 0.4.0. It explains
+This guide is for Rust application authors using `qubit-ioc` 0.4.2. It explains
 how to assemble application-wide shared components,
 diagnose startup failures, and manage their lifetime. Rust 1.94 or newer is
 required by the package manifest.

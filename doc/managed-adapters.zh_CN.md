@@ -2,7 +2,7 @@
 
 [English guide](managed-adapters.md) · [生命周期说明](lifecycle.zh_CN.md) · [用户手册](user_guide.zh_CN.md)
 
-本文适用于 `qubit-ioc` 0.4.0。应用创建资源，且需要在关闭依赖前确认资源终止时，
+本文适用于 `qubit-ioc` 0.4.2。应用创建资源，且需要在关闭依赖前确认资源终止时，
 应使用托管工厂。装配时登记工厂，构建选中依赖图时才创建资源。应用保留返回的
 `Application` 作为生命周期所有者，配置由应用持续驱动且有期限的 `WaitPolicy`，
 等待关闭句柄完成后再释放驱动资源的运行时。

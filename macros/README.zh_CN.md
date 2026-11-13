@@ -13,8 +13,8 @@
 
 应用应依赖 `qubit-ioc` 并启用其默认的 `macros` feature，从同一入口获取属性宏与
 运行时 API。宏展开使用公开的 `Definition` / `DefinitionBuilder` 注册 API；
-隐藏的配置诊断与生成代码 glue 仍是实现细节。本 checkout 使用 qubit-ioc 0.4.0 与
-qubit-ioc-macros 0.3.0。应用应通过运行时 facade 使用宏，由其依赖声明选择宏包；
+隐藏的配置诊断与生成代码 glue 仍是实现细节。本 checkout 使用 qubit-ioc 0.4.2 与
+qubit-ioc-macros 0.3.2。应用应通过运行时 facade 使用宏，由其依赖声明选择宏包；
 两个包不要求版本号相同。
 
 ## 安装
@@ -59,7 +59,7 @@ abort 但不等待；查询 context Drop 不关闭资源。完整步骤与迁移
 公开 API、支持的声明、配置要求和可运行示例见[项目 README](https://github.com/qubit-ltd/rs-ioc/blob/main/README.zh_CN.md)、
 [English user guide](https://github.com/qubit-ltd/rs-ioc/blob/main/doc/user_guide.md)和
 [中文用户手册](https://github.com/qubit-ltd/rs-ioc/blob/main/doc/user_guide.zh_CN.md)。
-本 checkout 使用 qubit-ioc 0.4.0 与 qubit-ioc-macros 0.3.0。应用应通过运行时
+本 checkout 使用 qubit-ioc 0.4.2 与 qubit-ioc-macros 0.3.2。应用应通过运行时
 facade 使用宏，由其依赖声明选择宏包；两个包不要求版本号相同。
 
 ## 测试

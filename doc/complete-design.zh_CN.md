@@ -1,6 +1,6 @@
 # qubit-ioc 当前设计
 
-> 本文描述 `qubit-ioc` 0.4.0 当前实现的设计与公开契约。英文版见[Current Design](complete-design.md)。历史设计背景见[容器内核草案](design.zh_CN.md)和[注解草案](annotation-design.zh_CN.md)；接入步骤见[中文用户手册](user_guide.zh_CN.md)与[English user guide](user_guide.md)。实现和测试是事实依据，本文不承诺未在公开 API 中提供的能力。
+> 本文描述 `qubit-ioc` 0.4.2 当前实现的设计与公开契约。英文版见[Current Design](complete-design.md)。历史设计背景见[容器内核草案](design.zh_CN.md)和[注解草案](annotation-design.zh_CN.md)；接入步骤见[中文用户手册](user_guide.zh_CN.md)与[English user guide](user_guide.md)。实现和测试是事实依据，本文不承诺未在公开 API 中提供的能力。
 
 ## 1. 目标与边界
 
