@@ -4,7 +4,7 @@ resolver = "3"
 
 [package]
 name = "qubit-ioc"
-version = "0.4.1"
+version = "0.4.2"
 edition = "2024"
 rust-version = "1.94"
 authors = ["Haixing Hu <starfish.hu@gmail.com>"]

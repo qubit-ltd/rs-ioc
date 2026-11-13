@@ -1,4 +1,8 @@
 # Changelog
+## 0.4.2
+
+This release pairs `qubit-ioc` 0.4.2 with `qubit-ioc-macros` 0.3.2.
+
 
 ## 0.4.0
 

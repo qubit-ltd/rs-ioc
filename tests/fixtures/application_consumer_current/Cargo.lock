@@ -299,9 +299,9 @@ dependencies = [
 
 [[package]]
 name = "qubit-event-bus"
-version = "0.21.2"
+version = "0.21.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "049104e1c6d5a46cec794fce27d1c29e066108c6e197694b71cf8c3535695a01"
+checksum = "441bb7ce499e55725a807cae727369dc756792c26ad97b34e5c564373306786e"
 dependencies = [
  "qubit-clock",
  "qubit-id",
@@ -349,7 +349,7 @@ checksum = "4b21a7f235bd77aa62de91190d043128e9f561ac48268c2ad36899f7ee4d7181"
 
 [[package]]
 name = "qubit-fs"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "fluent-uri",
  "qubit-budget",
@@ -359,9 +359,9 @@ dependencies = [
 
 [[package]]
 name = "qubit-fs-local"
-version = "0.11.1"
+version = "0.11.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c308bddf48a70dfe880deab239eeeadf09258558642c2ef7a498d13b90db1c9f"
+checksum = "c0d3f69807608b26a4c5a0cc818be3ed688debe5e702186bf8405dd01e480f17"
 dependencies = [
  "qubit-fs",
  "qubit-fs-registry",
@@ -410,7 +410,7 @@ dependencies = [
 
 [[package]]
 name = "qubit-ioc"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "thiserror",
 ]
@@ -456,9 +456,9 @@ dependencies = [
 
 [[package]]
 name = "qubit-redact"
-version = "0.10.2"
+version = "0.10.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "928304809102caccb5e278ab88f6872d7654ccd66e8f0ea457702f4387bb4b17"
+checksum = "7d217d6f987adc5f32b9daa5d506e99c5a435f99b1493d5ab3ef55caf27a3c86"
 dependencies = [
  "fluent-uri",
  "qubit-budget",
@@ -466,9 +466,9 @@ dependencies = [
 
 [[package]]
 name = "qubit-retry"
-version = "0.26.4"
+version = "0.26.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9de501a80579986a67356e2f7e48815e68d9b692a7f6c8600d5b11fe9ebcc65c"
+checksum = "8dad726beb2ede0be689b1892b777cb012ca2f657c6744f05957b4d4edbb4a84"
 dependencies = [
  "fastrand",
  "qubit-budget",
@@ -515,9 +515,9 @@ dependencies = [
 
 [[package]]
 name = "qubit-tokio-executor"
-version = "0.12.2"
+version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a0d370d667d465e22ca1312ffa560dde249c47378a9e63afe87e379ce3936398"
+checksum = "9ec72f7165552e8161dd94169218d678faba761d0542f0dc5f4910b6b8eee60d"
 dependencies = [
  "parking_lot",
  "qubit-atomic",
