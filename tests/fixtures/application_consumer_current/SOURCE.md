@@ -15,7 +15,7 @@ candidate SHAs recorded in its comments and verified for this lane are:
 
 | Checkout | Revision | Role |
 | --- | --- | --- |
-| `rs-fs-registry` | `6aa6b2c3f5841aed65fdfc5052e90d250898d89` | `qubit-fs-registry` 0.8.3 |
+| `rs-fs-registry` | `5e29e6518b2a4454b6c4b423c7940ee26a5038e2` | `qubit-fs-registry` 0.8.3 |
 | `rs-fs` | `c7ea1d035498aa633f4f3c04d90fdb5d4b73de97` | `qubit-fs` 0.4.0 |
 | `rs-fs-local` | `3bf4275ed601e39fdbf8532f9d80d563d9cc7182` | `qubit-fs-local` 0.12.0, with `registry` enabled |
 | `rs-local-files` | `80d4357b354f572e695f0c17ac1182f0aaad22c0` | Transitive local filesystem provider used by `rs-fs-local` |

@@ -20,7 +20,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: qubit-ltd/rs-fs-registry
-          ref: 6aa6b2c3f5841aed65fdfc5052e90d250898d89
+          ref: 5e29e6518b2a4454b6c4b423c7940ee26a5038e2
           path: rust-common/rs-fs-registry
       - uses: actions/checkout@v4
         with:
