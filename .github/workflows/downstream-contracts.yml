@@ -1,0 +1,86 @@
+name: Current downstream contracts
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ioc-current-consumer:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out rs-ioc
+        uses: actions/checkout@v4
+        with:
+          path: rust-common/rs-ioc
+      - name: Check out execution services fixture source
+        uses: actions/checkout@v4
+        with:
+          repository: qubit-ltd/rs-execution-services
+          ref: fca5e65f73f7908ec734128d450bd97bb25a42e0
+          path: rust-common/rs-execution-services
+      - name: Check out filesystem source
+        uses: actions/checkout@v4
+        with:
+          repository: qubit-ltd/rs-fs
+          ref: e9254cbd776b72802b8ea41e5fcae56ba430b663
+          path: rust-common/rs-fs
+      - name: Check out local filesystem provider source
+        uses: actions/checkout@v4
+        with:
+          repository: qubit-ltd/rs-fs-local
+          ref: 84d5b1b1039fcc23caba733592e7d9e8d6d7821a
+          path: rust-common/rs-fs-local
+      - name: Check out filesystem registry source
+        uses: actions/checkout@v4
+        with:
+          repository: qubit-ltd/rs-fs-registry
+          ref: 40d6908604738144390fb3babe954598c637f655
+          path: rust-common/rs-fs-registry
+      - name: Check out executor source
+        uses: actions/checkout@v4
+        with:
+          repository: qubit-ltd/rs-executor
+          ref: 1c543c4b2fd08d8e9fd04d8be7499c122c01be37
+          path: rust-common/rs-executor
+      - name: Check out Rayon executor source
+        uses: actions/checkout@v4
+        with:
+          repository: qubit-ltd/rs-rayon-executor
+          ref: c56ff60318b802a8255efe9e09da63f8f96bbf7c
+          path: rust-common/rs-rayon-executor
+      - name: Check out Tokio executor source
+        uses: actions/checkout@v4
+        with:
+          repository: qubit-ltd/rs-tokio-executor
+          ref: 44b010e714cdab03bfc78a85ae7d7309a3faf6c5
+          path: rust-common/rs-tokio-executor
+      - name: Verify source revisions
+        working-directory: rust-common
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C rs-execution-services rev-parse HEAD)" = fca5e65f73f7908ec734128d450bd97bb25a42e0
+          test "$(git -C rs-fs rev-parse HEAD)" = e9254cbd776b72802b8ea41e5fcae56ba430b663
+          test "$(git -C rs-fs-local rev-parse HEAD)" = 84d5b1b1039fcc23caba733592e7d9e8d6d7821a
+          test "$(git -C rs-fs-registry rev-parse HEAD)" = 40d6908604738144390fb3babe954598c637f655
+          test "$(git -C rs-executor rev-parse HEAD)" = 1c543c4b2fd08d8e9fd04d8be7499c122c01be37
+          test "$(git -C rs-rayon-executor rev-parse HEAD)" = c56ff60318b802a8255efe9e09da63f8f96bbf7c
+          test "$(git -C rs-tokio-executor rev-parse HEAD)" = 44b010e714cdab03bfc78a85ae7d7309a3faf6c5
+      - name: Install Rust 1.94.0
+        uses: dtolnay/rust-toolchain@1.94.0
+      - name: Run current consumer fixture
+        working-directory: rust-common/rs-ioc
+        shell: bash
+        run: |
+          set -euo pipefail
+          manifest=tests/fixtures/application_consumer_current/Cargo.toml
+          python3 .infra/tools/check-manual-feature-isolation.py --manifest-path "$manifest" --package ioc-downstream-consumer-current
+          cargo metadata --manifest-path "$manifest" --locked --format-version 1
+          cargo check --manifest-path "$manifest" --locked
+          cargo test --manifest-path "$manifest" --locked
+          cargo run --manifest-path "$manifest" --locked
