@@ -16,7 +16,10 @@ path = "src/main.rs"
 
 [dependencies]
 qubit-ioc = { path = "../../../", version = "^0.4" }
-qubit-execution-services = { version = "^0.11", path = "../../../../rs-execution-services" }
-qubit-event-bus = { version = "^0.21" }
-qubit-fs-registry = { version = "^0.8", path = "../../../../rs-fs-registry" }
+qubit-execution-services = { version = "^0.10", path = "../../../../rs-execution-services" }
+qubit-event-bus = { version = "^0.15", path = "../../../../rs-event-bus" }
+qubit-fs-registry = { version = "^0.7", path = "../../../../rs-fs-registry" }
 tokio = { version = "1.53", features = ["rt-multi-thread", "time", "sync"] }
+
+[patch.crates-io]
+qubit-config = { path = "../../../../rs-config" }

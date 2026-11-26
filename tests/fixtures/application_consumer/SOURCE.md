@@ -1,61 +1,109 @@
 # Historical downstream consumer
 
-This fixture preserves the consumer from `qubit-ltd/rs-execution-services` commit
-`c04d5d112dbf0717d44bfd9786109f84ae3cc214`, path
-`tests/fixtures/ioc_application_consumer/src/main.rs`.
-The original file SHA256 is `0655141ca927a5fe780fafba4a9f0bb0583a8205581993ce87bee5a3c8eb19d0`.
-The source is split into this fixture's `src/lib.rs`, `src/main.rs`, and
-`tests/application_lifecycle_tests.rs`; it never follows the current consumer.
-Both wrappers explicitly name their library `ioc_application_consumer`.
+This wrapper preserves the historical consumer source from
+`qubit-ltd/rs-execution-services` commit
+`c04d5d112dbf0717d44bfd9786109f84ae3cc214`, originally at
+`tests/fixtures/ioc_application_consumer/src/main.rs` (SHA256
+`0655141ca927a5fe780fafba4a9f0bb0583a8205581993ce87bee5a3c8eb19d0`). The
+fixture keeps its split library, binary, and lifecycle-test sources in this
+repository; it does not follow the current consumer fixture. Its IoC library
+name is `ioc_application_consumer`.
 
-| Sibling checkout | Historical commit | Role |
+## Historical source inputs
+
+For local historical verification, check out these revisions as siblings of
+`rs-ioc` under one `rust-common` directory. The relative paths in the fixture
+manifest resolve from that layout.
+
+| Checkout | Revision | Role |
 | --- | --- | --- |
-| rs-execution-services | c04d5d112dbf0717d44bfd9786109f84ae3cc214 | Original consumer and execution services 0.10.0 |
-| rs-event-bus | f19afc39f82b402b9793a34b8b0f0f23d2364dfe | Historical EventBus 0.15.0 |
-| rs-config | 98efea94b2d5b83c9f26f230d75e6cde202e1931 | qubit-config 0.15.0 required by the current IoC manifest |
-| rs-fs-registry | d3a6cacbc05bea970175db9cf6211680aa39c87c | Historical registry 0.7.2 |
-| rs-ioc | Revision under test | Current Application/BuildFailure API |
+| `rs-execution-services` | `c04d5d112dbf0717d44bfd9786109f84ae3cc214` | Consumer origin and `qubit-execution-services` 0.10.0 |
+| `rs-event-bus` | `f19afc39f82b402b9793a34b8b0f0f23d2364dfe` | Historical `qubit-event-bus` 0.15.0 |
+| `rs-config` | `98efea94b2d5b83c9f26f230d75e6cde202e1931` | `qubit-config` 0.15 required by current IoC |
+| `rs-fs-registry` | `d3a6cacbc05bea970175db9cf6211680aa39c87c` | Historical registry 0.7.2 |
 
-The original lane declared/locked EventBus 0.17.0 despite pinning a repository
-whose package is 0.15.0. This fixture adapts its constraint and lockfile to use
-the pinned package. The workflow also pins a local `rs-fs-registry` checkout at
-0.7.2, while this fixture had required and locked 0.8.0. Its path dependency
-constraint and lockfile now resolve against that pinned historical package and
-its compatible dependency set. These compatibility adaptations do not upgrade
-the historical consumer source or sibling checkout revisions.
+The fixture manifest selects these path packages and the lockfile records their
+resolved identities. The historical CI job in
+[`downstream-contracts.yml`](../../../.github/workflows/downstream-contracts.yml)
+checks out these exact revisions beside the current `rs-ioc` candidate and
+runs the locked metadata, check, test, and binary commands. Developers use the
+same sibling layout and keep local target output separate. CI owns the remote
+reproduction; a local run does not imply that CI passed.
 
-## Ownership adaptation and coverage
+## Baseline and verification evidence
 
-The application owns ExecutionServices abort (`stop`) and asynchronous termination
-wait. It explicitly selects `WaitPolicy::unbounded()`. Build failures are inspected
-through `BuildFailure::cause()`; tests take and drive rollback ownership explicitly.
-Cancelling an async build requests abort once without starting a wait.
+The original pre-T6 dependency combination was checked against these exact
+historical siblings before adaptation. Locked metadata exited 101 because the
+manifest required execution-services `^0.11`, while the pinned historical
+checkout provides 0.10.0:
 
-The historical EventBus lacks request/ticket shutdown. It is an ordinary external
-component, with its caller retaining shutdown responsibility. Main explicitly
-calls the old synchronous `Graceful { timeout: 5 seconds }` shutdown, outside all
-Managed callbacks, before requesting Immediate application shutdown. No blocking
-old EventBus shutdown is installed in Managed abort.
+```text
+cargo +1.94.0 metadata --locked --all-features --format-version 1 --manifest-path tests/fixtures/application_consumer/Cargo.toml
+error: failed to select a version for the requirement `qubit-execution-services = "^0.11"`
+candidate versions found which didn't match: 0.10.0
+```
 
-The four original regressions cover missing registry without factory execution,
-async factory failure cleanup, cancellation abort exactly once, and synchronous
-factory failure cleanup. Main verifies singleton/source lookup, empty registry,
-real IO result 43, and termination. This lane does not cover managed EventBus
-request/ticket, new FlushWorker final publish, rooted local filesystem integration,
-or graceful deadline/cancel/resume tests; those belong to the current lane.
+The wrapper was adapted to the exact historical package versions: execution
+services 0.10.0, EventBus 0.15.0, and registry 0.7.2. It patches `qubit-config`
+to historical source 0.15.0 because the current IoC default config feature
+requires that package. No consumer source was changed for this dependency
+adaptation.
+
+Each historical version change has an isolated version-resolution result. For
+these probes, only the named manifest version was temporarily restored to the
+pre-T6 requirement; the path and final lockfile stayed fixed. Every probe used
+the locked metadata command below and exited 101 before any lock update:
+
+| Original requirement | Selected historical package | Exact resolver result |
+| --- | --- | --- |
+| `qubit-execution-services ^0.11` | `qubit-execution-services@0.10.0` at `rs-execution-services`, SHA `c04d5d112dbf0717d44bfd9786109f84ae3cc214` | `candidate versions found which didn't match: 0.10.0` |
+| `qubit-event-bus ^0.21` | `qubit-event-bus@0.15.0` at `rs-event-bus`, SHA `f19afc39f82b402b9793a34b8b0f0f23d2364dfe` | `candidate versions found which didn't match: 0.15.0` |
+| `qubit-fs-registry ^0.8` | `qubit-fs-registry@0.7.2` at `rs-fs-registry`, SHA `d3a6cacbc05bea970175db9cf6211680aa39c87c` | `candidate versions found which didn't match: 0.7.2` |
+
+The exact command for each isolated probe was:
+
+```text
+cargo +1.94.0 metadata --locked --all-features --format-version 1 --manifest-path tests/fixtures/application_consumer/Cargo.toml
+```
+
+The original execution-services probe also reported the failed requirement
+`qubit-execution-services = "^0.11"`; the EventBus and registry probes reported
+their respective requirements `qubit-event-bus = "^0.21"` and
+`qubit-fs-registry = "^0.8"`. The lock SHA256 remained
+`3a0c165141c1009511a1cf0b505095d832ce4183574cb0ea51abc1a54812ac99` before and
+after every probe.
+
+At IoC candidate `9d7889dfc1fa5b4e3ee22eca8e1610597dbd3d9f`, locked metadata
+resolved these path package IDs (the stable manifest-relative forms are shown;
+Cargo prints absolute machine-specific paths):
+
+| Package ID | Source checkout SHA |
+| --- | --- |
+| `qubit-ioc@0.4.3` at `rs-ioc` | `9d7889dfc1fa5b4e3ee22eca8e1610597dbd3d9f` |
+| `qubit-execution-services@0.10.0` at `rs-execution-services` | `c04d5d112dbf0717d44bfd9786109f84ae3cc214` |
+| `qubit-event-bus@0.15.0` at `rs-event-bus` | `f19afc39f82b402b9793a34b8b0f0f23d2364dfe` |
+| `qubit-config@0.15.0` at `rs-config` | `98efea94b2d5b83c9f26f230d75e6cde202e1931` |
+| `qubit-fs-registry@0.7.2` at `rs-fs-registry` | `d3a6cacbc05bea970175db9cf6211680aa39c87c` |
+
+The refreshed `Cargo.lock` SHA256 is
+`3a0c165141c1009511a1cf0b505095d832ce4183574cb0ea51abc1a54812ac99`. The
+following commands each exited 0 with Rust/Cargo 1.94.0 and an independent
+target directory; the test command ran all four historical lifecycle tests:
+
+```text
+cargo +1.94.0 metadata --locked --all-features --format-version 1 --manifest-path tests/fixtures/application_consumer/Cargo.toml — exit 0
+cargo +1.94.0 check --locked --all-targets --manifest-path tests/fixtures/application_consumer/Cargo.toml — exit 0
+cargo +1.94.0 test --locked --manifest-path tests/fixtures/application_consumer/Cargo.toml — exit 0 (4 passed)
+cargo +1.94.0 run --locked --manifest-path tests/fixtures/application_consumer/Cargo.toml — exit 0
+```
 
 ## Reproduction
 
-Check out the table's repositories beside rs-ioc, then run from rs-ioc:
+Run from the `rs-ioc` checkout after preparing the sibling revisions above:
 
 ```sh
-cargo +1.94.0 check --manifest-path tests/fixtures/application_consumer/Cargo.toml --locked
-cargo +1.94.0 test --manifest-path tests/fixtures/application_consumer/Cargo.toml --locked
-cargo +1.94.0 run --manifest-path tests/fixtures/application_consumer/Cargo.toml --locked
+cargo +1.94.0 metadata --locked --all-features --format-version 1 --manifest-path tests/fixtures/application_consumer/Cargo.toml
+cargo +1.94.0 check --locked --all-targets --manifest-path tests/fixtures/application_consumer/Cargo.toml
+cargo +1.94.0 test --locked --manifest-path tests/fixtures/application_consumer/Cargo.toml
+cargo +1.94.0 run --locked --manifest-path tests/fixtures/application_consumer/Cargo.toml
 ```
-
-CI logs exact checkout revisions, rustc/cargo versions, rustc executable SHA256,
-original consumer source SHA256, adapted source SHA256, and lock SHA256. Focused
-local verification uses independent `/tmp` clones with the exact historical SHAs;
-empty workspace boundaries in those temporary dependency manifests avoid capture
-by an unrelated ancestor workspace and do not alter production source.
