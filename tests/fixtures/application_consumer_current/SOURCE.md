@@ -18,7 +18,7 @@ candidate SHAs recorded in its comments and verified for this lane are:
 | `rs-fs-registry` | `5e29e6518b2a4454b6c4b423c7940ee26a5038e2` | `qubit-fs-registry` 0.8.3 |
 | `rs-fs` | `4cb4ac38f993efb99d52b16ead8aef5f72cfef49` | `qubit-fs` 0.4.0 |
 | `rs-fs-local` | `3bf4275ed601e39fdbf8532f9d80d563d9cc7182` | `qubit-fs-local` 0.12.0, with `registry` enabled |
-| `rs-local-files` | `3e81d3e58f42fcbc2f7d6d9acd142d43d8ade66` | `qubit-local-files` 0.6.0; transitive provider selected by `rs-fs-local` |
+| `rs-local-files` | `3e81d3e58f42fcbc2f7d6d9acd142d43d8ade66d` | `qubit-local-files` 0.6.0; transitive provider selected by `rs-fs-local` |
 | `rs-execution-services` | `e822fa63080c724aaf1ceb21cb73a0f271d5f86b` | Current consumer library, binary, and integration tests |
 | `rs-executor` | `1c543c4b2fd08d8e9fd04d8be7499c122c01be37` | Path dependency of the selected source graph |
 | `rs-rayon-executor` | `c56ff60318b802a8255efe9e09da63f8f96bbf7c` | `qubit-rayon-executor` 0.9.3 path patch |
