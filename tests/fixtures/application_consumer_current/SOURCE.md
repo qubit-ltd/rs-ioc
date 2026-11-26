@@ -14,7 +14,7 @@ the fixture. The relative paths in the overlay manifest resolve from
 | --- | --- | --- |
 | `rs-ioc` | current checkout | `qubit-ioc` |
 | `rs-execution-services` | `e822fa63080c724aaf1ceb21cb73a0f271d5f86b` | `qubit-execution-services` |
-| `rs-fs` | `17edf39d0c7c10a520e6af558069290a3bc1f40f` | `qubit-fs` |
+| `rs-fs` | `4cb4ac38f993efb99d52b16ead8aef5f72cfef49` | `qubit-fs` |
 | `rs-fs-local` | `3bf4275ed601e39fdbf8532f9d80d563d9cc7182` | `qubit-fs-local` |
 | `rs-fs-registry` | `983a8c645b31af2688ea06a55c83d1535852d401` | `qubit-fs-registry` |
 | `rs-executor` | `1c543c4b2fd08d8e9fd04d8be7499c122c01be37` | `qubit-executor` |
