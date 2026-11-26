@@ -49,6 +49,30 @@ to historical source 0.15.0 because the current IoC default config feature
 requires that package. No consumer source was changed for this dependency
 adaptation.
 
+Each historical version change has an isolated version-resolution result. For
+these probes, only the named manifest version was temporarily restored to the
+pre-T6 requirement; the path and final lockfile stayed fixed. Every probe used
+the locked metadata command below and exited 101 before any lock update:
+
+| Original requirement | Selected historical package | Exact resolver result |
+| --- | --- | --- |
+| `qubit-execution-services ^0.11` | `qubit-execution-services@0.10.0` at `rs-execution-services`, SHA `c04d5d112dbf0717d44bfd9786109f84ae3cc214` | `candidate versions found which didn't match: 0.10.0` |
+| `qubit-event-bus ^0.21` | `qubit-event-bus@0.15.0` at `rs-event-bus`, SHA `f19afc39f82b402b9793a34b8b0f0f23d2364dfe` | `candidate versions found which didn't match: 0.15.0` |
+| `qubit-fs-registry ^0.8` | `qubit-fs-registry@0.7.2` at `rs-fs-registry`, SHA `d3a6cacbc05bea970175db9cf6211680aa39c87c` | `candidate versions found which didn't match: 0.7.2` |
+
+The exact command for each isolated probe was:
+
+```text
+cargo +1.94.0 metadata --locked --all-features --format-version 1 --manifest-path tests/fixtures/application_consumer/Cargo.toml
+```
+
+The original execution-services probe also reported the failed requirement
+`qubit-execution-services = "^0.11"`; the EventBus and registry probes reported
+their respective requirements `qubit-event-bus = "^0.21"` and
+`qubit-fs-registry = "^0.8"`. The lock SHA256 remained
+`3a0c165141c1009511a1cf0b505095d832ce4183574cb0ea51abc1a54812ac99` before and
+after every probe.
+
 At IoC candidate `9d7889dfc1fa5b4e3ee22eca8e1610597dbd3d9f`, locked metadata
 resolved these path package IDs (the stable manifest-relative forms are shown;
 Cargo prints absolute machine-specific paths):
