@@ -358,7 +358,7 @@ dependencies = [
 
 [[package]]
 name = "qubit-fs-local"
-version = "0.11.2"
+version = "0.12.0"
 dependencies = [
  "qubit-fs",
  "qubit-fs-registry",
@@ -448,8 +448,6 @@ dependencies = [
 [[package]]
 name = "qubit-rayon-executor"
 version = "0.9.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c785d98ef82063995d65dfdcb272c9bb0acc3dd602c8c6fe603f888789024686"
 dependencies = [
  "parking_lot",
  "qubit-executor",
@@ -521,8 +519,6 @@ dependencies = [
 [[package]]
 name = "qubit-tokio-executor"
 version = "0.12.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "24486eadae6486ab0626adc08d27e020d5d01fe0ea27675fc4d6322ff65ae54d"
 dependencies = [
  "parking_lot",
  "qubit-atomic",
