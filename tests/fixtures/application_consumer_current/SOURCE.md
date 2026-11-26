@@ -1,32 +1,63 @@
 # Current downstream consumer
 
-This wrapper compiles the current sibling `rs-execution-services` consumer's
-library, binary, and five public integration-test files. It uses the explicit
-library name `ioc_application_consumer`; consumer source is not copied into this
-historical fixture. Both consumers disable `qubit-ioc` default features, and the
-current lane checks that the resolved direct feature set remains empty.
+This wrapper builds the current consumer from the sibling `rs-execution-services`
+checkout. It uses the explicit library name `ioc_application_consumer` and
+registers all five public integration-test files, including the six-test mixed
+execution-domain rollback suite. The wrapper keeps `qubit-ioc` default features
+disabled and checks that its direct feature set stays empty.
 
-The current workflow selects the sibling checkout revisions and source-routing
-details. The [workflow](../../../.github/workflows/downstream-contracts.yml)
-and [overlay manifest](Cargo.toml) are the source of truth for those choices.
-The wrapper reads the current consumer source from the sibling checkout at the
-selected revision. Its lockfile is
-[`Cargo.lock`](Cargo.lock); the native consumer has a separate lockfile in its
-own checkout, used by the workflow's native locked test command. A local
-checkout or successful local run does not establish that a remote workflow
-revision passed.
-This wrapper lockfile is aligned with the current lane's pinned sibling
-manifests and registry versions; keep it synchronized when those pins change.
+## Source inputs
 
-The wrapper registers five external integration-test targets, including the
-mixed execution-domain rollback suite with six regression tests. Every target
-must be present and all its tests must be discovered and run. Zero-test unit
-targets are expected. Run the feature-isolation check and locked wrapper commands from
-the `rs-ioc` checkout:
+The CI source-preparation manifest is
+[`../../../.infra/ci/local-path-dependencies.tsv`](../../../.infra/ci/local-path-dependencies.tsv).
+It selects the `dev-starfish` branch for sibling source preparation. The
+candidate SHAs recorded in its comments and verified for this lane are:
+
+| Checkout | Revision | Role |
+| --- | --- | --- |
+| `rs-fs-registry` | `6aa6b2c3f5841aed65fdfc5052e90d250898d89` | `qubit-fs-registry` 0.8.3 |
+| `rs-fs` | `c7ea1d035498aa633f4f3c04d90fdb5d4b73de97` | `qubit-fs` 0.4.0 |
+| `rs-fs-local` | `3bf4275ed601e39fdbf8532f9d80d563d9cc7182` | `qubit-fs-local` 0.12.0, with `registry` enabled |
+| `rs-local-files` | `80d4357b354f572e695f0c17ac1182f0aaad22c0` | Transitive local filesystem provider used by `rs-fs-local` |
+| `rs-execution-services` | `fca5e65f73f7908ec734128d450bd97bb25a42e0` | Current consumer library, binary, and integration tests |
+| `rs-executor` | `1c543c4b2fd08d8e9fd04d8be7499c122c01be37` | Path dependency of the selected source graph |
+
+The overlay manifest records the relative paths and version requirements. Its
+lockfile is [`Cargo.lock`](Cargo.lock). The workflow
+[`downstream-contracts.yml`](../../../.github/workflows/downstream-contracts.yml)
+checks out the listed candidate SHAs beside `rs-ioc`, then runs the same locked
+commands shown below. Local verification uses the registered sibling layout;
+the developer updates the sibling worktrees to the selected commits and records
+their SHAs. A local run does not establish that remote CI passed.
+
+## T1 baseline evidence
+
+Before the T6 update, the required locked metadata command exited 101 because
+the selected local provider was 0.12.0 while this overlay required
+`qubit-fs-local ^0.11`:
+
+```text
+cargo +1.94.0 metadata --locked --all-features --format-version 1 --manifest-path tests/fixtures/application_consumer_current/Cargo.toml
+error: failed to select a version for the requirement `qubit-fs-local = "^0.11"`
+candidate versions found which didn't match: 0.12.0
+```
+
+## Reproduction
+
+Run these commands from the `rs-ioc` checkout with the source revisions above
+checked out beside it. Keep a separate Cargo target directory for this lane.
 
 ```sh
+cargo +1.94.0 metadata --locked --all-features --format-version 1 --manifest-path tests/fixtures/application_consumer_current/Cargo.toml
+cargo +1.94.0 check --locked --all-targets --manifest-path tests/fixtures/application_consumer_current/Cargo.toml
+cargo +1.94.0 test --locked --manifest-path tests/fixtures/application_consumer_current/Cargo.toml
+cargo +1.94.0 run --locked --manifest-path tests/fixtures/application_consumer_current/Cargo.toml
 python3 .infra/tools/check-manual-feature-isolation.py --manifest-path tests/fixtures/application_consumer_current/Cargo.toml --package ioc-downstream-consumer-current
-cargo +1.94.0 check --manifest-path tests/fixtures/application_consumer_current/Cargo.toml --locked
-cargo +1.94.0 test --manifest-path tests/fixtures/application_consumer_current/Cargo.toml --locked
-cargo +1.94.0 run --manifest-path tests/fixtures/application_consumer_current/Cargo.toml --locked
 ```
+
+Metadata should resolve the consumer, IoC, registry, core filesystem, and local
+provider to the `rs-ioc`, `rs-fs-registry`, `rs-fs`, and `rs-fs-local` checkouts
+listed above. The consumer and local provider both resolve the same
+`qubit-fs-registry` 0.8.3 package ID from `rs-fs-registry`; the consumer and
+local provider also share `qubit-fs` 0.4.0 from `rs-fs`. Preserve the full
+machine-specific package IDs with CI or local verification results.

@@ -1,0 +1,114 @@
+name: Downstream contracts
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  current-consumer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: rust-common/rs-ioc
+      - uses: actions/checkout@v4
+        with:
+          repository: qubit-ltd/rs-fs-registry
+          ref: 6aa6b2c3f5841aed65fdfc5052e90d250898d89
+          path: rust-common/rs-fs-registry
+      - uses: actions/checkout@v4
+        with:
+          repository: qubit-ltd/rs-fs
+          ref: c7ea1d035498aa633f4f3c04d90fdb5d4b73de97
+          path: rust-common/rs-fs
+      - uses: actions/checkout@v4
+        with:
+          repository: qubit-ltd/rs-fs-local
+          ref: 3bf4275ed601e39fdbf8532f9d80d563d9cc7182
+          path: rust-common/rs-fs-local
+      - uses: actions/checkout@v4
+        with:
+          repository: qubit-ltd/rs-local-files
+          ref: 80d4357b354f572e695f0c17ac1182f0aaad22c0
+          path: rust-common/rs-local-files
+      - uses: actions/checkout@v4
+        with:
+          repository: qubit-ltd/rs-execution-services
+          ref: fca5e65f73f7908ec734128d450bd97bb25a42e0
+          path: rust-common/rs-execution-services
+      - uses: actions/checkout@v4
+        with:
+          repository: qubit-ltd/rs-executor
+          ref: 1c543c4b2fd08d8e9fd04d8be7499c122c01be37
+          path: rust-common/rs-executor
+      - uses: dtolnay/rust-toolchain@1.94.0
+      - name: Record source revisions
+        working-directory: rust-common
+        run: |
+          for repo in rs-ioc rs-fs-registry rs-fs rs-fs-local rs-local-files rs-execution-services rs-executor; do
+            printf '%s ' "$repo"
+            git -C "$repo" rev-parse HEAD
+          done
+      - name: Validate current consumer
+        working-directory: rust-common/rs-ioc
+        env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/fsreg010-current-target
+        run: |
+          cargo +1.94.0 metadata --locked --all-features --format-version 1 --manifest-path tests/fixtures/application_consumer_current/Cargo.toml > "$RUNNER_TEMP/current-metadata.json"
+          python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); names={"ioc-downstream-consumer-current", "qubit-ioc", "qubit-fs-registry", "qubit-fs", "qubit-fs-local"}; [print(p["id"], p["manifest_path"]) for p in d["packages"] if p["name"] in names]' "$RUNNER_TEMP/current-metadata.json"
+          cargo +1.94.0 check --locked --all-targets --manifest-path tests/fixtures/application_consumer_current/Cargo.toml
+          cargo +1.94.0 test --locked --manifest-path tests/fixtures/application_consumer_current/Cargo.toml
+          cargo +1.94.0 run --locked --manifest-path tests/fixtures/application_consumer_current/Cargo.toml
+          python3 .infra/tools/check-manual-feature-isolation.py --manifest-path tests/fixtures/application_consumer_current/Cargo.toml --package ioc-downstream-consumer-current
+
+  historical-consumer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: rust-common/rs-ioc
+      - uses: actions/checkout@v4
+        with:
+          repository: qubit-ltd/rs-execution-services
+          ref: c04d5d112dbf0717d44bfd9786109f84ae3cc214
+          path: rust-common/rs-execution-services
+      - uses: actions/checkout@v4
+        with:
+          repository: qubit-ltd/rs-event-bus
+          ref: f19afc39f82b402b9793a34b8b0f0f23d2364dfe
+          path: rust-common/rs-event-bus
+      - uses: actions/checkout@v4
+        with:
+          repository: qubit-ltd/rs-config
+          ref: 98efea94b2d5b83c9f26f230d75e6cde202e1931
+          path: rust-common/rs-config
+      - uses: actions/checkout@v4
+        with:
+          repository: qubit-ltd/rs-fs-registry
+          ref: d3a6cacbc05bea970175db9cf6211680aa39c87c
+          path: rust-common/rs-fs-registry
+      - uses: dtolnay/rust-toolchain@1.94.0
+      - name: Record historical source revisions
+        working-directory: rust-common
+        run: |
+          for repo in rs-ioc rs-execution-services rs-event-bus rs-config rs-fs-registry; do
+            printf '%s ' "$repo"
+            git -C "$repo" rev-parse HEAD
+          done
+          sha256sum rs-execution-services/tests/fixtures/ioc_application_consumer/src/main.rs
+      - name: Validate historical consumer
+        working-directory: rust-common/rs-ioc
+        env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/fsreg010-historical-target
+        run: |
+          cargo +1.94.0 metadata --locked --all-features --format-version 1 --manifest-path tests/fixtures/application_consumer/Cargo.toml > "$RUNNER_TEMP/historical-metadata.json"
+          python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); names={"ioc-downstream-consumer", "qubit-ioc", "qubit-execution-services", "qubit-event-bus", "qubit-config", "qubit-fs-registry"}; [print(p["id"], p["manifest_path"]) for p in d["packages"] if p["name"] in names]' "$RUNNER_TEMP/historical-metadata.json"
+          cargo +1.94.0 check --locked --all-targets --manifest-path tests/fixtures/application_consumer/Cargo.toml
+          cargo +1.94.0 test --locked --manifest-path tests/fixtures/application_consumer/Cargo.toml
+          cargo +1.94.0 run --locked --manifest-path tests/fixtures/application_consumer/Cargo.toml
