@@ -16,10 +16,10 @@ candidate SHAs recorded in its comments and verified for this lane are:
 | Checkout | Revision | Role |
 | --- | --- | --- |
 | `rs-fs-registry` | `5e29e6518b2a4454b6c4b423c7940ee26a5038e2` | `qubit-fs-registry` 0.8.3 |
-| `rs-fs` | `c7ea1d035498aa633f4f3c04d90fdb5d4b73de97` | `qubit-fs` 0.4.0 |
+| `rs-fs` | `4cb4ac38f993efb99d52b16ead8aef5f72cfef49` | `qubit-fs` 0.4.0 |
 | `rs-fs-local` | `3bf4275ed601e39fdbf8532f9d80d563d9cc7182` | `qubit-fs-local` 0.12.0, with `registry` enabled |
 | `rs-local-files` | `80d4357b354f572e695f0c17ac1182f0aaad22c0` | Transitive local filesystem provider used by `rs-fs-local` |
-| `rs-execution-services` | `fca5e65f73f7908ec734128d450bd97bb25a42e0` | Current consumer library, binary, and integration tests |
+| `rs-execution-services` | `e822fa63080c724aaf1ceb21cb73a0f271d5f86b` | Current consumer library, binary, and integration tests |
 | `rs-executor` | `1c543c4b2fd08d8e9fd04d8be7499c122c01be37` | Path dependency of the selected source graph |
 
 The overlay manifest records the relative paths and version requirements. Its
@@ -61,3 +61,13 @@ listed above. The consumer and local provider both resolve the same
 `qubit-fs-registry` 0.8.3 package ID from `rs-fs-registry`; the consumer and
 local provider also share `qubit-fs` 0.4.0 from `rs-fs`. Preserve the full
 machine-specific package IDs with CI or local verification results.
+
+## Source checkout details retained from the existing current lane
+
+This wrapper compiles the current sibling `rs-execution-services` consumer's
+library, binary, and five public integration-test files. It uses the explicit
+library name `ioc_application_consumer`.
+
+Its lockfile is [`Cargo.lock`](Cargo.lock); the native
+consumer has a separate lockfile in its own checkout, used by the workflow's
+native locked test command.

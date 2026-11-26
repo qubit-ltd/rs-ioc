@@ -25,7 +25,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: qubit-ltd/rs-fs
-          ref: c7ea1d035498aa633f4f3c04d90fdb5d4b73de97
+          ref: 4cb4ac38f993efb99d52b16ead8aef5f72cfef49
           path: rust-common/rs-fs
       - uses: actions/checkout@v4
         with:
@@ -40,7 +40,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: qubit-ltd/rs-execution-services
-          ref: fca5e65f73f7908ec734128d450bd97bb25a42e0
+          ref: e822fa63080c724aaf1ceb21cb73a0f271d5f86b
           path: rust-common/rs-execution-services
       - uses: actions/checkout@v4
         with:
