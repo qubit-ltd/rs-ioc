@@ -30,18 +30,48 @@ runs the locked metadata, check, test, and binary commands. Developers use the
 same sibling layout and keep local target output separate. CI owns the remote
 reproduction; a local run does not imply that CI passed.
 
-The pre-T6 wrapper baseline in the supplied T6 worktree failed locked metadata
-with exit 101 because Cargo needed to update its stale lockfile:
+## Baseline and verification evidence
+
+The original pre-T6 dependency combination was checked against these exact
+historical siblings before adaptation. Locked metadata exited 101 because the
+manifest required execution-services `^0.11`, while the pinned historical
+checkout provides 0.10.0:
 
 ```text
 cargo +1.94.0 metadata --locked --all-features --format-version 1 --manifest-path tests/fixtures/application_consumer/Cargo.toml
-error: cannot update the lock file because --locked was passed to prevent this
+error: failed to select a version for the requirement `qubit-execution-services = "^0.11"`
+candidate versions found which didn't match: 0.10.0
 ```
 
-This records the observed baseline failure; it does not establish API
-incompatibility. The historical dependency versions above are retained. The
-exact historical checkout combination still needs its own metadata, check,
-test, and run results before the historical lane is considered verified.
+The wrapper was adapted to the exact historical package versions: execution
+services 0.10.0, EventBus 0.15.0, and registry 0.7.2. It patches `qubit-config`
+to historical source 0.15.0 because the current IoC default config feature
+requires that package. No consumer source was changed for this dependency
+adaptation.
+
+At IoC candidate `9d7889dfc1fa5b4e3ee22eca8e1610597dbd3d9f`, locked metadata
+resolved these path package IDs (the stable manifest-relative forms are shown;
+Cargo prints absolute machine-specific paths):
+
+| Package ID | Source checkout SHA |
+| --- | --- |
+| `qubit-ioc@0.4.3` at `rs-ioc` | `9d7889dfc1fa5b4e3ee22eca8e1610597dbd3d9f` |
+| `qubit-execution-services@0.10.0` at `rs-execution-services` | `c04d5d112dbf0717d44bfd9786109f84ae3cc214` |
+| `qubit-event-bus@0.15.0` at `rs-event-bus` | `f19afc39f82b402b9793a34b8b0f0f23d2364dfe` |
+| `qubit-config@0.15.0` at `rs-config` | `98efea94b2d5b83c9f26f230d75e6cde202e1931` |
+| `qubit-fs-registry@0.7.2` at `rs-fs-registry` | `d3a6cacbc05bea970175db9cf6211680aa39c87c` |
+
+The refreshed `Cargo.lock` SHA256 is
+`3a0c165141c1009511a1cf0b505095d832ce4183574cb0ea51abc1a54812ac99`. The
+following commands each exited 0 with Rust/Cargo 1.94.0 and an independent
+target directory; the test command ran all four historical lifecycle tests:
+
+```text
+cargo +1.94.0 metadata --locked --all-features --format-version 1 --manifest-path tests/fixtures/application_consumer/Cargo.toml — exit 0
+cargo +1.94.0 check --locked --all-targets --manifest-path tests/fixtures/application_consumer/Cargo.toml — exit 0
+cargo +1.94.0 test --locked --manifest-path tests/fixtures/application_consumer/Cargo.toml — exit 0 (4 passed)
+cargo +1.94.0 run --locked --manifest-path tests/fixtures/application_consumer/Cargo.toml — exit 0
+```
 
 ## Reproduction
 
