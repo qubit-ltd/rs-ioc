@@ -5,11 +5,15 @@
 ../rs-local-files	https://github.com/qubit-ltd/rs-local-files.git	dev-starfish
 ../rs-execution-services	https://github.com/qubit-ltd/rs-execution-services.git	dev-starfish
 ../rs-executor	https://github.com/qubit-ltd/rs-executor.git	dev-starfish
+../rs-rayon-executor	https://github.com/qubit-ltd/rs-rayon-executor.git	dev-starfish
+../rs-tokio-executor	https://github.com/qubit-ltd/rs-tokio-executor.git	dev-starfish
 
 # Revisions captured for the T6 current-consumer candidate:
 # ../rs-fs-registry 5e29e6518b2a4454b6c4b423c7940ee26a5038e2
 # ../rs-fs 4cb4ac38f993efb99d52b16ead8aef5f72cfef49
 # ../rs-fs-local 3bf4275ed601e39fdbf8532f9d80d563d9cc7182
-# ../rs-local-files 80d4357b354f572e695f0c17ac1182f0aaad22c0
+# ../rs-local-files 3e81d3e58f42fcbc2f7d6d9acd142d43d8ade66
 # ../rs-execution-services e822fa63080c724aaf1ceb21cb73a0f271d5f86b
 # ../rs-executor 1c543c4b2fd08d8e9fd04d8be7499c122c01be37
+# ../rs-rayon-executor c56ff60318b802a8255efe9e09da63f8f96bbf7c
+# ../rs-tokio-executor 44b010e714cdab03bfc78a85ae7d7309a3faf6c5
