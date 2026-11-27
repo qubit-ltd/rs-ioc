@@ -25,17 +25,17 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: qubit-ltd/rs-fs
-          ref: 4cb4ac38f993efb99d52b16ead8aef5f72cfef49
+          ref: 2d725c9b3bd0926dbbaf77428ab3596b08af0a47
           path: rust-common/rs-fs
       - uses: actions/checkout@v4
         with:
           repository: qubit-ltd/rs-fs-local
-          ref: 3bf4275ed601e39fdbf8532f9d80d563d9cc7182
+          ref: f7630dd357c96109644545bd010942b164ebf10a
           path: rust-common/rs-fs-local
       - uses: actions/checkout@v4
         with:
           repository: qubit-ltd/rs-local-files
-          ref: 80d4357b354f572e695f0c17ac1182f0aaad22c0
+          ref: c3ff0ae78836bf52f65e2f8f7c4b9f69c37c9b9e
           path: rust-common/rs-local-files
       - uses: actions/checkout@v4
         with:
@@ -47,11 +47,21 @@ jobs:
           repository: qubit-ltd/rs-executor
           ref: 1c543c4b2fd08d8e9fd04d8be7499c122c01be37
           path: rust-common/rs-executor
+      - uses: actions/checkout@v4
+        with:
+          repository: qubit-ltd/rs-rayon-executor
+          ref: c56ff60318b802a8255efe9e09da63f8f96bbf7c
+          path: rust-common/rs-rayon-executor
+      - uses: actions/checkout@v4
+        with:
+          repository: qubit-ltd/rs-tokio-executor
+          ref: 44b010e714cdab03bfc78a85ae7d7309a3faf6c5
+          path: rust-common/rs-tokio-executor
       - uses: dtolnay/rust-toolchain@1.94.0
       - name: Record source revisions
         working-directory: rust-common
         run: |
-          for repo in rs-ioc rs-fs-registry rs-fs rs-fs-local rs-local-files rs-execution-services rs-executor; do
+          for repo in rs-ioc rs-fs-registry rs-fs rs-fs-local rs-local-files rs-execution-services rs-executor rs-rayon-executor rs-tokio-executor; do
             printf '%s ' "$repo"
             git -C "$repo" rev-parse HEAD
           done
@@ -61,7 +71,7 @@ jobs:
           CARGO_TARGET_DIR: ${{ runner.temp }}/fsreg010-current-target
         run: |
           cargo +1.94.0 metadata --locked --all-features --format-version 1 --manifest-path tests/fixtures/application_consumer_current/Cargo.toml > "$RUNNER_TEMP/current-metadata.json"
-          python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); names={"ioc-downstream-consumer-current", "qubit-ioc", "qubit-fs-registry", "qubit-fs", "qubit-fs-local"}; [print(p["id"], p["manifest_path"]) for p in d["packages"] if p["name"] in names]' "$RUNNER_TEMP/current-metadata.json"
+          python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); names={"ioc-downstream-consumer-current", "qubit-ioc", "qubit-execution-services", "qubit-fs-registry", "qubit-fs", "qubit-fs-local", "qubit-local-files", "qubit-executor", "qubit-rayon-executor", "qubit-tokio-executor"}; [print(p["id"], p["manifest_path"]) for p in d["packages"] if p["name"] in names]' "$RUNNER_TEMP/current-metadata.json"
           cargo +1.94.0 check --locked --all-targets --manifest-path tests/fixtures/application_consumer_current/Cargo.toml
           cargo +1.94.0 test --locked --manifest-path tests/fixtures/application_consumer_current/Cargo.toml
           cargo +1.94.0 run --locked --manifest-path tests/fixtures/application_consumer_current/Cargo.toml

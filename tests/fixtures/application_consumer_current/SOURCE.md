@@ -16,11 +16,13 @@ candidate SHAs recorded in its comments and verified for this lane are:
 | Checkout | Revision | Role |
 | --- | --- | --- |
 | `rs-fs-registry` | `be7c9c956829d8b48061b78f02b9a04972a61f54` | `qubit-fs-registry` 0.8.3 |
-| `rs-fs` | `4cb4ac38f993efb99d52b16ead8aef5f72cfef49` | `qubit-fs` 0.4.0 |
-| `rs-fs-local` | `3bf4275ed601e39fdbf8532f9d80d563d9cc7182` | `qubit-fs-local` 0.12.0, with `registry` enabled |
-| `rs-local-files` | `80d4357b354f572e695f0c17ac1182f0aaad22c0` | Transitive local filesystem provider used by `rs-fs-local` |
+| `rs-fs` | `2d725c9b3bd0926dbbaf77428ab3596b08af0a47` | `qubit-fs` 0.4.0 |
+| `rs-fs-local` | `f7630dd357c96109644545bd010942b164ebf10a` | `qubit-fs-local` 0.12.0, with `registry` enabled |
+| `rs-local-files` | `c3ff0ae78836bf52f65e2f8f7c4b9f69c37c9b9e` | `qubit-local-files` 0.6.0; transitive provider selected by `rs-fs-local` |
 | `rs-execution-services` | `e822fa63080c724aaf1ceb21cb73a0f271d5f86b` | Current consumer library, binary, and integration tests |
 | `rs-executor` | `1c543c4b2fd08d8e9fd04d8be7499c122c01be37` | Path dependency of the selected source graph |
+| `rs-rayon-executor` | `c56ff60318b802a8255efe9e09da63f8f96bbf7c` | `qubit-rayon-executor` 0.9.3 path patch |
+| `rs-tokio-executor` | `44b010e714cdab03bfc78a85ae7d7309a3faf6c5` | `qubit-tokio-executor` 0.12.5 path patch |
 
 The overlay manifest records the relative paths and version requirements. Its
 lockfile is [`Cargo.lock`](Cargo.lock). The workflow
@@ -28,11 +30,18 @@ lockfile is [`Cargo.lock`](Cargo.lock). The workflow
 checks out the listed candidate SHAs beside `rs-ioc`, then runs the same locked
 commands shown below. Local verification uses the registered sibling layout;
 the developer updates the sibling worktrees to the selected commits and records
-their SHAs. A local run does not establish that remote CI passed.
+their SHAs. A local run does not establish that remote CI passed. The overlay
+requires `qubit-fs-local ^0.12` with `registry` enabled and selects
+`rs-local-files` through that provider's `../rs-local-files` path dependency.
+The fixture lockfile retains package versions and dependency edges; path sources
+do not encode Git SHAs in Cargo.lock, so the source SHA is recorded here and in
+the TSV source-preparation comments. The current-consumer workflow also prepares
+the Rayon and Tokio executor path patches listed above before locked metadata or
+build commands run.
 
-## T1 baseline evidence
+## Historical baseline evidence
 
-Before the T6 update, the required locked metadata command exited 101 because
+Before the T6 update, the locked metadata command exited 101 because
 the selected local provider was 0.12.0 while this overlay required
 `qubit-fs-local ^0.11`:
 
