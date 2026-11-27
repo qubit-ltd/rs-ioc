@@ -30,7 +30,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: qubit-ltd/rs-fs-local
-          ref: 9a98160626ffd8eb41b3c38254e43150d2287fbe
+          ref: 7d3fd746a4d85d051e66dac06b459af1a40d6f7a
           path: rust-common/rs-fs-local
       - uses: actions/checkout@v4
         with:
