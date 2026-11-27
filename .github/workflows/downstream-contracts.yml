@@ -20,17 +20,17 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: qubit-ltd/rs-fs-registry
-          ref: 5e29e6518b2a4454b6c4b423c7940ee26a5038e2
+          ref: be7c9c956829d8b48061b78f02b9a04972a61f54
           path: rust-common/rs-fs-registry
       - uses: actions/checkout@v4
         with:
           repository: qubit-ltd/rs-fs
-          ref: 4cb4ac38f993efb99d52b16ead8aef5f72cfef49
+          ref: 2d725c9b3bd0926dbbaf77428ab3596b08af0a47
           path: rust-common/rs-fs
       - uses: actions/checkout@v4
         with:
           repository: qubit-ltd/rs-fs-local
-          ref: 3bf4275ed601e39fdbf8532f9d80d563d9cc7182
+          ref: f7630dd357c96109644545bd010942b164ebf10a
           path: rust-common/rs-fs-local
       - uses: actions/checkout@v4
         with:

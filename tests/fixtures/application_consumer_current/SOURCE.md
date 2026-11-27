@@ -15,9 +15,9 @@ candidate SHAs recorded in its comments and verified for this lane are:
 
 | Checkout | Revision | Role |
 | --- | --- | --- |
-| `rs-fs-registry` | `5e29e6518b2a4454b6c4b423c7940ee26a5038e2` | `qubit-fs-registry` 0.8.3 |
-| `rs-fs` | `4cb4ac38f993efb99d52b16ead8aef5f72cfef49` | `qubit-fs` 0.4.0 |
-| `rs-fs-local` | `3bf4275ed601e39fdbf8532f9d80d563d9cc7182` | `qubit-fs-local` 0.12.0, with `registry` enabled |
+| `rs-fs-registry` | `be7c9c956829d8b48061b78f02b9a04972a61f54` | `qubit-fs-registry` 0.8.3 |
+| `rs-fs` | `2d725c9b3bd0926dbbaf77428ab3596b08af0a47` | `qubit-fs` 0.4.0 |
+| `rs-fs-local` | `f7630dd357c96109644545bd010942b164ebf10a` | `qubit-fs-local` 0.12.0, with `registry` enabled |
 | `rs-local-files` | `3e81d3e58f42fcbc2f7d6d9acd142d43d8ade66d` | `qubit-local-files` 0.6.0; transitive provider selected by `rs-fs-local` |
 | `rs-execution-services` | `e822fa63080c724aaf1ceb21cb73a0f271d5f86b` | Current consumer library, binary, and integration tests |
 | `rs-executor` | `1c543c4b2fd08d8e9fd04d8be7499c122c01be37` | Path dependency of the selected source graph |
