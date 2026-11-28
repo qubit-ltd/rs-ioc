@@ -1,19 +1,1 @@
 # relative git root<TAB>repository URL<TAB>default branch
-../rs-fs-registry	https://github.com/qubit-ltd/rs-fs-registry.git	dev-starfish
-../rs-fs	https://github.com/qubit-ltd/rs-fs.git	dev-starfish
-../rs-fs-local	https://github.com/qubit-ltd/rs-fs-local.git	dev-starfish
-../rs-local-files	https://github.com/qubit-ltd/rs-local-files.git	dev-starfish
-../rs-execution-services	https://github.com/qubit-ltd/rs-execution-services.git	dev-starfish
-../rs-executor	https://github.com/qubit-ltd/rs-executor.git	dev-starfish
-../rs-rayon-executor	https://github.com/qubit-ltd/rs-rayon-executor.git	dev-starfish
-../rs-tokio-executor	https://github.com/qubit-ltd/rs-tokio-executor.git	dev-starfish
-
-# Revisions captured for the T7 final current-consumer candidate:
-# ../rs-fs-registry 85968bddc6938de1ca33b709a47bb5e0d2f693e6
-# ../rs-fs f988470c0099fc4b744abfb7a75b02acf9520c7b
-# ../rs-fs-local 7d3fd746a4d85d051e66dac06b459af1a40d6f7a
-# ../rs-local-files 42968979b927ad113e6d5389b9c7db6fda9c1905
-# ../rs-execution-services e822fa63080c724aaf1ceb21cb73a0f271d5f86b
-# ../rs-executor 1c543c4b2fd08d8e9fd04d8be7499c122c01be37
-# ../rs-rayon-executor c56ff60318b802a8255efe9e09da63f8f96bbf7c
-# ../rs-tokio-executor 44b010e714cdab03bfc78a85ae7d7309a3faf6c5

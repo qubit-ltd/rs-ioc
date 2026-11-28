@@ -15,8 +15,8 @@ name = "ioc-downstream-consumer-current"
 path = "../../../../rs-execution-services/tests/fixtures/ioc_application_consumer/src/main.rs"
 
 [dependencies]
-qubit-ioc = { path = "../../../", version = "^0.4", default-features = false }
-qubit-execution-services = { version = "^0.11", path = "../../../../rs-execution-services" }
+qubit-ioc = { version = "^0.4", default-features = false }
+qubit-execution-services = { version = "^0.11" }
 qubit-event-bus = { version = "^0.21" }
 qubit-fs-registry = { version = "^0.8", path = "../../../../rs-fs-registry" }
 qubit-fs-local = { version = "^0.12", path = "../../../../rs-fs-local", features = ["registry"] }
